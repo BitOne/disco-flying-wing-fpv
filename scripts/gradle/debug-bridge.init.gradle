@@ -2,15 +2,19 @@
 // demo app at the fake controller, without editing SDK sources.
 // App resources override library resources, so these resValues take
 // precedence over sdkcore's arsdk_debug_usb_bridge_address/port defaults.
-// Properties: -PdebugBridgeAddress=10.0.2.2 -PdebugBridgePort=4321
+// Also turns on GroundSDK auto-connection at startup, so e2e tests don't
+// need to tap "Connect" (gsdk_auto_connection_at_startup, false by default).
+// Properties: -PdebugBridgeAddress=10.0.2.2 -PdebugBridgePort=4321 -PautoConnect=true
 allprojects {
     afterEvaluate { p ->
         if (p.name == 'groundsdkdemo' && p.hasProperty('android')) {
             def address = p.findProperty('debugBridgeAddress') ?: '10.0.2.2'
             def port = p.findProperty('debugBridgePort') ?: '4321'
             p.android.defaultConfig.resValue 'string', 'arsdk_debug_usb_bridge_address', address
+            def autoConnect = p.findProperty('autoConnect') ?: 'true'
             p.android.defaultConfig.resValue 'integer', 'arsdk_debug_usb_bridge_port', port
-            println "debug-bridge: ${p.name} -> ${address}:${port}"
+            p.android.defaultConfig.resValue 'bool', 'gsdk_auto_connection_at_startup', autoConnect
+            println "debug-bridge: ${p.name} -> ${address}:${port}, auto-connect ${autoConnect}"
         }
     }
 }

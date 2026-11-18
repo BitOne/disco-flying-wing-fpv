@@ -16,12 +16,15 @@ GID         := $(shell id -g)
 
 # Run a command inside the SDK build container, with the project mounted at /work
 # and a persistent cache volume for repo, Gradle and ccache data.
-# The dragon_build volume keeps the Parrot EULA acceptance marker (make sdk-eula).
+# The dragon_build volume keeps the Parrot EULA acceptance marker (make sdk-eula);
+# the android volume keeps the debug signing key, so reinstalls don't fail on
+# a signature mismatch.
 SDK_VOLUMES = \
 	-v "$(ROOT)":/work \
 	-v disco-fpv-cache:/home/builder/.cache \
 	-v disco-fpv-gradle:/home/builder/.gradle \
-	-v disco-fpv-dragon:/home/builder/.config/dragon_build
+	-v disco-fpv-dragon:/home/builder/.config/dragon_build \
+	-v disco-fpv-android:/home/builder/.android
 SDK_RUN = docker run --rm $(SDK_VOLUMES) -w /work $(SDK_IMAGE)
 
 define not_implemented
@@ -92,6 +95,18 @@ sdk-demo: ## Build the SDK demo app debug APK into out/groundsdkdemo-debug.apk
 		| tee $(OUT)/sdk-demo.log; exit $${PIPESTATUS[0]}
 	cp $(SDK_DEMO_APK) $(OUT)/groundsdkdemo-debug.apk
 	$(SDK_RUN) aapt dump badging /work/out/groundsdkdemo-debug.apk | grep -E "^package|native-code"
+
+# Demo app variant for end-to-end tests: debug USB bridge pointed at the fake
+# controller (10.0.2.2:$(FAKE_PORT)) and auto-connection on, through a Gradle
+# init script (no SDK edit).
+.PHONY: sdk-demo-e2e
+sdk-demo-e2e: ## Build the demo APK wired to the fake controller (out/groundsdkdemo-e2e.apk)
+	@mkdir -p $(OUT)
+	docker run --rm $(SDK_VOLUMES) -w $(SDK_GRADLE_DIR) $(SDK_IMAGE) \
+		./gradlew --no-daemon --console=plain \
+		-I /work/scripts/gradle/debug-bridge.init.gradle -PdebugBridgePort=$(FAKE_PORT) \
+		:groundsdkdemo:assembleDebug 2>&1 | tee $(OUT)/sdk-demo-e2e.log; exit $${PIPESTATUS[0]}
+	cp $(SDK_DEMO_APK) $(OUT)/groundsdkdemo-e2e.apk
 
 .PHONY: sdk
 sdk: sdk-sync sdk-native sdk-demo ## Sync and build the GroundSdk fork (native libs, demo APK)
@@ -172,10 +187,13 @@ emu-screenshot: ## Save an emulator screenshot to out/screenshot-<time>.png
 	@f=$(OUT)/screenshot-$$(date +%H%M%S).png; \
 		$(ADB) exec-out screencap -p > $$f && echo $$f
 
+DEMO_APK ?= $(OUT)/groundsdkdemo-e2e.apk
+
 .PHONY: demo-run
-demo-run: ## Install and launch the SDK demo app on the emulator, then screenshot
-	docker cp $(OUT)/groundsdkdemo-debug.apk $(EMU_NAME):/tmp/demo.apk
-	$(ADB) install -r -g /tmp/demo.apk
+demo-run: ## Install and launch the demo app (DEMO_APK, default the e2e build), then screenshot
+	docker cp $(DEMO_APK) $(EMU_NAME):/tmp/demo.apk
+	$(ADB) install -r -g /tmp/demo.apk || { $(ADB) uninstall com.parrot.drone.groundsdkdemo; \
+		$(ADB) install -r -g /tmp/demo.apk; }
 	$(ADB) shell am start -W -n com.parrot.drone.groundsdkdemo/.DeviceListActivity
 	@sleep 5
 	@$(MAKE) --no-print-directory emu-screenshot

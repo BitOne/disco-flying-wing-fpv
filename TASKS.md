@@ -94,13 +94,16 @@ Note: both images accept the Android SDK licences non-interactively
   "DISCO-FAKE01 DISCO CONNECTED" via the controller; the app then sends
   `Ardrone3.MediaStreaming.VideoEnable=1` and a steady `Ardrone3.Piloting.PCMD`
   stream. Screenshots in `docs/screenshots/t1.4-*`.
-- [ ] **T1.4b Reconnection.** After the app closes the mux session, the
-  example doesn't accept a new one (restarting the fake is needed). Fix the
-  mux server so the app can disconnect and reconnect. Done: force-stop and
-  restart the app twice, it reconnects each time without restarting the fake.
-- [ ] **T1.4c Demo auto-connect for tests.** The demo needs two taps to
-  connect; find a non-UI way (intent, auto-connection setting, or our own
-  test app in M3) so e2e runs don't depend on screen coordinates.
+- [x] **T1.4b Reconnection.** No fix needed: the mux server accepts a new
+  session after the app closes one (checked with two force-stop/restart
+  rounds, the controller is rediscovered each time). The earlier "no
+  reconnection" was the demo not auto-connecting (T1.4c).
+- [x] **T1.4c Demo auto-connect for tests.** The init script also sets
+  `gsdk_auto_connection_at_startup=true` (property `-PautoConnect`).
+  `make sdk-demo-e2e` builds `out/groundsdkdemo-e2e.apk`; `make demo-run`
+  installs it (default `DEMO_APK`) and the app connects to the controller
+  and the Disco with no tap. The debug signing key is kept in Docker volume
+  `disco-fpv-android`; `demo-run` uninstalls first on a signature mismatch.
 - [ ] **T1.5 Telemetry from a scenario file.** `fake-sc2` reads a YAML
   timeline (battery, altitude, attitude, speed, airspeed, GPS) and sends the
   Disco events through the drone manager. Done: values visible in the demo

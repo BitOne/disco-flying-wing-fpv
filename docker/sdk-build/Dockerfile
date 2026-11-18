@@ -67,11 +67,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Non-root user matching the host user, so files in the mounted workspace keep
 # the host ownership. repo needs a git identity; a neutral one is set here.
-# The dragon_build config dir is pre-created so its Docker volume is user-owned.
+# Directories backed by Docker volumes are pre-created so the volumes are
+# user-owned (.android keeps the debug signing key stable across builds).
 RUN groupadd -g ${GID} builder \
     && useradd -m -u ${UID} -g ${GID} -s /bin/bash builder \
     && echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder \
     && mkdir -p /home/builder/.config/dragon_build /home/builder/.cache /home/builder/.gradle \
+        /home/builder/.android \
     && chown -R builder:builder /home/builder
 USER builder
 RUN git config --global user.name "disco-fpv builder" \
