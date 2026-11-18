@@ -17,10 +17,12 @@ blocked (with a one-line reason and date).
   versions. Image size 7.6 GB, mostly the NDK.
   Note for T0.5: the fork's Gradle build still uses `jcenter()`, which is
   read-only; dependencies may need another repository.
-- [ ] **T0.3 SDK checkout.** Script `scripts/sdk-sync.sh`:
-  `repo init -u https://github.com/UnifiedGroundSdk/groundsdk-manifest`
-  pinned to a manifest revision, `repo sync` into `sdk/` (ignored by git).
-  Done: `sdk/` populated; revision recorded in `sdk.lock`.
+- [x] **T0.3 SDK checkout.** Script `scripts/sdk-sync.sh` (`make sdk-sync`):
+  `repo init` on the Unified GroundSdk manifest at
+  `9b821bfd593884c7f6408ebb61fab700f1b7b0aa`, `repo sync` into `sdk/`
+  (ignored by git). Done: 37 projects, 423 MB; every project pinned to a
+  commit hash in `sdk.lock.xml` (committed); later syncs use the lock.
+  The manifest's Parrot EULA was reviewed: see `NOTES.md` section 16.
 - [ ] **T0.4 Native build.** Build the SDK native libraries for `x86_64` and
   `arm64-v8a` in the container. Done: `.so` files produced, log in `out/`.
 - [ ] **T0.5 Demo APK.** Build `groundsdkdemo` debug APK. Done: APK in

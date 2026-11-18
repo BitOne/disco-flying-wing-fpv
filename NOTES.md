@@ -671,10 +671,32 @@ JSBSim) can supply physics and imagery but none speaks ARSDK, so the
   service `_arsdk-mux._tcp.`. An emulated app can use the same mux code path
   as the real controller.
 - `arsdk-ng/examples/device.c` can serve mux over TCP (accept + `mux_new`)
-  and the Wi-Fi protocol, so it's the base of a fake SkyController 2 + Disco.
+  and the Wi-Fi protocol. Used as the reference for our TypeScript fake
+  SkyController 2 + Disco (new software is TypeScript, not C).
 - The fork builds `x86_64` native libraries (`groundsdk-product/buildcfg.py`).
 - Host: `/dev/kvm` usable, Docker, 8 cores, 30 GB RAM, 116 GB free.
 - Full plan: `PLAN.md`.
+
+## 16. Parrot Ground SDK EULA (2026-11-18)
+
+The Unified GroundSdk manifest carries Parrot's `EULA.md` ("PARROT GROUND
+SDK End User License Agreement", version 1.1, June 2020). It applies to the
+SDK as a whole; components such as Ground SDK Mobile, PDrAW and Olympe are
+BSD-3-Clause (EULA 2.3). What matters for us (my reading, not legal advice):
+
+- 2.1: we may use the SDK to build an "Application Product" and distribute
+  it, "for use with the Parrot Drone". An app for the Disco qualifies.
+- 2.2(1): don't distribute, link or integrate the SDK "such that the SDK
+  becomes subject to another open source license". Our BSD-3 licence is
+  fine; never pull GPL code into the app.
+- 2.2(2): don't reverse engineer or decompile parts of the SDK that aren't
+  provided as source. We only use source.
+- 2.2(3): our source must carry "Portions copyright (c) 2019–Present PARROT
+  DRONES SAS. All rights reserved." where our own copyright notice is
+  (added to `LICENSE` and `README.md`; also to put in source file headers).
+- Sphinx has its own licence (testing only, no modification); not used.
+- 4.3: Parrot warns that modifying the SDK may affect drone control and
+  cause damage or injury; relevant once we patch the fork.
 
 ## Sources
 

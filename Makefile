@@ -16,7 +16,7 @@ GID         := $(shell id -g)
 
 # Run a command inside the SDK build container, with the project mounted at /work
 # and a persistent cache volume for repo, Gradle and ccache data.
-SDK_RUN = docker run --rm -t \
+SDK_RUN = docker run --rm \
 	-v "$(ROOT)":/work \
 	-v disco-fpv-cache:/home/builder/.cache \
 	-v disco-fpv-gradle:/home/builder/.gradle \
@@ -61,9 +61,13 @@ sdk-shell: ## Open a shell in the SDK build container
 
 # --- Main entry points (PLAN.md section 3) --------------------------------
 
+.PHONY: sdk-sync
+sdk-sync: ## Check out the GroundSdk fork into sdk/ (pinned by sdk.lock.xml)
+	$(SDK_RUN) scripts/sdk-sync.sh
+
 .PHONY: sdk
-sdk: ## Sync and build the GroundSdk fork (native libs + AARs)
-	$(call not_implemented,T0.3 to T0.5)
+sdk: sdk-sync ## Sync and build the GroundSdk fork (native libs + AARs)
+	$(call not_implemented,T0.4 and T0.5)
 
 .PHONY: app
 app: ## Build the app debug APK
