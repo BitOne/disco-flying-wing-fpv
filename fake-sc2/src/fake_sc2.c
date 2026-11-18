@@ -34,6 +34,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <stdint.h>
+#include <time.h>
 
 #include <libpomp.h>
 #include <libmux.h>
@@ -96,7 +97,11 @@ struct app {
 		int               sockfd_server;
 		int               sockfd;
 		uint16_t          port;
+		uint64_t          unplugged_until_ms; /* refuse phones until */
 	} mux;
+
+	/* fake-sc2: Disco out of radio range of the controller */
+	int drone_link_lost;
 
 	struct {
 		const char        *filepath;
@@ -253,6 +258,27 @@ static void send_rc_state(struct app *app)
 }
 
 static void send_home_state(struct app *app, int32_t reason);
+
+/** fake-sc2: controller-to-drone link state, as the SkyController reports it. */
+static void send_drone_link(struct app *app)
+{
+	int res = 0;
+	if (app->cmd_itf == NULL)
+		return;
+	SEND(res, arsdk_cmd_send_Skyctrl_DeviceState_ConnexionChanged(
+			app->cmd_itf, &send_status, app,
+			app->drone_link_lost ?
+			ARSDK_SKYCTRL_DEVICESTATE_CONNEXIONCHANGED_STATUS_NOTCONNECTED :
+			ARSDK_SKYCTRL_DEVICESTATE_CONNEXIONCHANGED_STATUS_CONNECTED,
+			FAKE_DRONE_NAME, FAKE_DRONE_PRODUCT));
+}
+
+static uint64_t now_ms(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+}
 
 /** fake-sc2: send the whole Disco telemetry. */
 static void send_telemetry(struct app *app)
@@ -568,10 +594,7 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 				app->cmd_itf, &send_status, app));
 		break;
 	case ARSDK_ID_SKYCTRL_COMMON_ALLSTATES:
-		SEND(res, arsdk_cmd_send_Skyctrl_DeviceState_ConnexionChanged(
-				app->cmd_itf, &send_status, app,
-				ARSDK_SKYCTRL_DEVICESTATE_CONNEXIONCHANGED_STATUS_CONNECTED,
-				FAKE_DRONE_NAME, FAKE_DRONE_PRODUCT));
+		send_drone_link(app);
 		send_rc_state(app);
 		SEND(res, arsdk_cmd_send_Skyctrl_CommonState_AllStatesChanged(
 				app->cmd_itf, &send_status, app));
@@ -1010,7 +1033,8 @@ static void video_udp_cb(int fd, uint32_t revents, void *userdata)
 			continue;
 		}
 		if (app->mux.ctx == NULL || !app->video.channels ||
-				!app->video.enabled || app->cmd_itf == NULL) {
+				!app->video.enabled || app->cmd_itf == NULL ||
+				app->drone_link_lost) {
 			app->video.dropped++;
 			continue;
 		}
@@ -1118,6 +1142,12 @@ static void mux_server_fd_event_cb(int fd, uint32_t revents, void *userdata)
 
 	if (sockfd < 0)
 		return;
+
+	/* fake-sc2: "unplug <s>": no phone connection for a while */
+	if (now_ms() < app->mux.unplugged_until_ms) {
+		close(sockfd);
+		return;
+	}
 
 	/* fake-sc2: like the real controller's single USB port, a new phone
 	 * connection replaces the previous session (an app killed on the
@@ -1228,6 +1258,11 @@ static void sig_handler(int signum)
  *   send_all                     resend all telemetry
  *   throw                        hand launch after TakeOff / UserTakeOff
  *   state                        "ok <flying state> alt=<m> home=<0|1> pcmd=<n>"
+ *   drone_link <lost|ok>         Disco out of / back in the controller's
+ *                                range (mux mode): drone disconnected for
+ *                                the app, no video
+ *   unplug <seconds>             close the phone's session and refuse a new
+ *                                one for that long (mux mode)
  *   ping
  * Setting altitude, airspeed or flying_state stops the flight simulation
  * (flight_tick) until the app's next piloting command.
@@ -1260,6 +1295,25 @@ static int ctrl_handle_line(struct app *app, char *line,
 		return snprintf(reply, reply_size, "ok %s alt=%.1f home=%d pcmd=%lu\n",
 				flying_state_name(tm->flying_state), tm->altitude,
 				app->flight.home, app->flight.pcmd);
+	} else if (strcmp(word, "drone_link") == 0) {
+		char what[16] = "";
+		if (app->backend_type != ARSDK_BACKEND_TYPE_MUX)
+			return snprintf(reply, reply_size, "error no controller (mux mode only)\n");
+		if (sscanf(line, "%*s %15s", what) != 1
+				|| (strcmp(what, "lost") != 0 && strcmp(what, "ok") != 0))
+			return snprintf(reply, reply_size, "error drone_link lost|ok\n");
+		app->drone_link_lost = strcmp(what, "lost") == 0;
+		LOGI("drone link %s", app->drone_link_lost ? "lost" : "back");
+		send_drone_link(app);
+	} else if (strcmp(word, "unplug") == 0 && n == 2) {
+		if (app->backend_type != ARSDK_BACKEND_TYPE_MUX)
+			return snprintf(reply, reply_size, "error no controller (mux mode only)\n");
+		app->mux.unplugged_until_ms = now_ms() + (uint64_t)(a * 1000);
+		LOGI("unplugged for %.1f s", a);
+		if (app->mux.sockfd != -1) {
+			shutdown(app->mux.sockfd, SHUT_RDWR);
+			mux_server_fdeof(app->mux.ctx, app);
+		}
 	} else if (strcmp(word, "throw") == 0 && n == 1) {
 		if (flight_throw(app) < 0)
 			return snprintf(reply, reply_size, "error not ready for launch (%s)\n",

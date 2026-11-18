@@ -6,6 +6,9 @@ export type Step =
   | { kind: 'send'; commands: string[] }
   | { kind: 'wait'; ms: number }
   | { kind: 'restart_app' }
+  | { kind: 'resume_app' }
+  | { kind: 'home' }
+  | { kind: 'rotate'; to: 'portrait' | 'landscape' }
   | { kind: 'tap_text'; text: string }
   | { kind: 'tap'; x: number; y: number }
   | { kind: 'tap_id'; id: string; times: number }
@@ -13,7 +16,13 @@ export type Step =
   | { kind: 'expect_texts'; texts: string[]; timeoutMs: number; scroll: boolean }
   | { kind: 'screenshot'; name: string }
   | { kind: 'expect_fake'; query: string; contains: string; timeoutMs: number }
-  | { kind: 'expect_image'; region: [number, number, number, number]; minContrast: number; timeoutMs: number }
+  | {
+      kind: 'expect_image';
+      region: [number, number, number, number];
+      minContrast: number;
+      maxContrast: number;
+      timeoutMs: number;
+    }
   | {
       kind: 'expect_stereo';
       region: [number, number, number, number];
@@ -55,6 +64,8 @@ function parseStep(raw: unknown, index: number): Step {
   if (typeof raw === 'string') {
     if (raw === 'restart_app') return { kind: 'restart_app' };
     if (raw === 'back') return { kind: 'back' };
+    if (raw === 'resume_app') return { kind: 'resume_app' };
+    if (raw === 'home') return { kind: 'home' };
     throw new Error(`${where}: unknown step "${raw}"`);
   }
   if (!isRecord(raw)) throw new Error(`${where}: expected a map`);
@@ -71,6 +82,9 @@ function parseStep(raw: unknown, index: number): Step {
     case 'tap_text':
       if (typeof value !== 'string') throw new Error(`${where}: tap_text expects a string`);
       return { kind: 'tap_text', text: value };
+    case 'rotate':
+      if (value !== 'portrait' && value !== 'landscape') throw new Error(`${where}: rotate expects portrait or landscape`);
+      return { kind: 'rotate', to: value };
     case 'tap_id':
       if (typeof value !== 'string' || !/^[\w.:/]+$/.test(value)) {
         throw new Error(`${where}: tap_id expects a resource id`);
@@ -122,7 +136,15 @@ function parseStep(raw: unknown, index: number): Step {
       const r = region as [number, number, number, number];
       if (key === 'expect_image') {
         // still content, e.g. HUD text: luminance spread only
-        return { kind: 'expect_image', region: r, minContrast: num('min_contrast', 20), timeoutMs: timeout };
+        // min_contrast: content there (e.g. HUD text); max_contrast: blank
+        // (e.g. no frozen video frame)
+        return {
+          kind: 'expect_image',
+          region: r,
+          minContrast: num('min_contrast', value['max_contrast'] !== undefined ? 0 : 20),
+          maxContrast: num('max_contrast', Infinity),
+          timeoutMs: timeout,
+        };
       }
       if (key === 'expect_stereo') {
         // region = left eye; the right eye must show the same picture

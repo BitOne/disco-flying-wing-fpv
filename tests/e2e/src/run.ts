@@ -36,6 +36,9 @@ function label(step: Step): string {
     case 'send': return `send ${step.commands.join(' | ')}`;
     case 'wait': return `wait ${step.ms} ms`;
     case 'restart_app': return 'restart app';
+    case 'resume_app': return 'resume app (launcher)';
+    case 'home': return 'home (app to background)';
+    case 'rotate': return `rotate to ${step.to}`;
     case 'tap_text': return `tap "${step.text}"`;
     case 'back': return 'back';
     case 'tap': return `tap at (${step.x}, ${step.y})`;
@@ -44,7 +47,9 @@ function label(step: Step): string {
     case 'screenshot': return `screenshot ${step.name}`;
     case 'expect_fake': return `expect fake "${step.query}" to report "${step.contains}"`;
     case 'expect_image':
-      return `expect content in [${step.region.join(', ')}] (contrast >= ${step.minContrast})`;
+      return step.maxContrast < Infinity
+        ? `expect blank in [${step.region.join(', ')}] (contrast <= ${step.maxContrast})`
+        : `expect content in [${step.region.join(', ')}] (contrast >= ${step.minContrast})`;
     case 'expect_stereo':
       return `expect same picture in both eyes, left eye [${step.region.join(', ')}] (diff <= ${step.maxDiff})`;
     case 'expect_video':
@@ -69,6 +74,18 @@ async function runStep(
     case 'restart_app':
       await emu.stopApp(scenario.app.package);
       await emu.startApp(scenario.app.package, scenario.app.activity);
+      return undefined;
+    case 'resume_app':
+      await emu.resumeApp(scenario.app.package);
+      await sleep(1000);
+      return undefined;
+    case 'rotate':
+      await emu.rotate(step.to === 'portrait' ? 0 : 1);
+      await sleep(1500);
+      return undefined;
+    case 'home':
+      await emu.home();
+      await sleep(1000);
       return undefined;
     case 'tap_text':
     case 'tap_id': {
@@ -136,6 +153,7 @@ async function runStep(
         const { stddev } = lumaStats(img, step.region);
         let detail = `contrast ${stddev.toFixed(1)}`;
         let ok = stddev >= step.minContrast;
+        if (step.kind === 'expect_image') ok &&= stddev <= step.maxContrast;
         if (step.kind === 'expect_stereo') {
           const m = stereoMatch(img, step.region, step.minShift, step.maxShift);
           detail += `, right eye at +${m.shift.toFixed(3)} width, diff ${m.diff.toFixed(1)}`;
@@ -187,6 +205,7 @@ async function runScenario(file: string, outDir: string, emu: Emulator, fake: Fa
   const dir = join(outDir, basename(file).replace(/\.ya?ml$/, ''));
   await mkdir(dir, { recursive: true });
 
+  await emu.clearProblems().catch(() => undefined);
   for (const [index, step] of scenario.steps.entries()) {
     const started = Date.now();
     const entry: StepResult = { index: index + 1, label: label(step), ok: false, ms: 0 };
@@ -207,6 +226,13 @@ async function runScenario(file: string, outDir: string, emu: Emulator, fake: Fa
     }
   }
   result.ok = result.steps.length === scenario.steps.length && result.steps.every((s) => s.ok);
+  // no crash or ANR of the app under test, whatever the steps checked
+  const problems = await emu.problems(scenario.app.package).catch(() => []);
+  if (problems.length > 0) {
+    result.ok = false;
+    result.error = `crash or ANR: ${problems.slice(0, 3).join(' / ')}`;
+    await writeFile(join(dir, 'problems.txt'), problems.join('\n')).catch(() => undefined);
+  }
   return result;
 }
 

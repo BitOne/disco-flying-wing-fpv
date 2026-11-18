@@ -12,6 +12,8 @@ import android.view.View
 import android.view.WindowManager
 import com.parrot.drone.groundsdk.GroundSdk
 import com.parrot.drone.groundsdk.ManagedGroundSdk
+import com.parrot.drone.groundsdk.Ref
+import com.parrot.drone.groundsdk.device.DeviceState
 import com.parrot.drone.groundsdk.device.Drone
 import com.parrot.drone.groundsdk.device.peripheral.StreamServer
 import com.parrot.drone.groundsdk.device.peripheral.stream.CameraLive
@@ -56,27 +58,46 @@ abstract class DroneScreenActivity : Activity() {
     }
 
     /**
-     * Calls [onLive] with the drone's live stream, playing. The stream is
-     * opened once streaming is reported enabled (enabling it restarts the
-     * streams already open), subscribed once, and only asked to play when not
+     * Calls [onLive] with the drone's live stream, playing, and with null
+     * while the drone is away. The stream is opened once streaming is
+     * reported enabled (enabling it restarts the streams already open),
+     * subscribed once per connection, and only asked to play when not
      * playing, so the decoder isn't restarted on each peripheral update.
+     * When the link to the drone drops, the stream is released and the view
+     * cleared (no frozen frame passing for live video); it is opened again
+     * when the drone is back.
      */
-    protected fun withLiveStream(onLive: (CameraLive) -> Unit) {
-        var subscribed = false
-        drone.getPeripheral(StreamServer::class.java) { server ->
-            server ?: return@getPeripheral
-            if (!server.streamingEnabled()) {
-                server.enableStreaming(true)
-                return@getPeripheral // wait for the update with streaming enabled
+    protected fun withLiveStream(onLive: (CameraLive?) -> Unit) {
+        var live: Ref<CameraLive>? = null
+        var server: StreamServer? = null
+        var connected = false
+        fun release() {
+            if (live == null) return
+            live?.close()
+            live = null
+            onLive(null)
+        }
+        fun open() {
+            val s = server ?: return
+            if (!connected || live != null) return
+            if (!s.streamingEnabled()) {
+                s.enableStreaming(true) // opened on the update with streaming enabled
+                return
             }
-            if (subscribed) return@getPeripheral
-            subscribed = true
-            server.live { live ->
-                if (live != null) {
-                    onLive(live)
-                    if (live.playState() != CameraLive.PlayState.PLAYING) live.play()
+            live = s.live { stream ->
+                if (stream != null) {
+                    onLive(stream)
+                    if (stream.playState() != CameraLive.PlayState.PLAYING) stream.play()
                 }
             }
+        }
+        drone.getState {
+            connected = it?.connectionState == DeviceState.ConnectionState.CONNECTED
+            if (connected) open() else release()
+        }
+        drone.getPeripheral(StreamServer::class.java) {
+            server = it
+            if (it == null) release() else open()
         }
     }
 

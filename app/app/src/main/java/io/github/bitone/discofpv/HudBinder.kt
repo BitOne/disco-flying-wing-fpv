@@ -4,6 +4,7 @@
  */
 package io.github.bitone.discofpv
 
+import android.graphics.Color
 import android.view.View
 import android.widget.TextView
 import com.parrot.drone.groundsdk.GroundSdk
@@ -26,6 +27,19 @@ class HudBinder(private val groundSdk: GroundSdk, private val drone: Drone, priv
         root.findViewById<TextView>(id)?.text = value
     }
 
+    /** Normal HUD colour (style Hud), or the warning colour. */
+    private fun warn(id: Int, warning: Boolean) {
+        root.findViewById<TextView>(id)?.setTextColor(if (warning) WARNING_COLOR else NORMAL_COLOR)
+    }
+
+    private var connected = false
+    private var flyingState: String? = null
+
+    private fun updateState() {
+        text(R.id.hud_state, HudFormat.stateLine(connected, flyingState))
+        warn(R.id.hud_state, !connected)
+    }
+
     fun bind() {
         drone.getInstrument(Altimeter::class.java) {
             text(R.id.hud_altitude, HudFormat.altitude(it?.takeOffRelativeAltitude))
@@ -37,16 +51,27 @@ class HudBinder(private val groundSdk: GroundSdk, private val drone: Drone, priv
         }
         drone.getInstrument(BatteryInfo::class.java) {
             text(R.id.hud_battery, HudFormat.battery("BAT", it?.batteryLevel))
+            warn(R.id.hud_battery, HudFormat.isLowBattery(it?.batteryLevel))
         }
         drone.getInstrument(Gps::class.java) {
             text(R.id.hud_gps, HudFormat.gps(it?.isFixed, it?.satelliteCount))
         }
         drone.getInstrument(FlyingIndicators::class.java) {
             // When flying, show the detailed flying state (TAKING_OFF, FLYING...).
-            val name = if (it?.state == FlyingIndicators.State.FLYING) it.flyingState.name else it?.state?.name
-            text(R.id.hud_state, HudFormat.flyingState(name))
+            flyingState = if (it?.state == FlyingIndicators.State.FLYING) it.flyingState.name else it?.state?.name
+            updateState()
+        }
+        // Link to the drone (through the controller): LINK LOST while away.
+        drone.getState {
+            connected = it?.connectionState == DeviceState.ConnectionState.CONNECTED
+            updateState()
         }
         bindRemoteControlBattery()
+    }
+
+    private companion object {
+        val NORMAL_COLOR = Color.parseColor("#B8FFB0") // style Hud
+        val WARNING_COLOR = Color.parseColor("#FF6040")
     }
 
     /** Controller battery: the first connected remote control. */
@@ -58,6 +83,7 @@ class HudBinder(private val groundSdk: GroundSdk, private val drone: Drone, priv
             watchedUid = uid
             groundSdk.getRemoteControl(uid)?.getInstrument(BatteryInfo::class.java) {
                 text(R.id.hud_rc_battery, HudFormat.battery("RC", it?.batteryLevel))
+                warn(R.id.hud_rc_battery, HudFormat.isLowBattery(it?.batteryLevel))
             }
         }
     }

@@ -4,6 +4,7 @@
  */
 package io.github.bitone.discofpv
 
+import android.view.View
 import com.parrot.drone.groundsdk.device.Drone
 import com.parrot.drone.groundsdk.stream.GsdkStreamView
 
@@ -16,7 +17,12 @@ class FlightActivity : DroneScreenActivity() {
         setContentView(R.layout.activity_flight)
         val view: GsdkStreamView = findViewById(R.id.stream)
         streamView = view
-        withLiveStream { view.setStream(it) }
+        withLiveStream {
+            view.setStream(it)
+            // GsdkStreamView keeps its last frame without a stream: hide it,
+            // a frozen picture must not pass for live video
+            view.visibility = if (it == null) View.INVISIBLE else View.VISIBLE
+        }
         HudBinder(groundSdk, drone, findViewById(R.id.hud)).bind()
     }
 

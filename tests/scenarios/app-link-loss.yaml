@@ -1,0 +1,32 @@
+name: Disco FPV survives the Disco leaving the controller's range
+description: >
+  Needs `make fake`, `make video` and `make emu`. In the flight view, the
+  fake SkyController 2 reports the Disco disconnected (`drone_link lost`):
+  the HUD shows LINK LOST with no stale values, and the video is cleared
+  rather than frozen. When the Disco is back, telemetry and live video
+  resume without user action. Also checks low battery and GPS loss values.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - send: [drone_link ok, battery 64, altitude 33.3, airspeed 15.2, flying_state flying, gps 45.1885 5.7245 300]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flight view
+  - expect_texts: [FLYING, ALT 33.3 m, BAT 64 %]
+  - expect_video: { region: [0.3, 0.25, 0.7, 0.75], min_contrast: 30 }
+    timeout: 30000
+  - send: [drone_link lost]
+  - expect_texts: [LINK LOST, ALT --, BAT --]
+  - expect_image: { region: [0.3, 0.25, 0.7, 0.75], max_contrast: 5 }
+  - screenshot: link-lost
+  - send: [drone_link ok]
+  - expect_texts: [FLYING, ALT 33.3 m, BAT 64 %]
+    timeout: 20000
+  - expect_video: { region: [0.3, 0.25, 0.7, 0.75], min_contrast: 30 }
+    timeout: 30000
+  - send: [battery 15, gps_lost]
+  - expect_texts: [BAT 15 %, GPS no fix]
+  - screenshot: low-battery
+  - send: [battery 64, gps 45.1885 5.7245 300]

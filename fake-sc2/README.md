@@ -30,3 +30,8 @@ drive a small flight simulation of the Disco's sequences (take-off by
 throw, climb to 50 m and circle, landing, motor cut, return home); see the
 comment above `flight_tick` and the control socket's `state` and `throw`
 commands in `src/fake_sc2.c`.
+
+Faults for robustness tests (SkyController mode): `drone_link lost|ok`
+(the Disco leaves or comes back in the controller's range) and
+`unplug <seconds>` (the phone's session is closed and refused for a while,
+like pulling the USB cable).

@@ -36,4 +36,16 @@ object HudFormat {
 
     /** Flying state name as shown on the HUD (enum names upper-cased, "_" to " "). */
     fun flyingState(state: String?): String = state?.replace('_', ' ')?.uppercase(Locale.US) ?: UNKNOWN
+
+    /** Shown instead of the flying state while the drone is not connected. */
+    const val LINK_LOST = "LINK LOST"
+
+    /** State line: the flying state while connected, else [LINK_LOST]. */
+    fun stateLine(connected: Boolean, flyingState: String?): String =
+        if (connected) flyingState(flyingState) else LINK_LOST
+
+    /** Battery level at or below which the HUD shows it as a warning. */
+    const val LOW_BATTERY_PERCENT = 20
+
+    fun isLowBattery(percent: Int?): Boolean = percent != null && percent in 0..LOW_BATTERY_PERCENT
 }

@@ -1,0 +1,37 @@
+name: Disco FPV survives the controller being unplugged and plugged back
+description: >
+  Needs `make fake`, `make video` and `make emu`. In the headset view, the
+  fake SkyController 2 drops the phone's session and refuses it for 6 s
+  (`unplug 6`, like pulling the USB cable): the video is cleared, then
+  comes back in both eyes once the controller accepts the phone again.
+  Then the app goes to the background and back: video resumes. Before
+  that, the main screen is rotated both ways (activity recreated): the
+  connection state is still shown.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - send: [drone_link ok, battery 64, altitude 33.3, flying_state flying]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - rotate: landscape
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+  - rotate: portrait
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+  - tap_text: Headset view
+  - expect_video: { region: [0.12, 0.3, 0.45, 0.65], min_contrast: 30 }
+    timeout: 30000
+  - send: [unplug 6]
+  - expect_image: { region: [0.12, 0.3, 0.45, 0.65], max_contrast: 5 }
+  - screenshot: unplugged
+  - expect_video: { region: [0.12, 0.3, 0.45, 0.65], min_contrast: 30 }
+    timeout: 30000
+  - expect_stereo: { region: [0.10, 0.17, 0.47, 0.82], max_diff: 8, min_contrast: 30 }
+  - screenshot: plugged-back
+  - home
+  - wait: 3000
+  - resume_app
+  - expect_video: { region: [0.12, 0.3, 0.45, 0.65], min_contrast: 30 }
+    timeout: 30000
+  - screenshot: resumed

@@ -29,6 +29,10 @@ test('parses every step kind', () => {
   - expect_fake: connected
     query: ping
   - expect_image: { region: [0, 0, 0.5, 0.5] }
+  - expect_image: { region: [0, 0, 0.5, 0.5], max_contrast: 5 }
+  - home
+  - resume_app
+  - rotate: landscape
   - expect_stereo: { region: [0.1, 0.2, 0.45, 0.8], max_diff: 5 }
 `);
   assert.deepEqual(s.steps, [
@@ -46,7 +50,11 @@ test('parses every step kind', () => {
     { kind: 'screenshot', name: 'shot-1' },
     { kind: 'expect_fake', query: 'state', contains: 'hovering', timeoutMs: 2000 },
     { kind: 'expect_fake', query: 'ping', contains: 'connected', timeoutMs: 10000 },
-    { kind: 'expect_image', region: [0, 0, 0.5, 0.5], minContrast: 20, timeoutMs: 10000 },
+    { kind: 'expect_image', region: [0, 0, 0.5, 0.5], minContrast: 20, maxContrast: Infinity, timeoutMs: 10000 },
+    { kind: 'expect_image', region: [0, 0, 0.5, 0.5], minContrast: 0, maxContrast: 5, timeoutMs: 10000 },
+    { kind: 'home' },
+    { kind: 'resume_app' },
+    { kind: 'rotate', to: 'landscape' },
     {
       kind: 'expect_stereo', region: [0.1, 0.2, 0.45, 0.8], minShift: 0.3, maxShift: 0.6,
       maxDiff: 5, minContrast: 20, timeoutMs: 10000,

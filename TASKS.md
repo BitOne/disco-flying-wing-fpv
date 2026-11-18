@@ -389,6 +389,47 @@ scenarios (`tests/scenarios/app-*.yaml`: connection, flight HUD with live
 video, headset view). Demo-app scenarios run with
 `SCENARIOS="tests/scenarios/demo-*.yaml"` after `make sdk-demo-e2e demo-run`.
 
-## M5 and later
+## M5. Robustness
+
+- [x] **T5.1 Fake controller faults.** Control socket `drone_link
+  lost|ok` (the SkyController reports the Disco out of range and back,
+  `ConnexionChanged`; no video meanwhile) and `unplug <s>` (the phone's
+  mux session is closed and new ones refused for that long, like pulling
+  the USB cable; GroundSdk's bridge retries every second).
+- [x] **T5.2 Link loss in the app.** HUD: LINK LOST (warning colour)
+  instead of the flying state while the drone is not connected, values
+  cleared to `--` by the SDK. Video: `withLiveStream` releases the stream
+  when the drone disconnects or its stream server goes away, and opens it
+  again when it is back (before, the picture froze on the last frame and
+  never resumed); the flight view hides its stream view meanwhile, since
+  GsdkStreamView keeps the last frame. Low battery (20 % or less, drone
+  and controller) in the warning colour. Check:
+  `tests/scenarios/app-link-loss.yaml` (LINK LOST, blank video, telemetry
+  and live video back, low battery, GPS loss).
+- [x] **T5.3 Unplug, background, rotation.** MainActivity `singleTop`
+  instead of `singleTask`, so the launcher brings back the flight or
+  headset view instead of clearing it. Check:
+  `tests/scenarios/app-unplug.yaml` (main screen rotated both ways;
+  headset view blank while unplugged, live in both eyes once plugged back;
+  home then launcher: video resumes). The runner now starts the app as the
+  launcher does, and has `home`, `resume_app`, `rotate` and
+  `expect_image max_contrast` steps.
+- [x] **T5.4 No crash or ANR.** Each scenario fails if the app under test
+  crashed or had an ANR (crash and events logs, cleared at the start).
+- [~] **T5.5 Fast tests on MockArsdkCore** for the same cases: deferred
+  with T3.5 (strict expectation queue); the rules are unit-tested in
+  `HudFormat` (state line, low battery), the behaviour end to end.
+
+M5 done (2026-11-18): `make check` green with the six app scenarios.
+
+## M7 notes (release)
+
+- 16 KB pages: on arm64, `libsdkcore.so` and `libc++_shared.so` (NDK r21)
+  are 4 KB-aligned (`readelf -l`, LOAD alignment 0x1000). Fine on the
+  Fairphone 5 (4 KB pages), refused on 16 KB devices and by Play. To do:
+  link `libsdkcore` with `-Wl,-z,max-page-size=16384` and ship a 16 KB
+  aligned `libc++_shared.so` (NDK r27+), or link libc++ statically.
+
+## M6 and later
 
 See `PLAN.md` section 4.

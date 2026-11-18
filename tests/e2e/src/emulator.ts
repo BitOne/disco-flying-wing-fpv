@@ -33,8 +33,38 @@ export class Emulator {
     }
   }
 
+  /** Starts the app as the launcher does (so resumeApp() finds its task). */
   async startApp(pkg: string, activity: string): Promise<void> {
-    await this.shell(`am start -W -n ${pkg}/${activity}`);
+    await this.shell(
+      `am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -f 0x10200000 -n ${pkg}/${activity}`,
+    );
+  }
+
+  /** Brings the app's task back to the front, as the launcher icon does. */
+  async resumeApp(pkg: string): Promise<void> {
+    await this.shell(`monkey -p ${pkg} -c android.intent.category.LAUNCHER 1`);
+  }
+
+  /** Fixed screen rotation: 0 portrait, 1 landscape (auto-rotate off). */
+  async rotate(rotation: 0 | 1): Promise<void> {
+    await this.shell(`settings put system accelerometer_rotation 0; settings put system user_rotation ${rotation}`);
+  }
+
+  async home(): Promise<void> {
+    await this.shell('input keyevent KEYCODE_HOME');
+  }
+
+  /** Clears the crash and event logs (start of a scenario). */
+  async clearProblems(): Promise<void> {
+    await this.shell('logcat -c -b crash -b events');
+  }
+
+  /** Crashes and ANRs of `pkg` since clearProblems(), one line each. */
+  async problems(pkg: string): Promise<string[]> {
+    const log = await this.shell('logcat -d -b crash -b events');
+    return log.split('\n').filter((line) =>
+      (line.includes('am_crash') || line.includes('am_anr') || line.includes('Process: ')) &&
+      line.includes(pkg));
   }
 
   async stopApp(pkg: string): Promise<void> {

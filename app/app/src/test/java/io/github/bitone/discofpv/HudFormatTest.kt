@@ -24,6 +24,19 @@ class HudFormatTest {
         assertEquals("BAT --", HudFormat.battery("BAT", 101))
     }
 
+    @Test fun stateLine() {
+        assertEquals("TAKING OFF", HudFormat.stateLine(true, "TAKING_OFF"))
+        assertEquals("LINK LOST", HudFormat.stateLine(false, "FLYING"))
+        assertEquals("--", HudFormat.stateLine(true, null))
+    }
+
+    @Test fun lowBattery() {
+        assertEquals(true, HudFormat.isLowBattery(20))
+        assertEquals(true, HudFormat.isLowBattery(3))
+        assertEquals(false, HudFormat.isLowBattery(21))
+        assertEquals(false, HudFormat.isLowBattery(null))
+    }
+
     @Test fun gps() {
         assertEquals("GPS 10 sat", HudFormat.gps(true, 10))
         assertEquals("GPS no fix", HudFormat.gps(false, 3))
