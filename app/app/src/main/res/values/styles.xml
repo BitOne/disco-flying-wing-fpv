@@ -14,4 +14,29 @@
         <item name="android:shadowDy">2</item>
         <item name="android:shadowRadius">3</item>
     </style>
+
+    <!-- Headset HUD: one line per band around the video; size and gaps set
+         by HeadsetHudSizer. -->
+    <style name="HudHeadset" parent="Hud">
+        <item name="android:maxLines">1</item>
+    </style>
+
+    <!-- Lens calibration panel (headset view). -->
+    <style name="LensRow">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+    </style>
+
+    <style name="LensButton">
+        <item name="android:layout_width">64dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">20sp</item>
+    </style>
+
+    <style name="LensValue" parent="Hud">
+        <item name="android:minWidth">200dp</item>
+        <item name="android:gravity">center</item>
+    </style>
 </resources>

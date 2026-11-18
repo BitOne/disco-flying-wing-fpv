@@ -8,11 +8,21 @@ export type Step =
   | { kind: 'restart_app' }
   | { kind: 'tap_text'; text: string }
   | { kind: 'tap'; x: number; y: number }
-  | { kind: 'tap_id'; id: string }
+  | { kind: 'tap_id'; id: string; times: number }
   | { kind: 'back' }
   | { kind: 'expect_texts'; texts: string[]; timeoutMs: number; scroll: boolean }
   | { kind: 'screenshot'; name: string }
   | { kind: 'expect_fake'; query: string; contains: string; timeoutMs: number }
+  | { kind: 'expect_image'; region: [number, number, number, number]; minContrast: number; timeoutMs: number }
+  | {
+      kind: 'expect_stereo';
+      region: [number, number, number, number];
+      minShift: number;
+      maxShift: number;
+      maxDiff: number;
+      minContrast: number;
+      timeoutMs: number;
+    }
   | {
       kind: 'expect_video';
       region: [number, number, number, number];
@@ -48,7 +58,7 @@ function parseStep(raw: unknown, index: number): Step {
     throw new Error(`${where}: unknown step "${raw}"`);
   }
   if (!isRecord(raw)) throw new Error(`${where}: expected a map`);
-  const keys = Object.keys(raw).filter((k) => !['timeout', 'scroll', 'query'].includes(k));
+  const keys = Object.keys(raw).filter((k) => !['timeout', 'scroll', 'query', 'times'].includes(k));
   if (keys.length !== 1) throw new Error(`${where}: expected exactly one action, got ${keys.join(', ') || 'none'}`);
   const key = keys[0] as string;
   const value = raw[key];
@@ -65,7 +75,13 @@ function parseStep(raw: unknown, index: number): Step {
       if (typeof value !== 'string' || !/^[\w.:/]+$/.test(value)) {
         throw new Error(`${where}: tap_id expects a resource id`);
       }
-      return { kind: 'tap_id', id: value };
+      {
+        const times = raw['times'] ?? 1;
+        if (typeof times !== 'number' || !Number.isInteger(times) || times < 1) {
+          throw new Error(`${where}: times must be a positive integer`);
+        }
+        return { kind: 'tap_id', id: value, times };
+      }
     case 'tap':
       // [x, y] as fractions of the current screen, for controls without text
       if (
@@ -85,8 +101,10 @@ function parseStep(raw: unknown, index: number): Step {
         scroll: raw['scroll'] === true,
       };
     }
-    case 'expect_video': {
-      if (!isRecord(value)) throw new Error(`${where}: expect_video expects a map`);
+    case 'expect_video':
+    case 'expect_image':
+    case 'expect_stereo': {
+      if (!isRecord(value)) throw new Error(`${where}: ${key} expects a map`);
       const region = value['region'] ?? [0.25, 0.25, 0.75, 0.75];
       if (
         !Array.isArray(region) || region.length !== 4 ||
@@ -101,6 +119,23 @@ function parseStep(raw: unknown, index: number): Step {
       };
       const timeout = raw['timeout'] ?? 10_000;
       if (typeof timeout !== 'number') throw new Error(`${where}: timeout must be milliseconds`);
+      const r = region as [number, number, number, number];
+      if (key === 'expect_image') {
+        // still content, e.g. HUD text: luminance spread only
+        return { kind: 'expect_image', region: r, minContrast: num('min_contrast', 20), timeoutMs: timeout };
+      }
+      if (key === 'expect_stereo') {
+        // region = left eye; the right eye must show the same picture
+        return {
+          kind: 'expect_stereo',
+          region: r,
+          minShift: num('min_shift', 0.3),
+          maxShift: num('max_shift', 0.6),
+          maxDiff: num('max_diff', 8),
+          minContrast: num('min_contrast', 20),
+          timeoutMs: timeout,
+        };
+      }
       return {
         kind: 'expect_video',
         region: region as [number, number, number, number],

@@ -10,7 +10,7 @@ import { basename, join, resolve } from 'node:path';
 import { Emulator } from './emulator.ts';
 import { sleep } from './exec.ts';
 import { FakeControl } from './fake.ts';
-import { changedFraction, lumaStats } from './imagecheck.ts';
+import { changedFraction, lumaStats, stereoMatch } from './imagecheck.ts';
 import { decodePng } from './png.ts';
 import { loadScenario, type Scenario, type Step } from './scenario.ts';
 import { missingTexts, textsOf } from './uidump.ts';
@@ -39,10 +39,14 @@ function label(step: Step): string {
     case 'tap_text': return `tap "${step.text}"`;
     case 'back': return 'back';
     case 'tap': return `tap at (${step.x}, ${step.y})`;
-    case 'tap_id': return `tap #${step.id}`;
+    case 'tap_id': return `tap #${step.id}${step.times > 1 ? ` x${step.times}` : ''}`;
     case 'expect_texts': return `expect ${step.texts.map((t) => `"${t}"`).join(', ')}${step.scroll ? ' (scroll)' : ''}`;
     case 'screenshot': return `screenshot ${step.name}`;
     case 'expect_fake': return `expect fake "${step.query}" to report "${step.contains}"`;
+    case 'expect_image':
+      return `expect content in [${step.region.join(', ')}] (contrast >= ${step.minContrast})`;
+    case 'expect_stereo':
+      return `expect same picture in both eyes, left eye [${step.region.join(', ')}] (diff <= ${step.maxDiff})`;
     case 'expect_video':
       return `expect video in [${step.region.join(', ')}] (contrast >= ${step.minContrast}, change >= ${step.minChange})`;
   }
@@ -73,7 +77,7 @@ async function runStep(
       for (;;) {
         try {
           if (step.kind === 'tap_text') await emu.tapText(step.text);
-          else await emu.tapId(step.id);
+          else for (let i = 0; i < step.times; i++) await emu.tapId(step.id);
           await sleep(800);
           return undefined;
         } catch (error) {
@@ -121,6 +125,26 @@ async function runStep(
       const path = join(dir, `${step.name}.png`);
       await emu.screenshot(path);
       return path;
+    }
+    case 'expect_image':
+    case 'expect_stereo': {
+      const deadline = Date.now() + step.timeoutMs;
+      const path = join(dir, `${step.kind === 'expect_image' ? 'image' : 'stereo'}-check.png`);
+      for (;;) {
+        await emu.screenshot(path);
+        const img = decodePng(await readFile(path));
+        const { stddev } = lumaStats(img, step.region);
+        let detail = `contrast ${stddev.toFixed(1)}`;
+        let ok = stddev >= step.minContrast;
+        if (step.kind === 'expect_stereo') {
+          const m = stereoMatch(img, step.region, step.minShift, step.maxShift);
+          detail += `, right eye at +${m.shift.toFixed(3)} width, diff ${m.diff.toFixed(1)}`;
+          ok &&= m.diff <= step.maxDiff;
+        }
+        if (ok) return detail;
+        if (Date.now() > deadline) throw new Error(detail);
+        await sleep(1000);
+      }
     }
     case 'expect_video': {
       // Two screenshots `interval` apart: the region must have image content

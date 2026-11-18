@@ -56,3 +56,42 @@ export function changedFraction(a: Image, b: Image, region: Region, threshold = 
   }
   return changed / n;
 }
+
+/**
+ * Side-by-side check: finds the horizontal shift (fraction of the width,
+ * searched in [minShift, maxShift]) that best maps `region` (the left eye)
+ * onto the rest of the image (the right eye), and returns it with the mean
+ * absolute luminance difference (0..255) at that shift. Pixels are sampled
+ * every `step` pixels, in the region and in the shift.
+ */
+export function stereoMatch(
+  img: Image,
+  region: Region,
+  minShift: number,
+  maxShift: number,
+  step = 2,
+): { shift: number; diff: number } {
+  const { x1, y1, x2, y2 } = bounds(img, region);
+  const lumas = new Float32Array(img.width * img.height);
+  for (let y = y1; y < y2; y += step) {
+    for (let x = x1; x < img.width; x++) lumas[y * img.width + x] = luma(img, x, y);
+  }
+  let best = { shift: 0, diff: Infinity };
+  const d1 = Math.ceil(minShift * img.width);
+  const d2 = Math.min(Math.floor(maxShift * img.width), img.width - x2);
+  for (let dx = d1; dx <= d2; dx += step) {
+    let sum = 0;
+    let n = 0;
+    for (let y = y1; y < y2; y += step) {
+      const row = y * img.width;
+      for (let x = x1; x < x2; x += step) {
+        sum += Math.abs((lumas[row + x] as number) - (lumas[row + x + dx] as number));
+        n++;
+      }
+    }
+    const diff = sum / n;
+    if (diff < best.diff) best = { shift: dx / img.width, diff };
+  }
+  if (best.diff === Infinity) throw new Error(`no shift in [${minShift}, ${maxShift}] fits region ${region.join(',')}`);
+  return best;
+}

@@ -345,13 +345,43 @@ consumes them and re-declares their Maven dependencies.
   `tests/scenarios/app-headset.yaml` (live video in left and right eye
   areas) passes 3/3 on SwiftShader (also on ANGLE); `app-flight-hud.yaml`
   still passes. Screenshot `docs/screenshots/m4-headset-view.png`.
-- [ ] **T4.2 HUD layout for the headset.** The HUD overlaps the video's top
-  edge and is cut by the lens shape; lay it out for the lens area (smaller,
-  centred, larger fonts for readability through lenses).
-- [ ] **T4.3 Lens settings.** Expose and persist left/right lens offsets
-  and vertical offset (`GsdkHmdView` setters), with a calibration screen.
-- [ ] **T4.4 Headset checks.** Left/right similarity check in the runner
-  (both eyes show the same picture), and HUD presence in both eyes.
+- [x] **T4.2 HUD layout for the headset.** `hud_headset.xml`: the HMD
+  overlay covers the lens render area (54 x 41 mm, `Renderer.java`) and
+  the 16:9 video is letterboxed in it, leaving a band of about 5 mm above
+  and below the picture. Flight data (state, altitude, air speed) goes in
+  the top band, systems (battery, RC battery, GPS, ground speed) in the
+  bottom band, one centred line each, so the video stays clear. The text
+  is sized from the overlay's width (`HeadsetHudSizer`, unit-tested): the
+  overlay has a physical size, so a fixed sp size that fits one phone
+  overflows another; 40 monospace characters per line plus gaps (longest:
+  "EMERGENCY LANDING  ALT 120.0 m  AIR 15.2 m/s"). The flight view keeps
+  `hud.xml`. Screenshot `docs/screenshots/m4-headset-hud.png`.
+- [x] **T4.3 Lens settings.** `LensSettings` (left and right lens offsets
+  0..1 by 0.05, height -10..+10 mm by 0.5, unit-tested), saved in
+  SharedPreferences and applied to `GsdkHmdView` on start. A tap on the
+  headset view shows the calibration panel (-/+ per value, Done), changes
+  apply live. Check: `tests/scenarios/app-lens.yaml` (panel, values,
+  still the same picture in both eyes, values restored after an app
+  restart, defaults put back). Probe: both offsets at 1.0 move the right
+  eye from +0.427 to +0.468 of the screen width. Screenshot
+  `docs/screenshots/m4-lens-panel.png`.
+- [x] **T4.4 Headset checks.** Runner steps `expect_stereo` (finds the
+  horizontal shift mapping the left eye onto the right one and checks the
+  pictures match: mean luminance difference, 0.0 measured) and
+  `expect_image` (content in a region, used for the HUD lines in the four
+  bands), both unit-tested. `app-headset.yaml` uses them.
+
+Rig notes from M4: once, after about two hours of use (and a `geo fix`
+feed from the FreeFlight setup), the emulator's system server hung in the
+location service and was restarted; the app's main thread, blocked in a
+location call, never showed the drone connected. Not reproduced on a fresh
+emulator. A launcher "isn't responding" dialog right after a cold boot on a
+loaded host covered the app: `emu-start.sh` now sets `hide_error_dialogs`
+(crashes and ANRs are to be caught from logcat instead, M5).
+
+M4 done (2026-11-18), except entry and exit gestures from PLAN.md, left
+for the real headset (checkpoint B): the headset view is entered from the
+main screen and left with Back.
 
 `make check` is green end to end since 2026-11-18: app build, JVM unit
 tests, fake controller and camera, emulator, install, and the app

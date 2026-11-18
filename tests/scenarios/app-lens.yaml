@@ -1,0 +1,58 @@
+name: Disco FPV lens settings apply and persist across restarts
+description: >
+  Needs `make fake`, `make video` and `make emu`. In the headset view, a
+  tap opens the lens calibration panel; changes are shown, the eyes still
+  show the same picture, and the values are restored after the app is
+  restarted. Ends with the defaults back, which app-headset.yaml's regions
+  assume.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Headset view
+  - expect_video:
+      region: [0.12, 0.3, 0.45, 0.65]
+      min_contrast: 30
+    timeout: 30000
+  - tap: [0.5, 0.9]
+  # from whatever was saved to the defaults
+  - tap_id: lens_left_minus
+    times: 20
+  - tap_id: lens_right_minus
+    times: 20
+  - tap_id: lens_vertical_minus
+    times: 40
+  - tap_id: lens_vertical_plus
+    times: 20
+  - expect_texts: [LEFT 0.00, RIGHT 0.00, HEIGHT +0.0 mm]
+  - tap_id: lens_left_plus
+    times: 3
+  - tap_id: lens_right_plus
+    times: 2
+  - tap_id: lens_vertical_minus
+    times: 2
+  - expect_texts: [LEFT 0.15, RIGHT 0.10, HEIGHT -1.0 mm]
+  - tap_id: lens_done
+  - expect_stereo:
+      region: [0.05, 0.12, 0.47, 0.88]
+      max_diff: 8
+      min_contrast: 30
+  - screenshot: lens-changed
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Headset view
+  - tap: [0.5, 0.9]
+  - expect_texts: [LEFT 0.15, RIGHT 0.10, HEIGHT -1.0 mm]
+  - screenshot: lens-restored
+  # back to the defaults
+  - tap_id: lens_left_minus
+    times: 3
+  - tap_id: lens_right_minus
+    times: 2
+  - tap_id: lens_vertical_plus
+    times: 2
+  - expect_texts: [LEFT 0.00, RIGHT 0.00, HEIGHT +0.0 mm]

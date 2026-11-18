@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Headset view: GsdkHmdView, and the lens calibration panel shown on a
+     tap (normal views over the HMD view, set up before the phone goes into
+     the headset). -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -7,4 +10,40 @@
         android:id="@+id/hmd"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/lens_panel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="#C0000000"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <LinearLayout style="@style/LensRow">
+            <Button android:id="@+id/lens_left_minus" style="@style/LensButton" android:text="@string/minus" />
+            <TextView android:id="@+id/lens_left" style="@style/LensValue" />
+            <Button android:id="@+id/lens_left_plus" style="@style/LensButton" android:text="@string/plus" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/LensRow">
+            <Button android:id="@+id/lens_right_minus" style="@style/LensButton" android:text="@string/minus" />
+            <TextView android:id="@+id/lens_right" style="@style/LensValue" />
+            <Button android:id="@+id/lens_right_plus" style="@style/LensButton" android:text="@string/plus" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/LensRow">
+            <Button android:id="@+id/lens_vertical_minus" style="@style/LensButton" android:text="@string/minus" />
+            <TextView android:id="@+id/lens_vertical" style="@style/LensValue" />
+            <Button android:id="@+id/lens_vertical_plus" style="@style/LensButton" android:text="@string/plus" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/lens_done"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:text="@string/lens_done" />
+    </LinearLayout>
 </FrameLayout>

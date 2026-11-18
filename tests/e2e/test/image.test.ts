@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deflateSync } from 'node:zlib';
-import { changedFraction, lumaStats } from '../src/imagecheck.ts';
+import { changedFraction, lumaStats, stereoMatch } from '../src/imagecheck.ts';
 import { decodePng, type Image } from '../src/png.ts';
 
 // CRC-32 for PNG chunks.
@@ -99,4 +99,23 @@ test('changedFraction counts changed pixels in the region only', () => {
 
 test('changedFraction refuses images of different sizes', () => {
   assert.throws(() => changedFraction(image(4, 4, () => [0, 0, 0]), image(4, 5, () => [0, 0, 0]), [0, 0, 1, 1]), /sizes differ/);
+});
+
+test('stereoMatch finds the shift between two identical eyes', () => {
+  // left eye: a gradient blob at x 10..30; right eye: the same at x 55..75
+  const blob = (x: number, y: number): [number, number, number] => {
+    const v = (x * 13 + y * 7) & 255;
+    return [v, 255 - v, v];
+  };
+  const img = image(100, 20, (x, y) => {
+    if (x >= 10 && x < 30) return blob(x - 10, y);
+    if (x >= 55 && x < 75) return blob(x - 55, y);
+    return [0, 0, 0];
+  });
+  const m = stereoMatch(img, [0.05, 0, 0.35, 1], 0.3, 0.6, 1);
+  assert.equal(m.shift, 0.45);
+  assert.equal(m.diff, 0);
+  // a different right eye does not match
+  const other = image(100, 20, (x, y) => (x >= 10 && x < 30 ? blob(x - 10, y) : [0, 0, 0]));
+  assert.ok(stereoMatch(other, [0.05, 0, 0.35, 1], 0.3, 0.6, 1).diff > 30);
 });

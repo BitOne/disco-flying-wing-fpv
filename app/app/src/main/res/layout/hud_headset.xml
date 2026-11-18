@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HUD for the headset view, rendered as the HMD overlay in both eyes. The
+     overlay covers the lens render area (54 x 41 mm) and the 16:9 video is
+     letterboxed in it, leaving a band of about 5 mm above and below the
+     picture: flight data goes in the top band, systems in the bottom band,
+     centred where the lens distorts least, so the video stays clear.
+     Same view ids as hud.xml, so HudBinder serves both. Text size and
+     gaps are set from the overlay's width by HeadsetHudSizer. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/hud"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:id="@+id/hud_top"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="2dp"
+        android:orientation="horizontal">
+
+        <TextView android:id="@+id/hud_state" style="@style/HudHeadset" />
+        <TextView android:id="@+id/hud_altitude" style="@style/HudHeadset" />
+        <TextView android:id="@+id/hud_air_speed" style="@style/HudHeadset" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/hud_bottom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="2dp"
+        android:orientation="horizontal">
+
+        <TextView android:id="@+id/hud_battery" style="@style/HudHeadset" />
+        <TextView android:id="@+id/hud_rc_battery" style="@style/HudHeadset" />
+        <TextView android:id="@+id/hud_gps" style="@style/HudHeadset" />
+        <TextView android:id="@+id/hud_ground_speed" style="@style/HudHeadset" />
+    </LinearLayout>
+</FrameLayout>

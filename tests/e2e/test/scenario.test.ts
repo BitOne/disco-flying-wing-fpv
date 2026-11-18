@@ -17,6 +17,8 @@ test('parses every step kind', () => {
   - tap_text: DRONES
   - tap: [0.5, 0.25]
   - tap_id: take_off_land_btn
+  - tap_id: lens_left_minus
+    times: 3
   - expect_texts: [a, b]
     scroll: true
     timeout: 500
@@ -26,6 +28,8 @@ test('parses every step kind', () => {
     timeout: 2000
   - expect_fake: connected
     query: ping
+  - expect_image: { region: [0, 0, 0.5, 0.5] }
+  - expect_stereo: { region: [0.1, 0.2, 0.45, 0.8], max_diff: 5 }
 `);
   assert.deepEqual(s.steps, [
     { kind: 'send', commands: ['battery 50'] },
@@ -35,12 +39,18 @@ test('parses every step kind', () => {
     { kind: 'back' },
     { kind: 'tap_text', text: 'DRONES' },
     { kind: 'tap', x: 0.5, y: 0.25 },
-    { kind: 'tap_id', id: 'take_off_land_btn' },
+    { kind: 'tap_id', id: 'take_off_land_btn', times: 1 },
+    { kind: 'tap_id', id: 'lens_left_minus', times: 3 },
     { kind: 'expect_texts', texts: ['a', 'b'], timeoutMs: 500, scroll: true },
     { kind: 'expect_texts', texts: ['c'], timeoutMs: 10000, scroll: false },
     { kind: 'screenshot', name: 'shot-1' },
     { kind: 'expect_fake', query: 'state', contains: 'hovering', timeoutMs: 2000 },
     { kind: 'expect_fake', query: 'ping', contains: 'connected', timeoutMs: 10000 },
+    { kind: 'expect_image', region: [0, 0, 0.5, 0.5], minContrast: 20, timeoutMs: 10000 },
+    {
+      kind: 'expect_stereo', region: [0.1, 0.2, 0.45, 0.8], minShift: 0.3, maxShift: 0.6,
+      maxDiff: 5, minContrast: 20, timeoutMs: 10000,
+    },
   ]);
 });
 
