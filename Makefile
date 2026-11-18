@@ -149,6 +149,46 @@ app: app-image ## Build the app debug APK (out/disco-fpv-debug.apk); needs sdk-a
 		| tee $(OUT)/app-build.log; exit $${PIPESTATUS[0]}
 	cp $(APP_DEBUG_APK) $(OUT)/disco-fpv-debug.apk
 
+.PHONY: app-usb
+app-usb: app-image ## Build the app without the debug bridge (out/disco-fpv-usb.apk): USB accessory only
+	@mkdir -p $(OUT)
+	$(APP_RUN) gradle --no-daemon --console=plain :app:assembleUsb 2>&1 \
+		| tee $(OUT)/app-usb-build.log; exit $${PIPESTATUS[0]}
+	cp app/app/build/outputs/apk/usb/app-usb.apk $(OUT)/disco-fpv-usb.apk
+
+# Real USB mode: the app reaches the fake SkyController 2 through Android's
+# USB accessory path, inside the emulator (scripts/emu-usb-setup.sh): the
+# emulated phone is put in accessory mode on its dummy USB controller and
+# aoa-host plays the controller's USB side, relaying to fake-sc2.
+NDK_CC = $(SDK_NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android24-clang
+
+.PHONY: aoa-host
+aoa-host: ## Build the emulated SkyController's USB side (out/aoa-host, runs in the emulator)
+	@mkdir -p $(OUT)
+	docker run --rm -u $(UID):$(GID) -v "$(ROOT)":/work -w /work $(SDK_IMAGE) \
+		$(NDK_CC) -O2 -Wall -Wextra -Wl,-z,max-page-size=16384 -o out/aoa-host aoa-host/aoa_host.c
+
+.PHONY: emu-usb
+emu-usb: emu-image aoa-host ## Start the emulator in real USB mode (writable system, accessory feature, aoa-host)
+	EMU_MODE_ARGS=-writable-system scripts/emu-start.sh $(EMU_IMAGE) $(EMU_NAME) $(OUT)
+	scripts/emu-usb-setup.sh $(EMU_NAME) $(OUT)/aoa-host $(FAKE_PORT)
+
+.PHONY: app-usb-install
+app-usb-install: ## Install out/disco-fpv-usb.apk on the emulator
+	docker cp $(OUT)/disco-fpv-usb.apk $(EMU_NAME):/tmp/disco-fpv.apk
+	docker exec $(EMU_NAME) adb -s emulator-5554 install -r -g /tmp/disco-fpv.apk \
+		|| { docker exec $(EMU_NAME) adb -s emulator-5554 uninstall io.github.bitone.discofpv; \
+		docker exec $(EMU_NAME) adb -s emulator-5554 install -r -g /tmp/disco-fpv.apk; }
+
+.PHONY: check-usb
+check-usb: app-usb fake video ## make check through the emulated USB accessory instead of the debug bridge
+	$(MAKE) --no-print-directory emu-stop
+	$(MAKE) --no-print-directory emu-image aoa-host
+	EMU_MODE_ARGS=-writable-system scripts/emu-start.sh $(EMU_IMAGE) $(EMU_NAME) $(OUT)
+	$(MAKE) --no-print-directory app-usb-install
+	scripts/emu-usb-setup.sh $(EMU_NAME) $(OUT)/aoa-host $(FAKE_PORT)
+	$(MAKE) --no-print-directory e2e
+
 .PHONY: apk-check
 apk-check: ## Check out/disco-fpv-debug.apk's arm64 native libraries are 16 KB aligned
 	$(SDK_RUN) scripts/apk-check.sh out/disco-fpv-debug.apk \

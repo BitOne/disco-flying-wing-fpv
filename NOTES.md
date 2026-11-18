@@ -792,6 +792,46 @@ was).
 - FPV mode (Cockpitglasses 1/2, manual/auto) is in Interface settings; on a
   Disco it is toggled from the SkyController, so it can't be shown here.
 
+## 20. Emulating the SkyController 2 USB link in the emulator (2026-11-19)
+
+Goal: the app's real USB path (`UsbManager` accessory, `openAccessory`,
+mux over the accessory's bulk endpoints), not the debug TCP bridge.
+Findings on the Android 15 x86_64 emulator (kernel 6.6 GKI):
+
+- The kernel loads `dummy_hcd`: a virtual USB device controller
+  (`/sys/class/udc/dummy_udc.0`) wired to a virtual host controller
+  (`usb1`, "Dummy host controller"). It also has USB/IP's `vhci_hcd`.
+- The Android accessory gadget function is built in (kernel symbols
+  `accessoryusb_func`, `acc_ctrlrequest`), although no `F_ACC` option
+  shows in `/proc/config.gz`. `mkdir functions/accessory.gs2` in the
+  configfs gadget `g1` creates `/dev/usb_accessory`.
+- The USB Gadget HAL is the AOSP example stub and `sys.usb.configfs=0`:
+  nothing configures the gadget; `UsbDeviceManager` uses its legacy
+  handler (properties `sys.usb.config` / `sys.usb.state`, set by
+  `init.usb.rc`; the sysfs writes fail harmlessly).
+- `UsbDeviceManager` ignores accessories unless the
+  `android.hardware.usb.accessory` feature is declared, and the emulator
+  image doesn't declare it: added to `/system/etc/permissions` (emulator
+  with `-writable-system`, `adb remount` twice with a reboot, then a
+  reboot to load it).
+- With the gadget bound to `dummy_udc.0`, the phone appears to itself as
+  USB device 18d1:2d01 on `usb1`. A host program (root, usbfs) can then
+  do the AOA handshake (51 protocol, 52 strings, 53 start): the kernel
+  raises `ACCESSORY=START`, Android switches to `accessory,adb`, and after
+  a re-enumeration (UDC unbind/bind, the HAL's job on a phone) it reports
+  "entering USB accessory mode", broadcasts `USB_ACCESSORY_ATTACHED` and
+  shows "Open Disco FPV to handle ...?". GroundSdk then opens the accessory
+  and runs mux on it.
+- Each USB function change restarts `adbd` (through `none`), and init
+  kills everything in adbd's cgroup: a helper started from `adb shell`
+  must move itself out (`/sys/fs/cgroup/cgroup.procs`). The test runner's
+  adb calls retry once after `wait-for-device`.
+- Result: `aoa-host/aoa_host.c` (NDK, runs in the emulator) plays the
+  SkyController's USB side and relays to `fake-sc2 --mux`; `make
+  check-usb` runs all app scenarios this way, green, including a real
+  unplug and replug (`unplug` on the fake closes the session; aoa-host
+  unbinds and rebinds the gadget and does the handshake again).
+
 ## Sources
 
 - FPV_VR_OS: https://github.com/Consti10/FPV_VR_OS

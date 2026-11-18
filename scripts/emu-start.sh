@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Start the headless emulator container (detached) and wait for Android to boot.
 # Usage: scripts/emu-start.sh <image> <container-name> <out-dir>
+# EMU_MODE_ARGS replaces -read-only, e.g. "-writable-system" for the USB
+# accessory mode (scripts/emu-usb-setup.sh).
 set -euo pipefail
 IMAGE=$1; NAME=$2; OUT=$3
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-300}
@@ -16,7 +18,7 @@ else
         -v "$OUT":/out \
         "$IMAGE" \
         emulator -avd disco-test -no-window -no-audio -no-boot-anim \
-            -gpu "${EMU_GPU:-swiftshader_indirect}" -no-snapshot -accel on -read-only \
+            -gpu "${EMU_GPU:-swiftshader_indirect}" -no-snapshot -accel on ${EMU_MODE_ARGS:--read-only} \
             -ports 5554,5555 >/dev/null
     echo "started emulator container $NAME"
 fi

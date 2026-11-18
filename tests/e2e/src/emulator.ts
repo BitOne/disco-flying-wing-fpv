@@ -12,13 +12,21 @@ export class Emulator {
     this.serial = serial;
   }
 
+  /**
+   * Runs an adb command; on failure, waits for the device and tries once
+   * more: adbd restarts when Android changes its USB functions, e.g. while
+   * the emulated SkyController is plugged in again (USB mode).
+   */
   async adb(args: readonly string[], timeoutMs?: number): Promise<Buffer> {
-    const { stdout } = await exec(
-      'docker',
-      ['exec', this.container, 'adb', '-s', this.serial, ...args],
-      timeoutMs,
-    );
-    return stdout;
+    const run = async (): Promise<Buffer> =>
+      (await exec('docker', ['exec', this.container, 'adb', '-s', this.serial, ...args], timeoutMs)).stdout;
+    try {
+      return await run();
+    } catch {
+      await exec('docker', ['exec', this.container, 'adb', '-s', this.serial, 'wait-for-device'], 30_000)
+        .catch(() => undefined);
+      return await run();
+    }
   }
 
   async shell(command: string): Promise<string> {

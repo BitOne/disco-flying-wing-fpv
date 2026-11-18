@@ -428,6 +428,16 @@ every update (heading changing ten times a second), and the stream of
 accessibility events made UI dumps return stale trees, failing the
 scenario one run in three; now set only when it changes.
 
+## M5b. Real USB path in the emulator (2026-11-19)
+
+- [x] **T5.6 USB accessory emulation.** `make check-usb`: the emulator in
+  USB mode (`make emu-usb`: `-writable-system`, accessory feature,
+  configfs gadget on `dummy_udc.0`, `aoa-host`), the app built without
+  the debug bridge (`make app-usb`, build type `usb`), all app scenarios
+  green through Android's USB accessory path, including unplug and replug.
+  The first plug's "Open Disco FPV to handle ...?" dialog is accepted by
+  the setup script ("Always"). See `NOTES.md` section 20.
+
 ## M5. Robustness
 
 - [x] **T5.1 Fake controller faults.** Control socket `drone_link

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- disco-flying-wing-fpv test rig: lets the emulator's USB service handle
+     accessories (scripts/emu-usb-setup.sh). -->
+<permissions>
+    <feature name="android.hardware.usb.accessory" />
+</permissions>
