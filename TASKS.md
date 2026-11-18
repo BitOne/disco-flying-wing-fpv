@@ -104,15 +104,25 @@ Note: both images accept the Android SDK licences non-interactively
   installs it (default `DEMO_APK`) and the app connects to the controller
   and the Disco with no tap. The debug signing key is kept in Docker volume
   `disco-fpv-android`; `demo-run` uninstalls first on a signature mismatch.
-- [ ] **T1.5 Telemetry from a scenario file.** `fake-sc2` reads a YAML
-  timeline (battery, altitude, attitude, speed, airspeed, GPS) and sends the
-  Disco events through the drone manager. Done: values visible in the demo
-  app's drone info screen.
+- [x] **T1.5 Telemetry.** `fake-sc2` keeps the Disco's telemetry and
+  exposes a line-based control socket on `127.0.0.1:4322` (`--ctrl-port`):
+  `battery`, `rc_battery`, `altitude`, `attitude r p y` (rad),
+  `speed vx vy vz` (NED m/s), `airspeed`, `gps lat lon alt`, `gps_lost`,
+  `satellites`, `flying_state <name>`, `send_all`, `ping`; answers `ok` /
+  `error ...`. Values are sent on change and with the drone's AllStates
+  answer (so a late-connecting app gets them). YAML scenarios move to the
+  TypeScript runner (T1.6), which drives this socket. Done: values shown by
+  the demo's Disco screen, read through a UIAutomator dump: battery 73 %,
+  altitude 42.50 m, vertical speed 0.50 m/s, pitch -2.9°, roll 5.7°,
+  heading 90°, FLYING, GPS fixed 45.1885/5.7245/250 m with 10 satellites,
+  ground speed 12.37 m/s, air speed 15.20 m/s.
+  Screenshot `docs/screenshots/t1.5-disco-telemetry.png`.
 - [ ] **T1.6 TypeScript e2e runner.** `tests/e2e` (Node LTS, strict
-  TypeScript): starts the fake with a scenario, drives the emulator through
-  `adb`, reads UI text (UIAutomator dump) and takes screenshots, writes
-  `out/<run>/summary.md`. `make e2e`. Done: one scenario passes and fails
-  correctly when a value is changed.
+  TypeScript): reads a YAML scenario (timeline of control-socket commands
+  and UI expectations), drives `fake-sc2` through its control socket and
+  the emulator through `adb` (UIAutomator text dumps, screenshots), writes
+  `out/<run>/summary.md`. `make e2e`. Done: a Disco telemetry scenario
+  against the demo app passes, and fails when an expected value is changed.
 
 ## M2 and later
 

@@ -32,6 +32,8 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
+#include <stdint.h>
 
 #include <libpomp.h>
 #include <libmux.h>
@@ -57,6 +59,21 @@ ULOG_DECLARE_TAG(device);
 			_fct, _fd, _err, strerror(_err))
 
 /** */
+/* fake-sc2: current Disco telemetry, set through the control socket and sent
+ * to the app on change and with the drone's AllStates answer. */
+struct telemetry {
+	uint8_t  battery;        /* drone battery, percent */
+	uint8_t  rc_battery;     /* controller battery, percent */
+	double   altitude;       /* m, relative to take-off */
+	float    roll, pitch, yaw;       /* rad */
+	float    speed_x, speed_y, speed_z; /* m/s, NED */
+	float    airspeed;       /* m/s */
+	double   latitude, longitude, gps_altitude; /* 500 = unknown */
+	uint8_t  gps_fixed;
+	uint8_t  satellites;
+	int32_t  flying_state;   /* ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_* */
+};
+
 struct app {
 	int                          stopped;
 	enum arsdk_backend_type      backend_type;
@@ -84,6 +101,17 @@ struct app {
 		FILE              *file;
 		struct pomp_timer *timer;
 	} replay;
+
+	/* fake-sc2: line-based control socket (see ctrl_handle_line) */
+	struct {
+		int               server_fd;
+		int               client_fd;
+		uint16_t          port;
+		char              buf[1024];
+		size_t            len;
+	} ctrl;
+
+	struct telemetry   tm;
 };
 
 /** */
@@ -110,6 +138,20 @@ static struct app s_app = {
 		.filepath = NULL,
 		.file = NULL,
 		.timer = NULL,
+	},
+	.ctrl = {
+		.server_fd = -1,
+		.client_fd = -1,
+		.port = 4322,
+		.len = 0,
+	},
+	.tm = {
+		.battery = 100,
+		.rc_battery = 100,
+		.latitude = 500.0,
+		.longitude = 500.0,
+		.gps_altitude = 500.0,
+		.flying_state = ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDED,
 	},
 };
 
@@ -155,6 +197,46 @@ static void link_quality(struct arsdk_cmd_itf *itf,
 			LOG_ERRNO(#_call, -(_res)); \
 	} while (0)
 
+/** fake-sc2: send the controller's own state (battery). */
+static void send_rc_state(struct app *app)
+{
+	int res = 0;
+	if (app->cmd_itf == NULL)
+		return;
+	SEND(res, arsdk_cmd_send_Skyctrl_SkyControllerState_BatteryChanged(
+			app->cmd_itf, &send_status, app, app->tm.rc_battery));
+}
+
+/** fake-sc2: send the whole Disco telemetry. */
+static void send_telemetry(struct app *app)
+{
+	int res = 0;
+	struct telemetry *tm = &app->tm;
+	if (app->cmd_itf == NULL)
+		return;
+	SEND(res, arsdk_cmd_send_Common_CommonState_BatteryStateChanged(
+			app->cmd_itf, &send_status, app, tm->battery));
+	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_FlyingStateChanged(
+			app->cmd_itf, &send_status, app, tm->flying_state));
+	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AltitudeChanged(
+			app->cmd_itf, &send_status, app, tm->altitude));
+	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AttitudeChanged(
+			app->cmd_itf, &send_status, app,
+			tm->roll, tm->pitch, tm->yaw));
+	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_SpeedChanged(
+			app->cmd_itf, &send_status, app,
+			tm->speed_x, tm->speed_y, tm->speed_z));
+	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AirSpeedChanged(
+			app->cmd_itf, &send_status, app, tm->airspeed));
+	SEND(res, arsdk_cmd_send_Ardrone3_GPSSettingsState_GPSFixStateChanged(
+			app->cmd_itf, &send_status, app, tm->gps_fixed));
+	SEND(res, arsdk_cmd_send_Ardrone3_GPSState_NumberOfSatelliteChanged(
+			app->cmd_itf, &send_status, app, tm->satellites));
+	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_PositionChanged(
+			app->cmd_itf, &send_status, app,
+			tm->latitude, tm->longitude, tm->gps_altitude));
+}
+
 /**
  * fake-sc2: answer the GroundSDK connection sequences.
  * Controller (Skyctrl feature): AllSettings -> AllSettingsChanged, then
@@ -187,6 +269,7 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 				app->cmd_itf, &send_status, app,
 				ARSDK_SKYCTRL_DEVICESTATE_CONNEXIONCHANGED_STATUS_CONNECTED,
 				FAKE_DRONE_NAME, FAKE_DRONE_PRODUCT));
+		send_rc_state(app);
 		SEND(res, arsdk_cmd_send_Skyctrl_CommonState_AllStatesChanged(
 				app->cmd_itf, &send_status, app));
 		break;
@@ -200,6 +283,7 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 				app->cmd_itf, &send_status, app));
 		break;
 	case ARSDK_ID_COMMON_COMMON_ALLSTATES:
+		send_telemetry(app);
 		SEND(res, arsdk_cmd_send_Common_CommonState_AllStatesChanged(
 				app->cmd_itf, &send_status, app));
 		break;
@@ -605,6 +689,221 @@ static void sig_handler(int signum)
 		pomp_loop_wakeup(s_app.loop);
 }
 
+/*
+ * fake-sc2 control socket: one TCP client at a time on 127.0.0.1:<ctrl port>,
+ * one command per line, answered "ok" or "error <reason>":
+ *   battery <percent>            drone battery
+ *   rc_battery <percent>         controller battery
+ *   altitude <m>
+ *   attitude <roll> <pitch> <yaw>   radians
+ *   speed <vx> <vy> <vz>         m/s (NED)
+ *   airspeed <m/s>
+ *   gps <lat> <lon> <alt>        degrees, m; also sets the fix
+ *   gps_lost                     fix lost, position unknown (500)
+ *   satellites <n>
+ *   flying_state <landed|takingoff|hovering|flying|landing|emergency>
+ *   send_all                     resend all telemetry
+ *   ping
+ */
+static int ctrl_handle_line(struct app *app, char *line,
+		char *reply, size_t reply_size)
+{
+	struct telemetry *tm = &app->tm;
+	char word[32] = "";
+	double a = 0, b = 0, c = 0;
+	int n = 0;
+	int res = 0;
+
+	n = sscanf(line, "%31s %lf %lf %lf", word, &a, &b, &c);
+	if (n < 1)
+		return snprintf(reply, reply_size, "error empty\n");
+
+	if (strcmp(word, "ping") == 0) {
+		return snprintf(reply, reply_size, "ok %s\n",
+				app->cmd_itf != NULL ? "connected" : "idle");
+	} else if (strcmp(word, "battery") == 0 && n == 2) {
+		tm->battery = (uint8_t)a;
+		if (app->cmd_itf)
+			SEND(res, arsdk_cmd_send_Common_CommonState_BatteryStateChanged(
+				app->cmd_itf, &send_status, app, tm->battery));
+	} else if (strcmp(word, "rc_battery") == 0 && n == 2) {
+		tm->rc_battery = (uint8_t)a;
+		send_rc_state(app);
+	} else if (strcmp(word, "altitude") == 0 && n == 2) {
+		tm->altitude = a;
+		if (app->cmd_itf)
+			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AltitudeChanged(
+				app->cmd_itf, &send_status, app, tm->altitude));
+	} else if (strcmp(word, "attitude") == 0 && n == 4) {
+		tm->roll = (float)a; tm->pitch = (float)b; tm->yaw = (float)c;
+		if (app->cmd_itf)
+			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AttitudeChanged(
+				app->cmd_itf, &send_status, app,
+				tm->roll, tm->pitch, tm->yaw));
+	} else if (strcmp(word, "speed") == 0 && n == 4) {
+		tm->speed_x = (float)a; tm->speed_y = (float)b;
+		tm->speed_z = (float)c;
+		if (app->cmd_itf)
+			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_SpeedChanged(
+				app->cmd_itf, &send_status, app,
+				tm->speed_x, tm->speed_y, tm->speed_z));
+	} else if (strcmp(word, "airspeed") == 0 && n == 2) {
+		tm->airspeed = (float)a;
+		if (app->cmd_itf)
+			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AirSpeedChanged(
+				app->cmd_itf, &send_status, app, tm->airspeed));
+	} else if (strcmp(word, "gps") == 0 && n == 4) {
+		tm->latitude = a; tm->longitude = b; tm->gps_altitude = c;
+		tm->gps_fixed = 1;
+		if (tm->satellites == 0)
+			tm->satellites = 10;
+		send_telemetry(app);
+	} else if (strcmp(word, "gps_lost") == 0 && n == 1) {
+		tm->latitude = tm->longitude = tm->gps_altitude = 500.0;
+		tm->gps_fixed = 0;
+		tm->satellites = 0;
+		send_telemetry(app);
+	} else if (strcmp(word, "satellites") == 0 && n == 2) {
+		tm->satellites = (uint8_t)a;
+		if (app->cmd_itf)
+			SEND(res, arsdk_cmd_send_Ardrone3_GPSState_NumberOfSatelliteChanged(
+				app->cmd_itf, &send_status, app, tm->satellites));
+	} else if (strcmp(word, "flying_state") == 0) {
+		char state[32] = "";
+		static const struct { const char *name; int32_t value; } states[] = {
+			{ "landed", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDED },
+			{ "takingoff", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_TAKINGOFF },
+			{ "hovering", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_HOVERING },
+			{ "flying", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_FLYING },
+			{ "landing", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDING },
+			{ "emergency", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_EMERGENCY },
+		};
+		size_t i;
+		if (sscanf(line, "%*s %31s", state) != 1)
+			return snprintf(reply, reply_size, "error missing state\n");
+		for (i = 0; i < sizeof(states) / sizeof(states[0]); i++) {
+			if (strcmp(state, states[i].name) == 0)
+				break;
+		}
+		if (i == sizeof(states) / sizeof(states[0]))
+			return snprintf(reply, reply_size, "error unknown state\n");
+		tm->flying_state = states[i].value;
+		if (app->cmd_itf)
+			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_FlyingStateChanged(
+				app->cmd_itf, &send_status, app, tm->flying_state));
+	} else if (strcmp(word, "send_all") == 0) {
+		send_rc_state(app);
+		send_telemetry(app);
+	} else {
+		return snprintf(reply, reply_size, "error unknown command or arguments\n");
+	}
+	if (res < 0)
+		return snprintf(reply, reply_size, "error send %d\n", res);
+	return snprintf(reply, reply_size, "ok\n");
+}
+
+static void ctrl_client_close(struct app *app)
+{
+	if (app->ctrl.client_fd < 0)
+		return;
+	pomp_loop_remove(app->loop, app->ctrl.client_fd);
+	close(app->ctrl.client_fd);
+	app->ctrl.client_fd = -1;
+	app->ctrl.len = 0;
+}
+
+static void ctrl_client_cb(int fd, uint32_t revents, void *userdata)
+{
+	struct app *app = userdata;
+	char reply[128];
+	char *nl = NULL;
+	ssize_t r = read(fd, app->ctrl.buf + app->ctrl.len,
+			sizeof(app->ctrl.buf) - 1 - app->ctrl.len);
+	if (r <= 0) {
+		ctrl_client_close(app);
+		return;
+	}
+	app->ctrl.len += (size_t)r;
+	app->ctrl.buf[app->ctrl.len] = '\0';
+	while ((nl = strchr(app->ctrl.buf, '\n')) != NULL) {
+		int len;
+		*nl = '\0';
+		if (nl > app->ctrl.buf && nl[-1] == '\r')
+			nl[-1] = '\0';
+		LOGI("ctrl: %s", app->ctrl.buf);
+		len = ctrl_handle_line(app, app->ctrl.buf, reply, sizeof(reply));
+		if (len > 0 && write(fd, reply, (size_t)len) < 0)
+			LOG_FD_ERRNO("write", fd, errno);
+		app->ctrl.len -= (size_t)(nl + 1 - app->ctrl.buf);
+		memmove(app->ctrl.buf, nl + 1, app->ctrl.len + 1);
+	}
+	if (app->ctrl.len >= sizeof(app->ctrl.buf) - 1) {
+		LOGW("ctrl: line too long, dropping");
+		app->ctrl.len = 0;
+	}
+}
+
+static void ctrl_server_cb(int fd, uint32_t revents, void *userdata)
+{
+	struct app *app = userdata;
+	int res;
+	int client = accept(fd, NULL, NULL);
+	if (client < 0) {
+		LOG_FD_ERRNO("accept", fd, errno);
+		return;
+	}
+	/* one client at a time: a new one replaces the previous */
+	ctrl_client_close(app);
+	app->ctrl.client_fd = client;
+	res = pomp_loop_add(app->loop, client, POMP_FD_EVENT_IN,
+			&ctrl_client_cb, app);
+	if (res < 0)
+		LOG_ERRNO("pomp_loop_add", -res);
+}
+
+static void ctrl_server_create(struct app *app)
+{
+	int res = 0;
+	int opt = 1;
+	struct sockaddr_in addr;
+
+	app->ctrl.server_fd = socket(AF_INET,
+			SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+	if (app->ctrl.server_fd < 0) {
+		LOG_ERRNO("socket", errno);
+		return;
+	}
+	setsockopt(app->ctrl.server_fd, SOL_SOCKET, SO_REUSEADDR,
+			&opt, sizeof(opt));
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_port = htons(app->ctrl.port);
+	if (bind(app->ctrl.server_fd, (const struct sockaddr *)&addr,
+			sizeof(addr)) < 0
+			|| listen(app->ctrl.server_fd, 4) < 0) {
+		LOG_FD_ERRNO("bind/listen", app->ctrl.server_fd, errno);
+		close(app->ctrl.server_fd);
+		app->ctrl.server_fd = -1;
+		return;
+	}
+	res = pomp_loop_add(app->loop, app->ctrl.server_fd, POMP_FD_EVENT_IN,
+			&ctrl_server_cb, app);
+	if (res < 0)
+		LOG_ERRNO("pomp_loop_add", -res);
+	LOGI("control socket on 127.0.0.1:%u", app->ctrl.port);
+}
+
+static void ctrl_server_destroy(struct app *app)
+{
+	ctrl_client_close(app);
+	if (app->ctrl.server_fd >= 0) {
+		pomp_loop_remove(app->loop, app->ctrl.server_fd);
+		close(app->ctrl.server_fd);
+		app->ctrl.server_fd = -1;
+	}
+}
+
 /**
  */
 static void usage(const char *progname)
@@ -617,6 +916,7 @@ static void usage(const char *progname)
 		"  --no-publisher-net\n"
 		"  --mux\n"
 		"  --mux-port <port>  : TCP port of the mux listener (default 4321)\n"
+		"  --ctrl-port <port> : TCP port of the control socket on 127.0.0.1 (default 4322)\n"
 		"  --codec <codec>\n"
 		"  --replay-file <file>\n");
 }
@@ -664,6 +964,13 @@ int main(int argc, char *argv[])
 				return -1;
 			}
 			s_app.mux.port = (uint16_t)atoi(argv[++argidx]);
+		} else if (strcmp(argv[argidx], "--ctrl-port") == 0) {
+			if (argidx + 1 >= argc) {
+				fprintf(stderr, "Missing control port\n");
+				usage(argv[0]);
+				return -1;
+			}
+			s_app.ctrl.port = (uint16_t)atoi(argv[++argidx]);
 		} else if (strcmp(argv[argidx], "--publisher-net") == 0) {
 			s_app.backend_type = ARSDK_BACKEND_TYPE_NET;
 			s_app.use_publisher_net = 1;
@@ -682,6 +989,9 @@ int main(int argc, char *argv[])
 		goto out;
 	}
 
+	/* fake-sc2: control socket */
+	ctrl_server_create(&s_app);
+
 	/* Create backend */
 	if (s_app.backend_type == ARSDK_BACKEND_TYPE_MUX)
 		mux_server_create(&s_app);
@@ -698,6 +1008,7 @@ out:
 		mux_server_destroy(&s_app);
 
 	backend_destroy(&s_app);
+	ctrl_server_destroy(&s_app);
 
 	if (s_app.loop != NULL) {
 		res = pomp_loop_destroy(s_app.loop);
