@@ -163,7 +163,8 @@ side must open 4 and 5 itself to send on them.
   err=-71 (Protocol error)` logged at start without visible effect: to
   investigate if it matters later. Screenshot
   `docs/screenshots/t2.2-hud-video.png`.
-- [!] **T2.3 Headset view.** Blocked 2026-11-18: the demo's HMD view
+- [!] **T2.3 Headset view.** Blocked 2026-11-18 (still black after the
+  T3.4 video fixes, so a separate problem): the demo's HMD view
   (`HmdActivity` + `GsdkHmdView`) renders only black on the emulator, in
   portrait and landscape, with both GPU backends (SwiftShader GLES 3.0 and
   ANGLE/SwiftShader-Vulkan GLES 3.1, `EMU_GPU=swangle_indirect`). Facts:
@@ -221,26 +222,32 @@ consumes them and re-declares their Maven dependencies.
   "DISCO-FAKE01 (DISCO): CONNECTED". Screenshot
   `docs/screenshots/t3.3-app-connected.png`. To fix in T3.4: content draws
   under the status bar (edge-to-edge on target 35).
-- [ ] **T3.4 Flight screen with 2D HUD.** In progress. Done so far:
-  `FlightActivity` (landscape, full screen, immersive, screen on) with
-  `GsdkStreamView` and a text HUD (`FLYING`, `ALT 42.5 m`, `AIR 15.2 m/s`,
-  `GND 12.4 m/s`, `BAT 73 %`, `RC 58 %`, `GPS 10 sat`), formatting in
-  `HudFormat` with 5 JVM unit tests; "Flight view" button on the main
-  screen once a drone is connected; main screen no longer under the status
-  bar. Scenario `tests/scenarios/app-flight-hud.yaml`: HUD checks pass,
-  **video check fails** (black, or one frozen frame).
-  Facts: fake forwards RTP continuously after `VideoEnable=1`; app pipeline
-  links `StreamDemuxerMux` → `AvcDecoder` (c2.goldfish.h264) →
-  `Gles2Renderer`; the demo's HUD (`DroneHudActivity`) plays the same
-  stream in the same session conditions. Ruled out (each tested twice,
-  after the fake session fix): target SDK 28 vs 35, full-screen theme and
-  immersive flags, smaller stream view, debug vs release SDK AARs, legacy
-  JNI packaging, subscribing to the live stream once / play only when not
-  playing. Not a difference: decoder/renderer start order and the
-  `Codec2Buffer canCopy` log (both apps). Next: bisect from the demo's
-  `DroneHudActivity` copied into our app, moving step by step to ours.
-  Emulator setup now pre-confirms Android's immersive-mode notice
-  (`immersive_mode_confirmations`), which hid the screen from UIAutomator.
+- [x] **T3.4 Flight screen with 2D HUD.** `FlightActivity` (landscape,
+  full screen, immersive, screen on) with `GsdkStreamView` and a text HUD
+  (`FLYING`, `ALT 42.5 m`, `AIR 15.2 m/s`, `GND 12.4 m/s`, `BAT 73 %`,
+  `RC 58 %`, `GPS 10 sat`), formatting in `HudFormat` (5 JVM unit tests);
+  "Flight view" button once a drone is connected. The live stream is
+  opened once streaming is reported enabled, and only played when not
+  playing. Done: `tests/scenarios/app-flight-hud.yaml` passes 5/5
+  alternating with `demo-video.yaml` (video live, HUD values, then live
+  updates to `BAT 21 %`, `ALT 120.0 m`, `GPS no fix`, `LANDING`), and fails
+  with the camera stopped. Screenshot `docs/screenshots/t3.4-flight-view.png`.
+  The long hunt for "no video in our app" ended with two rig problems, not
+  app problems:
+  1. **Periodic IDR frames in the fake camera.** An IDR resets H.264
+     `frame_num`; Parrot's receiver flags that as missing frames
+     (`vstrm_rtp_h264_rx_check_missing_frames`, "TODO: handle reset to 0 for
+     IDR frame") and the decoder then hides frames: black or frozen video,
+     at random, in both apps. Fixed by x264 periodic intra refresh
+     (`docker/video-src`), like Parrot's drones.
+  2. **Test region missing the moving parts.** Our full-screen video put
+     the clock and noise patch outside the checked region; the pattern now
+     scrolls (`SPEED`, default 4 px/frame) so any region moves.
+  Experiments that did not matter (kept for the record): target SDK 28,
+  theme/immersive flags, view size, debug vs release AARs, legacy JNI
+  packaging, transitive R classes, orientation, launching the screen
+  directly. Bisection that located it: our stream code worked inside the
+  demo app, and the demo also failed intermittently with debug logs on.
 - [x] **T1.4d fake-sc2: new connection replaces the old session.** Found
   while testing T3.4: an app killed on the emulator leaves its mux session
   open until pings time out, and Parrot's example refused new connections

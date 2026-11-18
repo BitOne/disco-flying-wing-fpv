@@ -75,10 +75,15 @@ class FlightActivity : Activity() {
         // The StreamServer observer fires on every peripheral change: subscribe
         // to the live stream once, and only ask to play when not playing, so
         // the decoder isn't restarted (flushed) on each update.
+        // Open the live stream only once streaming is reported enabled:
+        // enabling it restarts the streams already open.
         var liveSubscribed = false
         drone.getPeripheral(StreamServer::class.java) { server ->
             server ?: return@getPeripheral
-            if (!server.streamingEnabled()) server.enableStreaming(true)
+            if (!server.streamingEnabled()) {
+                server.enableStreaming(true)
+                return@getPeripheral // wait for the update with streaming enabled
+            }
             if (liveSubscribed) return@getPeripheral
             liveSubscribed = true
             server.live { live ->
