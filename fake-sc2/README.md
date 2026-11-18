@@ -13,3 +13,14 @@ licence header. Built with Alchemy through the SDK's `olympe-linux` product:
     make fake-stop
 
 `host-libs/` declares system libraries the SDK's Linux product doesn't.
+
+`--disco` runs a bare Disco over Wi-Fi instead (ARSDK network backend on
+TCP 44444, ARStream2 video to the client's port), used to validate the
+fake against Parrot's FreeFlight Pro inside the emulator:
+
+    make fake-android                          # NDK build for the x86_64 emulator
+    make freeflight FREEFLIGHT_APK=<your copy> # fake in the emulator + mDNS + FreeFlight
+    make e2e SCENARIOS=tests/scenarios/freeflight-*.yaml E2E_CTRL_PORT=4422
+    make freeflight-stop
+
+`app/fakedisco` is the helper app announcing it over mDNS (Android NSD).

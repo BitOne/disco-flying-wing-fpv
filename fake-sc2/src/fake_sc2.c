@@ -126,7 +126,16 @@ struct app {
 		unsigned long     rtp_packets;
 		unsigned long     rtcp_packets;
 		unsigned long     dropped;
+		/* Disco mode: RTP/RTCP sent over UDP to the controller */
+		int               out_fd;
+		struct sockaddr_in client_stream;
+		struct sockaddr_in client_ctrl;
+		int               client_valid;
 	} video;
+
+	/* --disco: be a Disco reached directly over Wi-Fi (net backend),
+	 * instead of a SkyController 2 over mux */
+	int disco_mode;
 };
 
 /** */
@@ -164,6 +173,7 @@ static struct app s_app = {
 		.rtp_fd = -1,
 		.rtcp_fd = -1,
 		.port = 55004,
+		.out_fd = -1,
 	},
 	.tm = {
 		.battery = 100,
@@ -236,6 +246,11 @@ static void send_telemetry(struct app *app)
 		return;
 	SEND(res, arsdk_cmd_send_Common_CommonState_BatteryStateChanged(
 			app->cmd_itf, &send_status, app, tm->battery));
+	/* calibrated magnetometer: no "please calibrate" in FreeFlight */
+	SEND(res, arsdk_cmd_send_Common_CalibrationState_MagnetoCalibrationStateChanged(
+			app->cmd_itf, &send_status, app, 1, 1, 1, 0));
+	SEND(res, arsdk_cmd_send_Common_CalibrationState_MagnetoCalibrationRequiredState(
+			app->cmd_itf, &send_status, app, 0));
 	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_FlyingStateChanged(
 			app->cmd_itf, &send_status, app, tm->flying_state));
 	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AltitudeChanged(
@@ -362,6 +377,7 @@ static void disconnected(struct arsdk_peer *peer,
 	app->cmd_itf = NULL;
 	app->peer = NULL;
 	app->video.enabled = 0;
+	app->video.client_valid = 0;
 }
 
 /**
@@ -388,6 +404,19 @@ static void link_status(struct arsdk_peer *peer,
 		arsdk_peer_disconnect(peer);
 }
 
+/** fake-sc2: minimal integer lookup in a flat JSON object. */
+static uint16_t json_int(const char *json, const char *key, uint16_t def)
+{
+	char pattern[96];
+	const char *p;
+	snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+	p = strstr(json, pattern);
+	if (p == NULL)
+		return def;
+	p = strchr(p + strlen(pattern), ':');
+	return p != NULL ? (uint16_t)atoi(p + 1) : def;
+}
+
 /**
  */
 static void conn_req(struct arsdk_peer *peer,
@@ -401,10 +430,35 @@ static void conn_req(struct arsdk_peer *peer,
 	static const char json[] = "{"
 		"\"arstream_fragment_size\": 65000, "
 		"\"arstream_fragment_maximum_number\": 4, "
+		"\"arstream_max_ack_interval\": -1, "
+		"\"arstream2_server_stream_port\": 5004, "
+		"\"arstream2_server_control_port\": 5005, "
 		"\"c2d_update_port\": 51 ,"
 		"\"c2d_user_port\": 21"
 		"}";
-	LOGI("%s", __func__);
+	LOGI("%s: ctrl_name=%s ctrl_type=%s ctrl_addr=%s json=%s", __func__,
+			info->ctrl_name, info->ctrl_type, info->ctrl_addr,
+			info->json);
+
+	/* fake-sc2 Disco mode: the controller tells where it wants video */
+	if (app->disco_mode && info->ctrl_addr != NULL && info->json != NULL) {
+		uint16_t stream = json_int(info->json,
+				"arstream2_client_stream_port", 55004);
+		uint16_t ctrl = json_int(info->json,
+				"arstream2_client_control_port", 55005);
+		memset(&app->video.client_stream, 0, sizeof(struct sockaddr_in));
+		app->video.client_stream.sin_family = AF_INET;
+		app->video.client_stream.sin_port = htons(stream);
+		app->video.client_ctrl = app->video.client_stream;
+		app->video.client_ctrl.sin_port = htons(ctrl);
+		app->video.client_valid = inet_pton(AF_INET, info->ctrl_addr,
+				&app->video.client_stream.sin_addr) == 1;
+		app->video.client_ctrl.sin_addr =
+				app->video.client_stream.sin_addr;
+		LOGI("video: client %s stream %u control %u (%s)",
+				info->ctrl_addr, stream, ctrl,
+				app->video.client_valid ? "ok" : "invalid address");
+	}
 
 	/* Only one peer at a time */
 	if (app->peer != NULL) {
@@ -457,6 +511,11 @@ static void backend_create(struct app *app)
 		.type = ARSDK_DEVICE_TYPE_SKYCTRL_2,
 		.id = "PI040443FAKESC2",
 	};
+	if (app->disco_mode) {
+		publisher_cfg.name = FAKE_DRONE_NAME;
+		publisher_cfg.type = ARSDK_DEVICE_TYPE_EVINRUDE;
+		publisher_cfg.id = "PI040409FAKEDISCO";
+	}
 	struct arsdk_backend_listen_cbs listen_cbs = {
 		.userdata = app,
 		.conn_req = &conn_req,
@@ -654,6 +713,29 @@ static void video_udp_cb(int fd, uint32_t revents, void *userdata)
 	while ((len = recv(fd, data, sizeof(data), MSG_DONTWAIT)) > 0) {
 		struct pomp_buffer *buf;
 		int res;
+		if (app->disco_mode) {
+			const struct sockaddr_in *to = rtcp ?
+				&app->video.client_ctrl : &app->video.client_stream;
+			if (!app->video.client_valid || !app->video.enabled ||
+					app->cmd_itf == NULL || app->video.out_fd < 0) {
+				app->video.dropped++;
+				continue;
+			}
+			if (sendto(app->video.out_fd, data, (size_t)len, 0,
+					(const struct sockaddr *)to,
+					sizeof(*to)) < 0) {
+				app->video.dropped++;
+				continue;
+			}
+			if (rtcp)
+				app->video.rtcp_packets++;
+			else if (++app->video.rtp_packets % 3000 == 1)
+				LOGI("video: sent rtp=%lu rtcp=%lu dropped=%lu",
+						app->video.rtp_packets,
+						app->video.rtcp_packets,
+						app->video.dropped);
+			continue;
+		}
 		if (app->mux.ctx == NULL || !app->video.channels ||
 				!app->video.enabled || app->cmd_itf == NULL) {
 			app->video.dropped++;
@@ -691,7 +773,7 @@ static int video_udp_bind(struct app *app, uint16_t port)
 	}
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_addr.s_addr = htonl(app->disco_mode ? INADDR_ANY : INADDR_LOOPBACK);
 	addr.sin_port = htons(port);
 	if (bind(fd, (const struct sockaddr *)&addr, sizeof(addr)) < 0) {
 		LOG_FD_ERRNO("bind", fd, errno);
@@ -706,6 +788,12 @@ static int video_udp_bind(struct app *app, uint16_t port)
 
 static void video_udp_create(struct app *app)
 {
+	if (app->disco_mode) {
+		app->video.out_fd = socket(AF_INET,
+				SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+		if (app->video.out_fd < 0)
+			LOG_ERRNO("socket", errno);
+	}
 	app->video.rtp_fd = video_udp_bind(app, app->video.port);
 	app->video.rtcp_fd = video_udp_bind(app, (uint16_t)(app->video.port + 1));
 	LOGI("video: RTP on 127.0.0.1:%u, RTCP on %u", app->video.port,
@@ -716,6 +804,10 @@ static void video_udp_destroy(struct app *app)
 {
 	int *fds[] = { &app->video.rtp_fd, &app->video.rtcp_fd };
 	size_t i;
+	if (app->video.out_fd >= 0) {
+		close(app->video.out_fd);
+		app->video.out_fd = -1;
+	}
 	for (i = 0; i < 2; i++) {
 		if (*fds[i] < 0)
 			continue;
@@ -1071,6 +1163,8 @@ static void usage(const char *progname)
 		"  --no-publisher-net\n"
 		"  --mux\n"
 		"  --mux-port <port>  : TCP port of the mux listener (default 4321)\n"
+		"  --disco            : be a Disco over Wi-Fi (net backend, TCP 44444)\n"
+		"                       instead of a SkyController 2 over mux\n"
 		"  --ctrl-port <port> : TCP port of the control socket on 127.0.0.1 (default 4322)\n"
 		"  --video-port <port>: UDP port receiving RTP on 127.0.0.1, RTCP on port+1 (default 55004)\n"
 		"  --codec <codec>\n"
@@ -1113,6 +1207,11 @@ int main(int argc, char *argv[])
 			s_app.use_publisher_avahi = 0;
 		} else if (strcmp(argv[argidx], "--mux") == 0) {
 			s_app.backend_type = ARSDK_BACKEND_TYPE_MUX;
+		} else if (strcmp(argv[argidx], "--disco") == 0) {
+			s_app.disco_mode = 1;
+			s_app.backend_type = ARSDK_BACKEND_TYPE_NET;
+			s_app.use_publisher_avahi = 0;
+			s_app.use_publisher_net = 0;
 		} else if (strcmp(argv[argidx], "--mux-port") == 0) {
 			if (argidx + 1 >= argc) {
 				fprintf(stderr, "Missing mux port\n");

@@ -1,0 +1,31 @@
+name: FreeFlight Pro connects to the fake Disco over Wi-Fi with live video
+description: >
+  Validates the fakes against Parrot's own app (TASKS.md M1b). Needs
+  `make emu` then `make freeflight FREEFLIGHT_APK=...` (fake Disco inside
+  the emulator, control socket forwarded to 4422), with FreeFlight's
+  conditions of use already accepted. Run with
+  `make e2e SCENARIOS=tests/scenarios/freeflight-*.yaml E2E_CTRL_PORT=4422`.
+app:
+  package: com.parrot.freeflight3
+  activity: com.parrot.freeflight.start.StartActivity
+steps:
+  - send: [battery 100, altitude 0, flying_state landed]
+  - restart_app
+  - expect_texts: [Disco, FLY & FILM]
+    timeout: 30000
+  - expect_video:
+      region: [0.4, 0.35, 0.95, 0.75]
+      min_contrast: 30
+      min_change: 0.002
+    timeout: 30000
+  - screenshot: freeflight-home
+  - send: [battery 62, altitude 87.5, speed 14 2 -1, flying_state flying]
+  - tap_text: FLY & FILM
+  - expect_texts: ["14.2", "62 %", "A remote controller is required"] # altitude is drawn, no text node
+    timeout: 20000
+  - expect_video:
+      region: [0.2, 0.2, 0.8, 0.6]
+      min_contrast: 30
+      min_change: 0.002
+    timeout: 30000
+  - screenshot: freeflight-flight

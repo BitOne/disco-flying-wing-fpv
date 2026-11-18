@@ -5,6 +5,9 @@
 
 LOCAL_PATH := $(call my-dir)
 
+# Only for the native Linux build: the Android product declares zlib itself.
+ifeq ("$(TARGET_OS_FLAVOUR)","native")
+
 include $(CLEAR_VARS)
 LOCAL_MODULE := zlib
 LOCAL_EXPORT_LDLIBS := -lz
@@ -16,3 +19,5 @@ include $(BUILD_PREBUILT)
 include $(CLEAR_VARS)
 LOCAL_MODULE := python
 include $(BUILD_PREBUILT)
+
+endif

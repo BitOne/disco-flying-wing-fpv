@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "disco-fpv"
 include(":app")
+include(":fakedisco")

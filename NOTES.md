@@ -707,6 +707,13 @@ explicitly in the chat (no terminal access at the time); the marker
 (new md5), the build will ask again: re-confirm with the user, or they run
 `make sdk-eula`.
 
+**FreeFlight Pro conditions of use (2026-11-18):** the user accepted
+Parrot's "Conditions of use of the Parrot FreeFlight Pro application" in
+the chat, to use the community FreeFlight Pro 5.2.7 build in the test
+emulator for validating the fakes; "Accept" was tapped on their behalf.
+A fresh emulator needs it tapped again (the FreeFlight scenario assumes it
+was).
+
 ## 17. Fakes available in the SDK (2026-11-18)
 
 - **No protocol-level fake SkyController in the fork.** What exists:
@@ -747,6 +754,32 @@ explicitly in the chat (no terminal access at the time); the marker
   connection replaces the old session).
 - **Targeting Android 15 with the 2020 SDK** needed only
   `android:exported` on the SDK's `RcAccessoryBootstrapActivity`.
+
+## 19. FreeFlight Pro against the fakes (2026-11-18)
+
+- FreeFlight Pro 5.2.7 (ARSDK3) runs on the Android 15 x86_64 emulator via
+  ARM translation. It talks to a SkyController 2 only through
+  `UsbManager.openAccessory`, so only the Wi-Fi Disco path is testable.
+- Discovery: NSD/mDNS `_arsdk-090e._udp`; the TXT record must be the raw
+  string `{"device_id":"<serial>"}` (Android NSD: an attribute with that
+  name and no value), else FreeFlight crashes in
+  `UserProduct.extractUidFromTxtRecord`.
+- Handshake (TCP 44444): FreeFlight sends its JSON with
+  `arstream2_client_stream_port` / `arstream2_client_control_port`; the
+  fake answers with `status`, `c2d_port`, `arstream_max_ack_interval -1`,
+  `arstream2_server_stream_port 5004`, `arstream2_server_control_port
+  5005`, and sends RTP to the client's stream port.
+- The emulator's user-mode network can't deliver guest UDP to arbitrary
+  host ports reliably, so the fake Disco runs inside the emulator (NDK
+  build) and the host's fake camera reaches it through `adb emu redir`.
+  `adb shell` with an inline background job never returns: start it from a
+  script on the device.
+- Needed for a clean HUD: `MagnetoCalibrationStateChanged(1,1,1,0)` and
+  `MagnetoCalibrationRequiredState(0)`.
+- Only one controller at a time: other GroundSdk apps on the emulator auto
+  connect to the in-emulator Disco over Wi-Fi, so they are force-stopped.
+- FPV mode (Cockpitglasses 1/2, manual/auto) is in Interface settings; on a
+  Disco it is toggled from the SkyController, so it can't be shown here.
 
 ## Sources
 

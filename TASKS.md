@@ -135,6 +135,50 @@ Note: both images accept the Android SDK licences non-interactively
 
 M1 done (2026-11-18).
 
+## M1b. Validate the fakes against FreeFlight Pro (user request, 2026-11-18)
+
+FreeFlight Pro 5.2.7 (community "Legacy Edition", static-checked, run only
+in the disposable emulator) starts on the Android 15 x86_64 emulator
+through ARM translation. The user accepted its conditions of use
+(`NOTES.md` section 16). FreeFlight reaches a SkyController 2 only through
+a real USB accessory (`UsbManager.openAccessory`), which the emulator
+can't provide, so it validates the **fake Disco over Wi-Fi** only. Its
+Wi-Fi discovery is mDNS `_arsdk-090e._udp` with a raw TXT
+`{"device_id":...}` (it crashes without it), then the ARSDK
+handshake on the resolved address and port. The emulator can't forward
+guest UDP to the host, so the fake Disco runs inside the emulator.
+
+- [x] **T1.7 fake-sc2 for Android.** Build the `fake-sc2` module for
+  x86_64 Android with the SDK's `groundsdk-android` product
+  (`make fake-android`); `host-libs` only for the native Linux build.
+  Done: binary and libraries run from `adb shell` in the emulator.
+- [x] **T1.8 Disco mode.** `--disco`: network backend on TCP 44444,
+  Disco identity (`EVINRUDE`, "DISCO-FAKE01"), Wi-Fi handshake JSON with
+  ARStream2 server ports, video sent as RTP to the client's stream port
+  from its handshake; input port bindable on all interfaces.
+- [x] **T1.9 mDNS helper.** Debug helper app (Kotlin) registering
+  `_arsdk-090e._udp` "DISCO-FAKE01" port 44444 through Android NSD.
+- [x] **T1.10 FreeFlight run.** `make emu`, then
+  `make freeflight FREEFLIGHT_APK=<your copy>` (builds T1.7/T1.9, starts
+  the fake camera on host UDP 56004/56005 redirected into the emulator,
+  the fake Disco, the mDNS announce, installs and launches FreeFlight),
+  then `make e2e SCENARIOS=tests/scenarios/freeflight-*.yaml
+  E2E_CTRL_PORT=4422`, `make freeflight-stop` afterwards. Terms must be
+  accepted once by hand in a fresh emulator. Result: FreeFlight lists
+  "Disco" (battery from the fake), shows the live test pattern on the home
+  tile and full screen, and its HUD follows the fake's telemetry (speed,
+  altitude, battery, GPS, flying state). One fix needed: magnetometer
+  calibration states (otherwise "Please calibrate your drone"). Expected
+  gap: "A remote controller is required to pilot the drone" (Wi-Fi only,
+  no SkyController). Altitude is drawn without a UI text node, so the
+  scenario checks speed and battery. Screenshots:
+  `docs/screenshots/m1b-freeflight-*.png`.
+
+M1b done (2026-11-18): the fake Disco's protocol (discovery, handshake,
+connection states, telemetry, ARStream2 video) satisfies Parrot's own app.
+The SkyController 2 path of the fake is still validated only by GroundSdk
+(our app and the SDK demo), since FreeFlight needs real USB.
+
 ## M2. Video
 
 How the app receives video through a SkyController 2 (pdraw

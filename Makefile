@@ -272,6 +272,7 @@ NODE_RUN   = docker run --rm -u $(UID):$(GID) -e npm_config_cache=/tmp/npm \
 # Default: our app's scenarios. The demo-*.yaml ones need the SDK demo APK
 # (make sdk-demo-e2e demo-run): SCENARIOS="tests/scenarios/demo-*.yaml".
 SCENARIOS  ?= tests/scenarios/app-*.yaml
+E2E_CTRL_PORT ?= 4322
 
 tests/e2e/node_modules: tests/e2e/package.json tests/e2e/package-lock.json
 	$(NODE_RUN) npm ci --ignore-scripts --no-audit --no-fund
@@ -288,7 +289,43 @@ e2e-unit: e2e-deps ## Type-check and unit-test the e2e runner (in Docker)
 e2e: e2e-unit ## Run end-to-end scenarios (SCENARIOS) against emulator + fake; out/latest
 	@mkdir -p $(RUN_DIR)
 	@ln -sfn $(RUN_ID) $(OUT)/latest
-	node tests/e2e/src/run.ts --out $(RUN_DIR) --ctrl-port 4322 $(SCENARIOS)
+	node tests/e2e/src/run.ts --out $(RUN_DIR) --ctrl-port $(E2E_CTRL_PORT) $(SCENARIOS)
+
+# FreeFlight Pro validation (TASKS.md M1b): the fake Disco built for Android
+# runs inside the emulator in Wi-Fi mode (--disco), announced over mDNS by a
+# helper app, with the fake camera on the host. FreeFlight itself is not
+# redistributed: FREEFLIGHT_APK points at your own copy.
+SDK_NDK        := /opt/android-sdk/ndk/21.4.7075529
+FREEFLIGHT_APK ?=
+
+.PHONY: fake-android
+fake-android: ## Build fake-sc2 for the x86_64 emulator (Android NDK)
+	@mkdir -p $(OUT)
+	docker run --rm -e ALCHEMY_TARGET_SCAN_ADD_DIRS=/work/fake-sc2 \
+		$(SDK_VOLUMES) -w /work/sdk $(SDK_IMAGE) \
+		./build.sh -p groundsdk-android --no-color -j --abis x86_64 \
+		-A USE_CONFIG_CHECK=0 fake-sc2 2>&1 \
+		| tee $(OUT)/fake-android.log; exit $${PIPESTATUS[0]}
+	$(SDK_RUN) cp $(SDK_NDK)/sources/cxx-stl/llvm-libc++/libs/x86_64/libc++_shared.so /work/out/
+
+.PHONY: freeflight-helper
+freeflight-helper: app-image ## Build the mDNS helper app (out/fakedisco-debug.apk)
+	@mkdir -p $(OUT)
+	$(APP_RUN) gradle --no-daemon --console=plain :fakedisco:assembleDebug 2>&1 \
+		| tee $(OUT)/fakedisco-build.log; exit $${PIPESTATUS[0]}
+	cp app/fakedisco/build/outputs/apk/debug/fakedisco-debug.apk $(OUT)/
+
+.PHONY: freeflight
+freeflight: fake-android freeflight-helper ## Run FreeFlight against the fake Disco (FREEFLIGHT_APK=...); needs make emu
+	$(MAKE) --no-print-directory video VIDEO_ENV="-e RTP_PORT=56004 -e RTCP_PORT=56005"
+	scripts/freeflight-setup.sh $(EMU_NAME) $(OUT) $(FREEFLIGHT_APK)
+
+.PHONY: freeflight-stop
+freeflight-stop: ## Stop FreeFlight, the in-emulator fake Disco and its mDNS announce
+	-$(ADB) shell am force-stop com.parrot.freeflight3
+	-$(ADB) shell am force-stop io.github.bitone.discofpv.fakedisco
+	-$(ADB) shell pkill fake-sc2
+	-$(ADB) shell cat /data/local/tmp/fake.log > $(OUT)/fake-disco-android.log
 
 .PHONY: check
 check: app unit fake video emu app-install e2e ## Full verification; exit code is the verdict
