@@ -1,0 +1,16 @@
+// Gradle init script: point the SDK's debug USB bridge (mux over TCP) of the
+// demo app at the fake controller, without editing SDK sources.
+// App resources override library resources, so these resValues take
+// precedence over sdkcore's arsdk_debug_usb_bridge_address/port defaults.
+// Properties: -PdebugBridgeAddress=10.0.2.2 -PdebugBridgePort=4321
+allprojects {
+    afterEvaluate { p ->
+        if (p.name == 'groundsdkdemo' && p.hasProperty('android')) {
+            def address = p.findProperty('debugBridgeAddress') ?: '10.0.2.2'
+            def port = p.findProperty('debugBridgePort') ?: '4321'
+            p.android.defaultConfig.resValue 'string', 'arsdk_debug_usb_bridge_address', address
+            p.android.defaultConfig.resValue 'integer', 'arsdk_debug_usb_bridge_port', port
+            println "debug-bridge: ${p.name} -> ${address}:${port}"
+        }
+    }
+}

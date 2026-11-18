@@ -59,8 +59,10 @@ ENV PATH=${JAVA_HOME}/bin:${ANDROID_NDK_PATH}:${ANDROID_HOME}/platform-tools:${A
 
 # less: Parrot's build tool pages the Ground SDK EULA with it (make sdk-eula).
 # cmake, autotools, nasm/yasm: Alchemy native builds (liblz4, ffmpeg, ...).
+# zlib1g-dev: host (Linux) builds of the fake controller (libpuf).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         less cmake autoconf automake libtool nasm yasm bison flex gettext \
+        zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user matching the host user, so files in the mounted workspace keep

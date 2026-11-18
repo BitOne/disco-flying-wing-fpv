@@ -104,9 +104,32 @@ app: ## Build the app debug APK
 unit: ## Run JVM unit tests
 	$(call not_implemented,M3)
 
+# Fake controller: built for Linux x86_64 with the SDK's olympe-linux product.
+# Our own modules (fake-sc2/) are added to the Alchemy scan, and SDK packages
+# the fake doesn't need (video, ffmpeg, python, Android) are pruned, so no
+# SDK file is modified.
+FAKE_PRUNE := $(addprefix /work/sdk/packages/, pdraw olympe groundsdk-android \
+	common/ffmpeg common/eigen common/python-native common/olympe-deps \
+	common/ctypeslib common/libmp4 common/libh264 common/libvideo-buffers \
+	common/libvideo-decode common/libvideo-metadata common/libvideo-streaming \
+	common/libmediacodec-wrapper common/librtsp common/libsdp common/librtp \
+	common/libARMavlink common/mavlink common/lz4 \
+	common/logger)
+FAKE_MODULES ?= arsdk-ng-device arsdk-ng-controller
+
+.PHONY: fake-build
+fake-build: ## Build the fake controller (and Parrot's C examples) for Linux x86_64
+	@mkdir -p $(OUT)
+	docker run --rm \
+		-e ALCHEMY_TARGET_SCAN_ADD_DIRS=/work/fake-sc2 \
+		-e ALCHEMY_TARGET_SCAN_PRUNE_DIRS="$(FAKE_PRUNE)" \
+		$(SDK_VOLUMES) -w /work/sdk $(SDK_IMAGE) \
+		./build.sh -p olympe-linux --no-color -j -A USE_CONFIG_CHECK=0 $(FAKE_MODULES) 2>&1 \
+		| tee $(OUT)/fake-build.log; exit $${PIPESTATUS[0]}
+
 .PHONY: fake
 fake: ## Build and start the fake SkyController 2 + Disco
-	$(call not_implemented,M1)
+	$(call not_implemented,T1.3)
 
 EMU_IMAGE := disco-fpv/emulator:1
 EMU_NAME  := disco-fpv-emu

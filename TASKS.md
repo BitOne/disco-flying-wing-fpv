@@ -57,17 +57,25 @@ Note: both images accept the Android SDK licences non-interactively
 
 ## M1. Fake controller connects
 
-- [ ] **T1.1 Build the C example drone for the PC.** Build Alchemy module
-  `arsdk-ng-device` (and `arsdk-ng-controller` for debugging) for Linux
-  x86_64, probably via the `olympe-linux` product, in the SDK container.
-  `make fake-build`. Done: `arsdk-ng-device --help` runs on the host or in
-  the container.
-- [ ] **T1.2 Demo app reaches the unmodified example.** Run the example
-  with its mux/TCP listener on port 13579; rebuild the demo with
-  `arsdk_debug_usb_bridge_address=10.0.2.2` (resource overlay, not an SDK
-  edit). Done: logcat shows the mux connection and handshake from the demo;
-  whatever device the example announces (Bebop 2 by default) appears or
-  the failure is understood and noted.
+- [x] **T1.1 Build the C example drone for the PC.** `make fake-build`
+  builds Alchemy modules `arsdk-ng-device` and `arsdk-ng-controller` with the
+  SDK's `olympe-linux` product, without touching `sdk/`: our
+  `fake-sc2/host-libs/atom.mk` declares system `zlib` and an empty `python`
+  module (added through `ALCHEMY_TARGET_SCAN_ADD_DIRS`), unneeded SDK
+  packages are excluded (`ALCHEMY_TARGET_SCAN_PRUNE_DIRS`), and
+  `USE_CONFIG_CHECK=0` skips the saved-config check. Image gained
+  `zlib1g-dev`. Binaries in `sdk/out/olympe-linux/staging/usr/bin/`.
+- [x] **T1.2 Demo app reaches the unmodified example.** Gradle init script
+  `scripts/gradle/debug-bridge.init.gradle` sets the demo's
+  `arsdk_debug_usb_bridge_address`/`_port` (default `10.0.2.2:4321`; the
+  example's mux port is hard-coded to 4321). Example run with
+  `--mux --no-publisher-avahi --no-publisher-net` in a host-network
+  container. Result: the app logs "Connected to debug bridge, starting MUX
+  backend and discovery", and both sides open mux channels 2 and 3. No
+  device appears: mux discovery (`libarsdkctrl/src/mux/arsdk_discovery_mux.c`,
+  `is_devtype_supported`) drops types outside the app's USB list, and the
+  example announces `ARSDK_DEVICE_TYPE_BEBOP_2`. Fixed by T1.3/T1.4.
+  Also: `device.c` parses `--replay-file` but never uses it.
 - [ ] **T1.3 `fake-sc2` source in our repo.** Copy `device.c` into
   `fake-sc2/` with its licence header, build it with Alchemy as our own
   module (no edits inside `sdk/`). Done: same behaviour as T1.2 from our
