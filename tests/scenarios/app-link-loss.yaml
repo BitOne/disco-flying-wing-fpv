@@ -9,6 +9,7 @@ app:
   package: io.github.bitone.discofpv
   activity: .MainActivity
 steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml # HUD mode back to CLASSIC
   - send: [drone_link ok, battery 64, altitude 33.3, airspeed 15.2, flying_state flying, gps 45.1885 5.7245 300]
   - restart_app
   - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]

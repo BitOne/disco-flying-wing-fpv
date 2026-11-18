@@ -1,0 +1,48 @@
+name: Disco FPV HUD modes cycle with the SkyController button
+description: >
+  Needs `make fake`, `make video` and `make emu`. The Disco circles (fake
+  flight simulation) 80 m around home. In the flight view the app grabs the
+  controller's SETTINGS button; each press moves to the next HUD mode:
+  classic text, minimal (battery and home arrow), fighter (horizon and
+  tapes). The drawn modes describe what they show (content description).
+  The mode is kept across restarts, also applies to the headset view (same
+  picture in both eyes), and the button is given back to the controller
+  when leaving the drone screens.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml # HUD mode back to CLASSIC
+  - send: [drone_link ok, battery 64, home 45.1885 5.7245 300, gps 45.1890 5.7250 350, satellites 12, circle]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flight view
+  - expect_fake: grabbed=0x1
+  - expect_texts: [CIRCLING, ALT 50.0 m, BAT 64 %]
+  - send: [button settings]
+  - expect_texts: ["HUD MINIMAL, BAT 64 %, HOME 8"]
+  - screenshot: minimal
+  - send: [button settings]
+  - expect_texts: ["HUD FIGHTER, SPD 12, ALT 50, BAT 64 %"]
+  - expect_image: { region: [0.25, 0.3, 0.75, 0.7], min_contrast: 30 }
+  - screenshot: fighter
+  - tap: [0.5, 0.5] # on the phone, a tap cycles too
+  - expect_texts: [CIRCLING, ALT 50.0 m]
+  - send: [button settings]
+  - expect_texts: ["HUD MINIMAL"]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flight view
+  - expect_texts: ["HUD MINIMAL"] # kept across restarts
+  - send: [button settings]
+  - back
+  - expect_fake: grabbed=0x0 # button given back on the main screen
+  - tap_text: Headset view
+  - expect_fake: grabbed=0x1
+  - expect_video: { region: [0.12, 0.3, 0.45, 0.65], min_contrast: 30 }
+    timeout: 30000
+  - expect_stereo: { region: [0.10, 0.17, 0.47, 0.82], max_diff: 8, min_contrast: 30 }
+  - screenshot: headset-fighter
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml

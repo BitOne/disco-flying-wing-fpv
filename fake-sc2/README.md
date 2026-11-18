@@ -35,3 +35,8 @@ Faults for robustness tests (SkyController mode): `drone_link lost|ok`
 (the Disco leaves or comes back in the controller's range) and
 `unplug <seconds>` (the phone's session is closed and refused for a while,
 like pulling the USB cable).
+
+Controller buttons: the app grabs buttons through the Mapper feature;
+`button <name>` (settings, rth, takeoff, b, a, rear_left, rear_right)
+presses and releases a grabbed one. `circle` puts the Disco straight into
+its circle around home, with heading, bank and position moving.

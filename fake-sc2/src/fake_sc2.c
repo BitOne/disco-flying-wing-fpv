@@ -35,6 +35,7 @@
 #include <arpa/inet.h>
 #include <stdint.h>
 #include <time.h>
+#include <math.h>
 
 #include <libpomp.h>
 #include <libmux.h>
@@ -152,7 +153,14 @@ struct app {
 		unsigned          state_ms;  /* time in the current flying state */
 		int               home;      /* return home in progress */
 		unsigned long     pcmd;      /* PCMD commands received */
+		double            circle;    /* angle on the circle, rad */
+		double            center_lat, center_lon; /* 500 = unset */
 	} flight;
+
+	/* fake-sc2: controller buttons grabbed by the app (Mapper feature) */
+	uint32_t grabbed_buttons;
+	struct pomp_timer *button_timer; /* release of the pressed button */
+	uint32_t pressed_button;
 };
 
 /** */
@@ -202,6 +210,10 @@ static struct app s_app = {
 		.home_longitude = 500.0,
 		.home_altitude = 500.0,
 		.flying_state = ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDED,
+	},
+	.flight = {
+		.center_lat = 500.0,
+		.center_lon = 500.0,
 	},
 };
 
@@ -273,6 +285,20 @@ static void send_drone_link(struct app *app)
 			FAKE_DRONE_NAME, FAKE_DRONE_PRODUCT));
 }
 
+/* Release of a "button" press, sent a moment after the press like a real
+ * one: back to back, the release could replace the press in the
+ * controller's non-acknowledged queue. */
+static void button_release_cb(struct pomp_timer *timer, void *userdata)
+{
+	int res = 0;
+	struct app *app = userdata;
+	if (app->cmd_itf == NULL)
+		return;
+	SEND(res, arsdk_cmd_send_Mapper_Grab_button_event(app->cmd_itf,
+			&send_status, app, app->pressed_button,
+			ARSDK_MAPPER_BUTTON_EVENT_RELEASE));
+}
+
 static uint64_t now_ms(void)
 {
 	struct timespec ts;
@@ -338,6 +364,11 @@ static void send_telemetry(struct app *app)
 #define FLIGHT_AIRSPEED      12.0 /* m/s */
 #define FLIGHT_EMERGENCY_MS  1000
 #define FLIGHT_HOME_MS       5000
+#define FLIGHT_CIRCLE_RADIUS 80.0 /* m */
+#define FLIGHT_CLIMB_PITCH   0.25 /* rad, nose up while climbing */
+#define FLIGHT_DESCENT_PITCH -0.10
+#define EARTH_M_PER_DEG      111320.0
+#define GRAVITY              9.81
 
 #define FS(_s) ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_##_s
 
@@ -413,6 +444,76 @@ static void flight_set_motion(struct app *app, double altitude, float airspeed)
 	}
 }
 
+/** Sends attitude, speed and position from the telemetry. */
+static void flight_send_motion(struct app *app)
+{
+	int res = 0;
+	struct telemetry *tm = &app->tm;
+	if (app->cmd_itf == NULL)
+		return;
+	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AttitudeChanged(
+			app->cmd_itf, &send_status, app, tm->roll, tm->pitch, tm->yaw));
+	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_SpeedChanged(
+			app->cmd_itf, &send_status, app,
+			tm->speed_x, tm->speed_y, tm->speed_z));
+	if (tm->gps_fixed)
+		SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_PositionChanged(
+				app->cmd_itf, &send_status, app,
+				tm->latitude, tm->longitude, tm->gps_altitude));
+}
+
+/**
+ * Circling (the Disco's "hovering"), clockwise seen from above, around the
+ * home position (or where the circle started without one): heading turns,
+ * banked into the turn, position moves along the circle when the GPS has a
+ * fix.
+ */
+static void flight_circle(struct app *app, double dt)
+{
+	struct telemetry *tm = &app->tm;
+	const double v = FLIGHT_AIRSPEED, r = FLIGHT_CIRCLE_RADIUS;
+	double yaw;
+
+	if (app->flight.center_lat == 500.0) {
+		if (tm->home_latitude != 500.0) {
+			app->flight.center_lat = tm->home_latitude;
+			app->flight.center_lon = tm->home_longitude;
+		} else if (tm->gps_fixed) {
+			app->flight.center_lat = tm->latitude;
+			app->flight.center_lon = tm->longitude;
+		}
+	}
+	app->flight.circle = fmod(app->flight.circle + v / r * dt, 2 * M_PI);
+	/* north r.cos(a), east r.sin(a): heading a + 90 deg */
+	yaw = app->flight.circle + M_PI / 2;
+	if (yaw > M_PI)
+		yaw -= 2 * M_PI;
+	tm->yaw = (float)yaw;
+	tm->roll = (float)atan(v * v / (GRAVITY * r));
+	tm->pitch = 0;
+	tm->speed_x = (float)(-v * sin(app->flight.circle));
+	tm->speed_y = (float)(v * cos(app->flight.circle));
+	tm->speed_z = 0;
+	if (tm->gps_fixed && app->flight.center_lat != 500.0) {
+		tm->latitude = app->flight.center_lat
+			+ r * cos(app->flight.circle) / EARTH_M_PER_DEG;
+		tm->longitude = app->flight.center_lon
+			+ r * sin(app->flight.circle) / (EARTH_M_PER_DEG
+				* cos(app->flight.center_lat * M_PI / 180));
+	}
+	flight_send_motion(app);
+}
+
+/** Wings level, given pitch, no turn (climb, descent, ground). */
+static void flight_straight(struct app *app, float pitch, float vz)
+{
+	struct telemetry *tm = &app->tm;
+	tm->roll = 0;
+	tm->pitch = pitch;
+	tm->speed_z = vz;
+	flight_send_motion(app);
+}
+
 static void flight_stop_home(struct app *app, int32_t reason)
 {
 	if (!app->flight.home)
@@ -447,8 +548,12 @@ static void flight_tick(struct pomp_timer *timer, void *userdata)
 		if (app->flight.state_ms >= FLIGHT_THROW_MS)
 			flight_throw(app);
 		break;
+	case FS(HOVERING):
+		flight_circle(app, dt);
+		break;
 	case FS(TAKINGOFF): {
 		double alt = tm->altitude + FLIGHT_CLIMB * dt;
+		flight_straight(app, FLIGHT_CLIMB_PITCH, -FLIGHT_CLIMB);
 		if (alt >= FLIGHT_CIRCLE_ALT) {
 			flight_set_motion(app, FLIGHT_CIRCLE_ALT, FLIGHT_AIRSPEED);
 			flight_set_state(app, FS(HOVERING));
@@ -458,6 +563,7 @@ static void flight_tick(struct pomp_timer *timer, void *userdata)
 		break;
 	}
 	case FS(FLYING):
+		flight_circle(app, dt);
 		if (app->flight.home && app->flight.state_ms >= FLIGHT_HOME_MS) {
 			flight_stop_home(app,
 				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_FINISHED);
@@ -466,8 +572,10 @@ static void flight_tick(struct pomp_timer *timer, void *userdata)
 		break;
 	case FS(LANDING): {
 		double alt = tm->altitude - FLIGHT_DESCENT * dt;
+		flight_straight(app, FLIGHT_DESCENT_PITCH, FLIGHT_DESCENT);
 		if (alt <= 0) {
 			flight_set_motion(app, 0, 0);
+			flight_straight(app, 0, 0);
 			flight_set_state(app, FS(LANDED));
 			app->flight.active = 0;
 		} else {
@@ -624,6 +732,17 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 				ARSDK_ARDRONE3_MEDIASTREAMINGSTATE_VIDEOENABLECHANGED_ENABLED_DISABLED));
 		break;
 	}
+	/* Controller buttons: the app grabs some to receive their events */
+	case ARSDK_ID_MAPPER_GRAB: {
+		uint32_t buttons = 0, axes = 0;
+		if (arsdk_cmd_dec_Mapper_Grab(cmd, &buttons, &axes) < 0)
+			break;
+		app->grabbed_buttons = buttons;
+		LOGI("mapper: grabbed buttons 0x%x axes 0x%x", buttons, axes);
+		SEND(res, arsdk_cmd_send_Mapper_Grab_state(app->cmd_itf,
+				&send_status, app, buttons, axes, 0));
+		break;
+	}
 	case ARSDK_ID_COMMON_COMMON_ALLSTATES:
 		send_telemetry(app);
 		SEND(res, arsdk_cmd_send_Common_CommonState_AllStatesChanged(
@@ -668,6 +787,7 @@ static void disconnected(struct arsdk_peer *peer,
 	app->cmd_itf = NULL;
 	app->peer = NULL;
 	app->video.enabled = 0;
+	app->grabbed_buttons = 0;
 	app->video.client_valid = 0;
 }
 
@@ -1257,6 +1377,11 @@ static void sig_handler(int signum)
  *                 usertakeoff|motor_ramping|emergency_landing>
  *   send_all                     resend all telemetry
  *   throw                        hand launch after TakeOff / UserTakeOff
+ *   circle                       straight to circling at the circle altitude
+ *                                with the flight simulation running (demos)
+ *   button <name>                press and release a controller button the
+ *                                app grabbed (settings, rth, takeoff, b, a,
+ *                                rear_left, rear_right); error if not grabbed
  *   state                        "ok <flying state> alt=<m> home=<0|1> pcmd=<n>"
  *   drone_link <lost|ok>         Disco out of / back in the controller's
  *                                range (mux mode): drone disconnected for
@@ -1292,9 +1417,11 @@ static int ctrl_handle_line(struct app *app, char *line,
 		tm->rc_battery = (uint8_t)a;
 		send_rc_state(app);
 	} else if (strcmp(word, "state") == 0 && n == 1) {
-		return snprintf(reply, reply_size, "ok %s alt=%.1f home=%d pcmd=%lu\n",
+		return snprintf(reply, reply_size,
+				"ok %s alt=%.1f home=%d pcmd=%lu grabbed=0x%x\n",
 				flying_state_name(tm->flying_state), tm->altitude,
-				app->flight.home, app->flight.pcmd);
+				app->flight.home, app->flight.pcmd,
+				app->grabbed_buttons);
 	} else if (strcmp(word, "drone_link") == 0) {
 		char what[16] = "";
 		if (app->backend_type != ARSDK_BACKEND_TYPE_MUX)
@@ -1314,6 +1441,30 @@ static int ctrl_handle_line(struct app *app, char *line,
 			shutdown(app->mux.sockfd, SHUT_RDWR);
 			mux_server_fdeof(app->mux.ctx, app);
 		}
+	} else if (strcmp(word, "button") == 0) {
+		static const char *const names[] = { "settings", "rth", "takeoff",
+			"b", "a", "rear_left", "rear_right" };
+		char name[16] = "";
+		uint32_t code;
+		if (sscanf(line, "%*s %15s", name) != 1)
+			return snprintf(reply, reply_size, "error button <name>\n");
+		for (code = 0; code < sizeof(names) / sizeof(names[0]); code++) {
+			if (strcmp(name, names[code]) == 0)
+				break;
+		}
+		if (code == sizeof(names) / sizeof(names[0]))
+			return snprintf(reply, reply_size, "error unknown button\n");
+		if (app->cmd_itf == NULL || !(app->grabbed_buttons & (1u << code)))
+			return snprintf(reply, reply_size, "error button %s not grabbed\n", name);
+		SEND(res, arsdk_cmd_send_Mapper_Grab_button_event(app->cmd_itf,
+				&send_status, app, code, ARSDK_MAPPER_BUTTON_EVENT_PRESS));
+		app->pressed_button = code;
+		if (app->button_timer != NULL)
+			pomp_timer_set(app->button_timer, 150);
+	} else if (strcmp(word, "circle") == 0 && n == 1) {
+		app->flight.active = 1;
+		flight_set_motion(app, FLIGHT_CIRCLE_ALT, FLIGHT_AIRSPEED);
+		flight_set_state(app, FS(HOVERING));
 	} else if (strcmp(word, "throw") == 0 && n == 1) {
 		if (flight_throw(app) < 0)
 			return snprintf(reply, reply_size, "error not ready for launch (%s)\n",
@@ -1355,6 +1506,7 @@ static int ctrl_handle_line(struct app *app, char *line,
 		send_telemetry(app);
 	} else if (strcmp(word, "home") == 0 && n == 4) {
 		tm->home_latitude = a; tm->home_longitude = b; tm->home_altitude = c;
+		app->flight.center_lat = 500.0; /* circle around the new home */
 		send_telemetry(app);
 	} else if (strcmp(word, "gps_lost") == 0 && n == 1) {
 		tm->latitude = tm->longitude = tm->gps_altitude = 500.0;
@@ -1598,6 +1750,7 @@ int main(int argc, char *argv[])
 	/* fake-sc2: control socket and video input */
 	ctrl_server_create(&s_app);
 	video_udp_create(&s_app);
+	s_app.button_timer = pomp_timer_new(s_app.loop, &button_release_cb, &s_app);
 	s_app.flight.timer = pomp_timer_new(s_app.loop, &flight_tick, &s_app);
 	if (s_app.flight.timer != NULL)
 		pomp_timer_set_periodic(s_app.flight.timer,
@@ -1621,6 +1774,10 @@ out:
 	backend_destroy(&s_app);
 	ctrl_server_destroy(&s_app);
 	video_udp_destroy(&s_app);
+	if (s_app.button_timer != NULL) {
+		pomp_timer_clear(s_app.button_timer);
+		pomp_timer_destroy(s_app.button_timer);
+	}
 	if (s_app.flight.timer != NULL) {
 		pomp_timer_clear(s_app.flight.timer);
 		pomp_timer_destroy(s_app.flight.timer);

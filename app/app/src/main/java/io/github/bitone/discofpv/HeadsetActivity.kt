@@ -31,7 +31,7 @@ class HeadsetActivity : DroneScreenActivity() {
         HeadsetHudSizer.attach(hud)
         view.setOverlay(hud)
         withLiveStream { view.setStream(it) }
-        HudBinder(groundSdk, drone, hud).bind()
+        setupHud(hud)
         lens = LensSettings.load(this)
         applyLens()
         bindLensPanel(view)

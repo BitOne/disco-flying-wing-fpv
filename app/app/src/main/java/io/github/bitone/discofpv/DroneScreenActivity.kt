@@ -31,6 +31,39 @@ abstract class DroneScreenActivity : Activity() {
     /** Called once the drone is found; set up views and observers here. */
     protected abstract fun onDroneReady(drone: Drone)
 
+    private var hud: Hud? = null
+    private var hudButton: HudButton? = null
+
+    /**
+     * Sets up the HUD under [root] (hud.xml or hud_headset.xml) in the saved
+     * mode, fed from the drone; the controller's HUD button cycles the modes
+     * while this screen is in front.
+     */
+    protected fun setupHud(root: View) {
+        val h = Hud(root, HudMode.load(this))
+        hud = h
+        HudBinder(groundSdk, drone) { h.render(it) }.bind()
+        hudButton = HudButton(groundSdk) { cycleHud() }
+    }
+
+    /** Next HUD mode, saved for the next sessions. */
+    protected fun cycleHud() {
+        val h = hud ?: return
+        val next = h.mode.next()
+        h.setMode(next)
+        HudMode.save(this, next)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        hudButton?.start()
+    }
+
+    override fun onPause() {
+        hudButton?.stop()
+        super.onPause()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

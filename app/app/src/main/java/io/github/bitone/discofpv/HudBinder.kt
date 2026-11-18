@@ -4,74 +4,81 @@
  */
 package io.github.bitone.discofpv
 
-import android.graphics.Color
-import android.view.View
-import android.widget.TextView
 import com.parrot.drone.groundsdk.GroundSdk
 import com.parrot.drone.groundsdk.device.DeviceState
 import com.parrot.drone.groundsdk.device.Drone
 import com.parrot.drone.groundsdk.device.instrument.Altimeter
+import com.parrot.drone.groundsdk.device.instrument.AttitudeIndicator
 import com.parrot.drone.groundsdk.device.instrument.BatteryInfo
+import com.parrot.drone.groundsdk.device.instrument.Compass
 import com.parrot.drone.groundsdk.device.instrument.FlyingIndicators
 import com.parrot.drone.groundsdk.device.instrument.Gps
 import com.parrot.drone.groundsdk.device.instrument.Speedometer
+import com.parrot.drone.groundsdk.device.pilotingitf.ReturnHomePilotingItf
 
 /**
- * Keeps the HUD text views found under [root] (layout `hud.xml` ids) up to
- * date from the drone's instruments and the controller's battery.
- * Observers live as long as the GroundSdk session.
+ * Collects the drone's instruments and the controller's battery into a
+ * [HudModel] and passes every new model to [onModel]. Observers live as
+ * long as the GroundSdk session.
  */
-class HudBinder(private val groundSdk: GroundSdk, private val drone: Drone, private val root: View) {
+class HudBinder(
+    private val groundSdk: GroundSdk,
+    private val drone: Drone,
+    private val onModel: (HudModel) -> Unit,
+) {
+    private var model = HudModel()
 
-    private fun text(id: Int, value: String) {
-        root.findViewById<TextView>(id)?.text = value
-    }
-
-    /** Normal HUD colour (style Hud), or the warning colour. */
-    private fun warn(id: Int, warning: Boolean) {
-        root.findViewById<TextView>(id)?.setTextColor(if (warning) WARNING_COLOR else NORMAL_COLOR)
-    }
-
-    private var connected = false
-    private var flyingState: String? = null
-
-    private fun updateState() {
-        text(R.id.hud_state, HudFormat.stateLine(connected, flyingState))
-        warn(R.id.hud_state, !connected)
+    private fun update(change: (HudModel) -> HudModel) {
+        model = change(model)
+        onModel(model)
     }
 
     fun bind() {
-        drone.getInstrument(Altimeter::class.java) {
-            text(R.id.hud_altitude, HudFormat.altitude(it?.takeOffRelativeAltitude))
+        drone.getState { s ->
+            update { it.copy(connected = s?.connectionState == DeviceState.ConnectionState.CONNECTED) }
         }
-        drone.getInstrument(Speedometer::class.java) {
-            text(R.id.hud_ground_speed, HudFormat.groundSpeed(it?.groundSpeed))
-            val air = it?.airSpeed
-            text(R.id.hud_air_speed, HudFormat.airSpeed(if (air != null && air.isAvailable) air.value else null))
+        drone.getInstrument(Altimeter::class.java) { a ->
+            update { it.copy(altitude = a?.takeOffRelativeAltitude) }
         }
-        drone.getInstrument(BatteryInfo::class.java) {
-            text(R.id.hud_battery, HudFormat.battery("BAT", it?.batteryLevel))
-            warn(R.id.hud_battery, HudFormat.isLowBattery(it?.batteryLevel))
+        drone.getInstrument(Speedometer::class.java) { s ->
+            val air = s?.airSpeed
+            update {
+                it.copy(groundSpeed = s?.groundSpeed, airSpeed = if (air != null && air.isAvailable) air.value else null)
+            }
         }
-        drone.getInstrument(Gps::class.java) {
-            text(R.id.hud_gps, HudFormat.gps(it?.isFixed, it?.satelliteCount))
+        drone.getInstrument(BatteryInfo::class.java) { b ->
+            update { it.copy(battery = b?.batteryLevel) }
         }
-        drone.getInstrument(FlyingIndicators::class.java) {
-            // When flying, show the detailed flying state (TAKING_OFF, FLYING...).
-            flyingState = if (it?.state == FlyingIndicators.State.FLYING) it.flyingState.name else it?.state?.name
-            updateState()
+        drone.getInstrument(Gps::class.java) { g ->
+            val location = g?.lastKnownLocation()
+            update {
+                it.copy(
+                    gpsFixed = g?.isFixed,
+                    satellites = g?.satelliteCount,
+                    position = if (g?.isFixed == true && location != null) {
+                        GeoPoint(location.latitude, location.longitude)
+                    } else {
+                        null
+                    },
+                )
+            }
         }
-        // Link to the drone (through the controller): LINK LOST while away.
-        drone.getState {
-            connected = it?.connectionState == DeviceState.ConnectionState.CONNECTED
-            updateState()
+        drone.getInstrument(FlyingIndicators::class.java) { f ->
+            // When flying, the detailed flying state (TAKING_OFF, FLYING...).
+            val name = if (f?.state == FlyingIndicators.State.FLYING) f.flyingState.name else f?.state?.name
+            update { it.copy(flyingState = name) }
+        }
+        drone.getInstrument(AttitudeIndicator::class.java) { a ->
+            update { it.copy(roll = a?.roll, pitch = a?.pitch) }
+        }
+        drone.getInstrument(Compass::class.java) { c ->
+            update { it.copy(heading = c?.heading) }
+        }
+        drone.getPilotingItf(ReturnHomePilotingItf::class.java) { r ->
+            val home = r?.homeLocation
+            update { it.copy(home = home?.let { h -> GeoPoint(h.latitude, h.longitude) }) }
         }
         bindRemoteControlBattery()
-    }
-
-    private companion object {
-        val NORMAL_COLOR = Color.parseColor("#B8FFB0") // style Hud
-        val WARNING_COLOR = Color.parseColor("#FF6040")
     }
 
     /** Controller battery: the first connected remote control. */
@@ -81,9 +88,8 @@ class HudBinder(private val groundSdk: GroundSdk, private val drone: Drone, priv
             val uid = list?.firstOrNull()?.uid ?: return@getRemoteControlList
             if (uid == watchedUid) return@getRemoteControlList
             watchedUid = uid
-            groundSdk.getRemoteControl(uid)?.getInstrument(BatteryInfo::class.java) {
-                text(R.id.hud_rc_battery, HudFormat.battery("RC", it?.batteryLevel))
-                warn(R.id.hud_rc_battery, HudFormat.isLowBattery(it?.batteryLevel))
+            groundSdk.getRemoteControl(uid)?.getInstrument(BatteryInfo::class.java) { b ->
+                update { it.copy(rcBattery = b?.batteryLevel) }
             }
         }
     }

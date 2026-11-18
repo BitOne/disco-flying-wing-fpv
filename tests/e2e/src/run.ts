@@ -39,6 +39,7 @@ function label(step: Step): string {
     case 'resume_app': return 'resume app (launcher)';
     case 'home': return 'home (app to background)';
     case 'rotate': return `rotate to ${step.to}`;
+    case 'shell': return `shell ${step.command}`;
     case 'tap_text': return `tap "${step.text}"`;
     case 'back': return 'back';
     case 'tap': return `tap at (${step.x}, ${step.y})`;
@@ -79,6 +80,8 @@ async function runStep(
       await emu.resumeApp(scenario.app.package);
       await sleep(1000);
       return undefined;
+    case 'shell':
+      return (await emu.shell(step.command)).trim() || undefined;
     case 'rotate':
       await emu.rotate(step.to === 'portrait' ? 0 : 1);
       await sleep(1500);

@@ -26,6 +26,7 @@ class HudFormatTest {
 
     @Test fun stateLine() {
         assertEquals("TAKING OFF", HudFormat.stateLine(true, "TAKING_OFF"))
+        assertEquals("CIRCLING", HudFormat.stateLine(true, "WAITING"))
         assertEquals("LINK LOST", HudFormat.stateLine(false, "FLYING"))
         assertEquals("--", HudFormat.stateLine(true, null))
     }

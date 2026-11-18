@@ -389,6 +389,45 @@ scenarios (`tests/scenarios/app-*.yaml`: connection, flight HUD with live
 video, headset view). Demo-app scenarios run with
 `SCENARIOS="tests/scenarios/demo-*.yaml"` after `make sdk-demo-e2e demo-run`.
 
+## M4b. HUD modes (user request, 2026-11-18)
+
+- [x] **T4.5 Modes.** `HudModel` (all HUD data, pure Kotlin) fed by
+  `HudBinder` from the SDK (now also attitude, compass heading, GPS
+  position, home from the return-home interface); `Hud` renders it in the
+  current `HudMode`: CLASSIC (the text readouts), MINIMAL (`MinimalHudView`:
+  arrow pointing home relative to the nose with the distance, battery;
+  in the top and bottom bands, so also clear of the video in the headset),
+  FIGHTER (`FighterHudView`: artificial horizon with a pitch ladder that
+  rolls and moves with the attitude around a fixed aircraft symbol, speed
+  tape on the left, altitude tape on the right, heading tape at the top
+  with a home marker and distance, battery, state and GPS at the bottom).
+  Same views in the flight view and in both eyes of the headset, sized
+  from the view. Geometry (distance, bearing, relative bearing) and tape
+  arithmetic unit-tested. HOVERING shows as CIRCLING (a flying wing holds
+  position by circling).
+- [x] **T4.6 Controller button.** While the flight or headset view is in
+  front, the app grabs the SkyController 2's SETTINGS button
+  (`HudButton`, Mapper grab): each press goes to the next mode, saved for
+  the next sessions; the button is given back when leaving. A tap on the
+  flight view also cycles (phone use). SETTINGS has no flight action on
+  the Disco; which physical button it is gets confirmed at checkpoint A
+  (`HudButton.BUTTON`, one constant).
+- [x] **T4.7 Fake support.** Mapper `Grab` answered with `GrabState`;
+  `button <name>` sends a press then a release 150 ms later (only for a
+  grabbed button); the circling Disco flies an 80 m circle around home
+  (heading turning, bank angle from the turn, position moving with a GPS
+  fix), pitch up when climbing and down when landing; `circle` starts it
+  directly. Check: `tests/scenarios/app-hud-modes.yaml` (cycle by button
+  and by tap, descriptions, persistence, headset in fighter mode with the
+  same picture in both eyes, button released on the main screen); runner
+  step `shell` (scenarios reset the saved HUD mode). Screenshots
+  `docs/screenshots/hud-*.png`.
+
+Found on the way: the drawn views first set their content description on
+every update (heading changing ten times a second), and the stream of
+accessibility events made UI dumps return stale trees, failing the
+scenario one run in three; now set only when it changes.
+
 ## M5. Robustness
 
 - [x] **T5.1 Fake controller faults.** Control socket `drone_link

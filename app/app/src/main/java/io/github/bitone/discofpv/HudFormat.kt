@@ -4,6 +4,7 @@
 package io.github.bitone.discofpv
 
 import java.util.Locale
+import kotlin.math.roundToLong
 
 /** HUD text formatting, independent of Android and the SDK (unit-tested). */
 object HudFormat {
@@ -35,7 +36,19 @@ object HudFormat {
     }
 
     /** Flying state name as shown on the HUD (enum names upper-cased, "_" to " "). */
-    fun flyingState(state: String?): String = state?.replace('_', ' ')?.uppercase(Locale.US) ?: UNKNOWN
+    fun flyingState(state: String?): String = when (state) {
+        // GroundSdk's hovering; a flying wing holds position by circling
+        "WAITING" -> "CIRCLING"
+        null -> UNKNOWN
+        else -> state.replace('_', ' ').uppercase(Locale.US)
+    }
+
+    /** Distance to home, metres (kilometres from 10 km). */
+    fun home(metres: Double?): String = "HOME " + when {
+        metres == null || !metres.isFinite() -> UNKNOWN
+        metres < 10_000 -> "${metres.roundToLong()} m"
+        else -> String.format(Locale.US, "%.1f km", metres / 1000)
+    }
 
     /** Shown instead of the flying state while the drone is not connected. */
     const val LINK_LOST = "LINK LOST"

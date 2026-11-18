@@ -23,7 +23,9 @@ class FlightActivity : DroneScreenActivity() {
             // a frozen picture must not pass for live video
             view.visibility = if (it == null) View.INVISIBLE else View.VISIBLE
         }
-        HudBinder(groundSdk, drone, findViewById(R.id.hud)).bind()
+        setupHud(findViewById(R.id.hud))
+        // on the phone, a tap also cycles the HUD modes
+        view.setOnClickListener { cycleHud() }
     }
 
     override fun onDestroy() {

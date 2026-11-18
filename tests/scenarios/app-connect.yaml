@@ -6,6 +6,7 @@ app:
   package: io.github.bitone.discofpv
   activity: .MainActivity
 steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml # HUD mode back to CLASSIC
   - restart_app
   - expect_texts:
       - "SkyController 2 (fake) (SKY_CONTROLLER_2): CONNECTED"

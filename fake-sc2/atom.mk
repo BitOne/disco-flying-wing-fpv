@@ -9,6 +9,7 @@ LOCAL_MODULE := fake-sc2
 LOCAL_DESCRIPTION := Fake SkyController 2 + Disco for end-to-end tests
 LOCAL_SRC_FILES := src/fake_sc2.c
 LOCAL_LIBRARIES := libpomp libulog libmux libarsdk
+LOCAL_LDLIBS := -lm
 include $(BUILD_EXECUTABLE)
 
 # Alchemy doesn't scan below a directory that has an atom.mk: include the
