@@ -14,3 +14,8 @@ dist/
 # Android emulator / SDK if installed locally
 /.android-sdk/
 /.avd/
+
+# app (Gradle) build outputs
+/app/.gradle/
+/app/app/build/
+/app/build/

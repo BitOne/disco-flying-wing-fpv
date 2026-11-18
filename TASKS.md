@@ -193,7 +193,44 @@ M2 done except T2.3 (headset view on the emulator), 2026-11-18.
 `make emu` accepts `EMU_GPU` (default `swiftshader_indirect`, also
 `swangle_indirect`).
 
-## M3 and later
+## M3. Our app skeleton
 
-See `PLAN.md` section 4. M3's fast tests (`MockArsdkCore`) can start in
-parallel.
+Approach: the SDK keeps its 2020 toolchain (AGP 3.6.1, JDK 8, NDK r21) in
+`sdk-build`; it exports its modules as AARs, and our app is a separate,
+modern Gradle project (current AGP/Kotlin, target SDK 35, JDK 17) that
+consumes them and re-declares their Maven dependencies.
+
+- [x] **T3.1 SDK AARs.** `make sdk-aar` runs `:sdkcore`, `:groundsdk`,
+  `:arsdkengine`, `:sdkcore-testing` `assembleRelease` in the SDK container
+  (50 s) and copies them to `out/sdk-aar/<module>.aar`; `sdkcore.aar`
+  carries `libsdkcore.so` + `libc++_shared.so` for x86_64 and arm64-v8a.
+- [x] **T3.2 App project and build image.** `docker/app-build`
+  (Temurin JDK 17, Android SDK 35, build-tools 35.0.0, Gradle 8.11.1);
+  `app/` Gradle project (AGP 8.7.3, Kotlin 2.1.0), application id
+  `io.github.bitone.discofpv`, "Disco FPV", minSdk 24, target 35, ABIs
+  x86_64 + arm64-v8a; SDK AARs from `out/sdk-aar` (property `sdkAarDir`)
+  plus the SDK's Maven dependencies at the SDK's versions. Manifest marks
+  the SDK's `RcAccessoryBootstrapActivity` exported (needed for target
+  31+). `MainActivity` (framework Views, no AppCompat) lists the remote
+  control and drone with their connection states. `make app`,
+  `make app-install`. Done: 16 MB APK, launches on Android 15, no crash.
+- [x] **T3.3 Test wiring in the debug build.** `src/debug/res`: debug USB
+  bridge on, `10.0.2.2:4321`; main resources: GroundSdk auto-connection on
+  (wanted on the real phone too). Done: `tests/scenarios/app-connect.yaml`
+  passes: "SkyController 2 (fake) (SKY_CONTROLLER_2): CONNECTED" and
+  "DISCO-FAKE01 (DISCO): CONNECTED". Screenshot
+  `docs/screenshots/t3.3-app-connected.png`. To fix in T3.4: content draws
+  under the status bar (edge-to-edge on target 35).
+- [ ] **T3.4 Flight screen with 2D HUD.** Full-screen live video
+  (`GsdkStreamView`) with our HUD: altitude, airspeed, ground speed,
+  battery (drone and controller), GPS fix/satellites, flying state,
+  distance home. Done: e2e scenario checks HUD texts against fake values
+  and live video with `expect_video`.
+- [ ] **T3.5 Fast tests on `MockArsdkCore`.** Instrumented tests (on the
+  emulator, no fake process) for connection states and HUD values with a
+  mocked SkyController 2 + Disco. `make unit`. Done: tests pass, and fail
+  when a mapping is broken.
+
+## M4 and later
+
+See `PLAN.md` section 4.

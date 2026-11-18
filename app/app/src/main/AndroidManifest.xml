@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Disco FPV. Copyright (c) 2026, Benoit Jacquemont. BSD-3-Clause.
+  Portions copyright (c) 2019-Present PARROT DRONES SAS. All rights reserved.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+
+        <!-- From the groundsdk AAR (2020, pre-Android 12): Android starts it when
+             a SkyController is plugged in (USB_ACCESSORY_ATTACHED), so it must be
+             exported; target 31+ requires saying so explicitly. -->
+        <activity
+            android:name="com.parrot.drone.groundsdk.internal.RcAccessoryBootstrapActivity"
+            android:exported="true"
+            tools:node="merge" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

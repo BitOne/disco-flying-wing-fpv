@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GroundSdk configuration overrides (app resources take precedence over the SDK's). -->
+<resources>
+    <!-- Connect to the SkyController as soon as it is plugged in. -->
+    <bool name="gsdk_auto_connection_at_startup">true</bool>
+</resources>

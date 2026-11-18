@@ -1,0 +1,14 @@
+name: Disco FPV connects to the fake SkyController 2 and its Disco
+description: >
+  Our app's debug build reaches fake-sc2 through the SDK's debug USB bridge
+  (10.0.2.2:4321) and auto-connects to the controller, then to the Disco.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - restart_app
+  - expect_texts:
+      - "SkyController 2 (fake) (SKY_CONTROLLER_2): CONNECTED"
+      - "DISCO-FAKE01 (DISCO): CONNECTED"
+    timeout: 20000
+  - screenshot: app-connected

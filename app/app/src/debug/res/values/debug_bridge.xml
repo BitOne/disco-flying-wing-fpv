@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug builds only: reach a SkyController through the SDK's debug USB bridge
+  (mux over TCP) instead of USB. On the emulator, 10.0.2.2 is the host, where
+  fake-sc2 listens on 4321 (make fake). The real USB path stays enabled.
+-->
+<resources>
+    <bool name="gsdk_usb_debug_enabled">true</bool>
+    <string name="arsdk_debug_usb_bridge_address">10.0.2.2</string>
+    <integer name="arsdk_debug_usb_bridge_port">4321</integer>
+</resources>

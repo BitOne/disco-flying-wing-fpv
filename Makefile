@@ -110,12 +110,51 @@ sdk-demo-e2e: ## Build the demo APK wired to the fake controller (out/groundsdkd
 		:groundsdkdemo:assembleDebug 2>&1 | tee $(OUT)/sdk-demo-e2e.log; exit $${PIPESTATUS[0]}
 	cp $(SDK_DEMO_APK) $(OUT)/groundsdkdemo-e2e.apk
 
+# SDK modules as release AARs, consumed by our app (app/), which is built with
+# a modern toolchain in its own image. sdkcore carries libsdkcore.so.
+SDK_AAR_MODULES := sdkcore groundsdk arsdkengine sdkcore-testing
+SDK_AAR_DIR     := $(OUT)/sdk-aar
+
+.PHONY: sdk-aar
+sdk-aar: ## Build the SDK modules as AARs into out/sdk-aar/ (needs sdk-native)
+	@mkdir -p $(SDK_AAR_DIR)
+	docker run --rm $(SDK_VOLUMES) -w $(SDK_GRADLE_DIR) $(SDK_IMAGE) \
+		./gradlew --no-daemon --console=plain \
+		$(foreach m,$(SDK_AAR_MODULES),:$(m):assembleRelease) 2>&1 \
+		| tee $(OUT)/sdk-aar.log; exit $${PIPESTATUS[0]}
+	$(foreach m,$(SDK_AAR_MODULES),cp sdk/out/groundsdk-android/gradle/$(m)/outputs/aar/$(m)-release.aar $(SDK_AAR_DIR)/$(m).aar &&) true
+	@ls $(SDK_AAR_DIR)
+
 .PHONY: sdk
 sdk: sdk-sync sdk-native sdk-demo ## Sync and build the GroundSdk fork (native libs, demo APK)
 
+# Our app (app/): modern toolchain image, SDK consumed from out/sdk-aar.
+APP_IMAGE := disco-fpv/app-build:1
+APP_RUN = docker run --rm \
+	-v "$(ROOT)":/work \
+	-v disco-fpv-app-gradle:/home/builder/.gradle \
+	-v disco-fpv-android:/home/builder/.android \
+	-w /work/app $(APP_IMAGE)
+APP_DEBUG_APK := app/app/build/outputs/apk/debug/app-debug.apk
+
+.PHONY: app-image
+app-image: ## Build the Docker image used to build the app
+	docker build --build-arg UID=$(UID) --build-arg GID=$(GID) -t $(APP_IMAGE) docker/app-build
+
 .PHONY: app
-app: ## Build the app debug APK
-	$(call not_implemented,M3)
+app: app-image ## Build the app debug APK (out/disco-fpv-debug.apk); needs sdk-aar
+	@test -f $(SDK_AAR_DIR)/sdkcore.aar || { echo "run make sdk-aar first" >&2; exit 1; }
+	@mkdir -p $(OUT)
+	$(APP_RUN) gradle --no-daemon --console=plain :app:assembleDebug 2>&1 \
+		| tee $(OUT)/app-build.log; exit $${PIPESTATUS[0]}
+	cp $(APP_DEBUG_APK) $(OUT)/disco-fpv-debug.apk
+
+.PHONY: app-install
+app-install: ## Install out/disco-fpv-debug.apk on the emulator
+	docker cp $(OUT)/disco-fpv-debug.apk $(EMU_NAME):/tmp/disco-fpv.apk
+	docker exec $(EMU_NAME) adb -s emulator-5554 install -r -g /tmp/disco-fpv.apk \
+		|| { docker exec $(EMU_NAME) adb -s emulator-5554 uninstall io.github.bitone.discofpv; \
+		docker exec $(EMU_NAME) adb -s emulator-5554 install -r -g /tmp/disco-fpv.apk; }
 
 .PHONY: unit
 unit: ## Run JVM unit tests
