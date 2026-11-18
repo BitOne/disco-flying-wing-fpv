@@ -15,8 +15,8 @@ blocked (with a one-line reason and date).
   for `sdkmanager`, NDK `21.4.7075529`, platform 28, build-tools 28.0.3,
   host-matching `builder` user). Done: `make sdk-image-check` asserts the
   versions. Image size 7.6 GB, mostly the NDK.
-  Note for T0.5: the fork's Gradle build still uses `jcenter()`, which is
-  read-only; dependencies may need another repository.
+  Note: the fork's Gradle build uses `jcenter()` (read-only); it still
+  worked in T0.5, but it's a future breakage risk.
 - [x] **T0.3 SDK checkout.** Script `scripts/sdk-sync.sh` (`make sdk-sync`):
   `repo init` on the Unified GroundSdk manifest at
   `9b821bfd593884c7f6408ebb61fab700f1b7b0aa`, `repo sync` into `sdk/`
@@ -29,8 +29,14 @@ blocked (with a one-line reason and date).
   `sdk/out/groundsdk-android/jni/sdkcore/libs/`, NDK r21e, API 24. Needed
   cmake, autotools, nasm/yasm in the image, and the Parrot EULA acceptance
   marker (`NOTES.md` section 16).
-- [ ] **T0.5 Demo APK.** Build `groundsdkdemo` debug APK. Done: APK in
-  `out/`, `aapt2 dump badging` shows the package.
+- [x] **T0.5 Demo APK.** `make sdk-demo` runs Gradle
+  (`:groundsdkdemo:assembleDebug`, AGP 3.6.1 / Gradle 6.2.2) in the
+  container and copies the APK to `out/groundsdkdemo-debug.apk`. Done:
+  `com.parrot.drone.groundsdkdemo`, minSdk 24, targetSdk 28, 22 MB, built in
+  48 s. JCenter still served every dependency (2026-11-18). Note: the APK
+  declares `armeabi-v7a` and `x86` only because of `libconscrypt_jni.so`;
+  `libsdkcore.so` exists for `x86_64` and `arm64-v8a` only, so our app must
+  set `abiFilters`.
 - [ ] **T0.6 Emulator.** Android SDK + `system-images;android-34;google_apis;x86_64`,
   headless emulator with KVM, swiftshader GPU, snapshot. `make emu` boots
   and waits for `sys.boot_completed`. Done: `adb shell getprop` works,

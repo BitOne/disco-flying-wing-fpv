@@ -81,9 +81,20 @@ sdk-native: ## Build the SDK native libraries (JNI) for $(SDK_ABIS)
 		--abis $(SDK_ABIS) -t build-jni' 2>&1 | tee $(OUT)/sdk-native.log; \
 		exit $${PIPESTATUS[0]}
 
+SDK_GRADLE_DIR := /work/sdk/products/groundsdk/android/gradle
+SDK_DEMO_APK   := sdk/out/groundsdk-android/gradle/groundsdkdemo/outputs/apk/debug/groundsdkdemo-debug.apk
+
+.PHONY: sdk-demo
+sdk-demo: ## Build the SDK demo app debug APK into out/groundsdkdemo-debug.apk
+	@mkdir -p $(OUT)
+	docker run --rm $(SDK_VOLUMES) -w $(SDK_GRADLE_DIR) $(SDK_IMAGE) \
+		./gradlew --no-daemon --console=plain :groundsdkdemo:assembleDebug 2>&1 \
+		| tee $(OUT)/sdk-demo.log; exit $${PIPESTATUS[0]}
+	cp $(SDK_DEMO_APK) $(OUT)/groundsdkdemo-debug.apk
+	$(SDK_RUN) aapt dump badging /work/out/groundsdkdemo-debug.apk | grep -E "^package|native-code"
+
 .PHONY: sdk
-sdk: sdk-sync sdk-native ## Sync and build the GroundSdk fork (native libs + AARs)
-	$(call not_implemented,T0.5)
+sdk: sdk-sync sdk-native sdk-demo ## Sync and build the GroundSdk fork (native libs, demo APK)
 
 .PHONY: app
 app: ## Build the app debug APK
