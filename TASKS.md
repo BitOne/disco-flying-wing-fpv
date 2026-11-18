@@ -6,13 +6,17 @@ blocked (with a one-line reason and date).
 
 ## M0. Toolchain (run interactively, not in the loop)
 
-- [ ] **T0.1 Repo skeleton.** `Makefile` with stub targets (`sdk`, `app`,
+- [x] **T0.1 Repo skeleton.** `Makefile` with stub targets (`sdk`, `app`,
   `unit`, `fake`, `emu`, `e2e`, `check`), `docker/`, `out/` ignored.
-  Done: `make help` lists the targets.
-- [ ] **T0.2 SDK build image.** `docker/sdk-build/Dockerfile` (Ubuntu 20.04,
-  `repo`, Python 3, JDK 11, NDK `21.4.7075529`, Android SDK cmdline tools,
-  platform 28). Done: image builds; `repo version` and `ndk-build --version`
-  run inside.
+  Done: `make help` lists the targets; unimplemented targets fail with the
+  task id, so `make check` can't pass by accident.
+- [x] **T0.2 SDK build image.** `docker/sdk-build/Dockerfile` (Ubuntu 20.04,
+  `repo`, Python 2 and 3, JDK 8 for AGP 3.6.1 / Gradle 6.2.2, JDK 17 only
+  for `sdkmanager`, NDK `21.4.7075529`, platform 28, build-tools 28.0.3,
+  host-matching `builder` user). Done: `make sdk-image-check` asserts the
+  versions. Image size 7.6 GB, mostly the NDK.
+  Note for T0.5: the fork's Gradle build still uses `jcenter()`, which is
+  read-only; dependencies may need another repository.
 - [ ] **T0.3 SDK checkout.** Script `scripts/sdk-sync.sh`:
   `repo init -u https://github.com/UnifiedGroundSdk/groundsdk-manifest`
   pinned to a manifest revision, `repo sync` into `sdk/` (ignored by git).
