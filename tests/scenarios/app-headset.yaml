@@ -1,0 +1,26 @@
+name: Disco FPV headset view shows live video in both eyes
+description: >
+  Needs `make fake`, `make video` and `make emu`. Opens the side-by-side
+  headset view (GsdkHmdView, lens-corrected) and checks live video in the
+  left and right eye areas. The HUD is drawn inside the GL view, so it is
+  checked on the screenshot only.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - send: [battery 64, altitude 33.3, flying_state flying]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Headset view
+  - expect_video:
+      region: [0.12, 0.3, 0.45, 0.65]
+      min_contrast: 30
+      min_change: 0.002
+    timeout: 30000 # first run after an emulator boot can take longer
+  - expect_video:
+      region: [0.55, 0.3, 0.88, 0.65]
+      min_contrast: 30
+      min_change: 0.002
+    timeout: 15000
+  - screenshot: headset-view

@@ -47,4 +47,12 @@
         android:layout_marginTop="32dp"
         android:enabled="false"
         android:text="@string/flight_view" />
+
+    <Button
+        android:id="@+id/headset_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:enabled="false"
+        android:text="@string/headset_view" />
 </LinearLayout>

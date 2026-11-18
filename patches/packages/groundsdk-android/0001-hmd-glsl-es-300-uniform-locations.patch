@@ -1,0 +1,164 @@
+From: disco-flying-wing-fpv
+Subject: [PATCH] hmd: no explicit uniform locations in GLSL ES 3.00 shaders
+
+The HMD shaders are "#version 300 es" but declare uniforms with
+"layout (location = N)", which GLSL ES only allows from 3.10. Lenient
+drivers accept it; strict ones (SwiftShader, ANGLE, possibly some phone
+GPUs) fail to link the programs, every HMD draw raises
+GL_INVALID_OPERATION (seen in LensProjection.draw) and the headset view
+stays black. Declare plain uniforms and query their locations with
+glGetUniformLocation; samplers keep the default texture unit 0.
+
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/CameraLayer.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/CameraLayer.java
+index 4036770..6a3d49d 100644
+--- a/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/CameraLayer.java
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/CameraLayer.java
+@@ -114,6 +114,12 @@ class CameraLayer extends Compositor.Layer {
+         /** GL program handle. */
+         private final int mGlProgram;
+ 
++        /** Location of the camTransform uniform. */
++        private final int mCamTransformLocation;
++
++        /** Location of the camScale uniform. */
++        private final int mCamScaleLocation;
++
+         /** GL Vertex Array Object. */
+         private final int mGlVao;
+ 
+@@ -146,6 +152,8 @@ class CameraLayer extends Compositor.Layer {
+          */
+         GlRenderer(@NonNull Resources resources) {
+             mGlProgram = Shader.makeProgramFromResources(resources, VERTEX_SHADER_DESC, FRAGMENT_SHADER_DESC);
++            mCamTransformLocation = glGetUniformLocation(mGlProgram, "camTransform");
++            mCamScaleLocation = glGetUniformLocation(mGlProgram, "camScale");
+ 
+             int[] names = new int[2];
+             glGenVertexArrays(1, names, 0);
+@@ -202,9 +210,9 @@ class CameraLayer extends Compositor.Layer {
+             glActiveTexture(GL_TEXTURE0);
+             mSurfaceTexture.updateTexImage(); // implicit texture bind
+             mSurfaceTexture.getTransformMatrix(mCameraTransform);
+-            glUniformMatrix4fv(1, 1, false, mCameraTransform, 0);
++            glUniformMatrix4fv(mCamTransformLocation, 1, false, mCameraTransform, 0);
+ 
+-            glUniform2f(2, mCameraScaleX, mCameraScaleY);
++            glUniform2f(mCamScaleLocation, mCameraScaleX, mCameraScaleY);
+ 
+             glDrawElements(GL_TRIANGLE_FAN, ELEMENTS.limit(), GL_UNSIGNED_BYTE, 0);
+ 
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/LensProjection.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/LensProjection.java
+index fe5a0c0..f756a99 100644
+--- a/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/LensProjection.java
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/LensProjection.java
+@@ -64,6 +64,12 @@ final class LensProjection {
+     /** GL program handle. */
+     private final int mGlProgram;
+ 
++    /** Location of the meshScale uniform in the lens program. */
++    private final int mMeshScaleLocation;
++
++    /** Location of the texScale uniform in the lens program. */
++    private final int mTexScaleLocation;
++
+     /** GL Frame Buffer Object. */
+     private final int mGlFBo;
+ 
+@@ -103,6 +109,8 @@ final class LensProjection {
+      */
+     LensProjection(@NonNull Resources resources) {
+         mGlProgram = Shader.makeProgramFromResources(resources, VERTEX_SHADER_DESC, FRAGMENT_SHADER_DESC);
++        mMeshScaleLocation = glGetUniformLocation(mGlProgram, "meshScale");
++        mTexScaleLocation = glGetUniformLocation(mGlProgram, "texScale");
+ 
+         int[] names = new int[4];
+ 
+@@ -216,10 +224,10 @@ final class LensProjection {
+         glBindVertexArray(mGlVao);
+ 
+         // configure meshScale uniform
+-        glUniform2f(1, mMeshScaleX, mMeshScaleY);
++        glUniform2f(mMeshScaleLocation, mMeshScaleX, mMeshScaleY);
+ 
+         // configure texScale uniform
+-        glUniform2f(2, mTexScaleX, mTexScaleY);
++        glUniform2f(mTexScaleLocation, mTexScaleX, mTexScaleY);
+ 
+         // configure texture
+         glActiveTexture(GL_TEXTURE0);
+diff --git a/groundsdk/src/main/res/raw/gsdk_internal_hmd_camera_fragment.glsl b/groundsdk/src/main/res/raw/gsdk_internal_hmd_camera_fragment.glsl
+index c173510..6205485 100644
+--- a/groundsdk/src/main/res/raw/gsdk_internal_hmd_camera_fragment.glsl
++++ b/groundsdk/src/main/res/raw/gsdk_internal_hmd_camera_fragment.glsl
+@@ -3,7 +3,7 @@
+ 
+ precision highp float;
+ 
+-layout (location = 0) uniform samplerExternalOES sampler;
++uniform samplerExternalOES sampler; // texture unit 0 (default)
+ 
+ in vec2 fragTexCoords;
+ 
+diff --git a/groundsdk/src/main/res/raw/gsdk_internal_hmd_camera_vertex.glsl b/groundsdk/src/main/res/raw/gsdk_internal_hmd_camera_vertex.glsl
+index 62f07fc..8ece64c 100644
+--- a/groundsdk/src/main/res/raw/gsdk_internal_hmd_camera_vertex.glsl
++++ b/groundsdk/src/main/res/raw/gsdk_internal_hmd_camera_vertex.glsl
+@@ -5,10 +5,10 @@ precision highp float;
+ // uniform location 0 reserved for sampler in fragment shader
+ 
+ // camera texture device-specific transform
+-layout (location = 1) uniform mat4 camTransform;
++uniform mat4 camTransform;
+ 
+ // camera quad scaling (used to maintain proper source aspect ratio)
+-layout (location = 2) uniform vec2 camScale;
++uniform vec2 camScale;
+ 
+ layout (location = 0) in vec2 position;
+ layout (location = 1) in vec2 texCoords;
+diff --git a/groundsdk/src/main/res/raw/gsdk_internal_hmd_lens_fragment.glsl b/groundsdk/src/main/res/raw/gsdk_internal_hmd_lens_fragment.glsl
+index 0c927da..49cdc31 100644
+--- a/groundsdk/src/main/res/raw/gsdk_internal_hmd_lens_fragment.glsl
++++ b/groundsdk/src/main/res/raw/gsdk_internal_hmd_lens_fragment.glsl
+@@ -2,7 +2,7 @@
+ 
+ precision highp float;
+ 
+-layout (location = 0) uniform sampler2D sampler;
++uniform sampler2D sampler; // texture unit 0 (default)
+ 
+ in vec2 fragTexCoordsR;
+ in vec2 fragTexCoordsG;
+diff --git a/groundsdk/src/main/res/raw/gsdk_internal_hmd_lens_vertex.glsl b/groundsdk/src/main/res/raw/gsdk_internal_hmd_lens_vertex.glsl
+index 044a48d..af1dd74 100644
+--- a/groundsdk/src/main/res/raw/gsdk_internal_hmd_lens_vertex.glsl
++++ b/groundsdk/src/main/res/raw/gsdk_internal_hmd_lens_vertex.glsl
+@@ -2,11 +2,10 @@
+ 
+ precision highp float;
+ 
+-// uniform location 0 reserved for sampler in fragment shader
+-
+-// lens mesh sizing
+-layout (location = 1) uniform vec2 meshScale;
+-layout (location = 2) uniform vec2 texScale;
++// lens mesh sizing (no explicit uniform locations: not allowed in GLSL ES 3.00;
++// locations are queried with glGetUniformLocation)
++uniform vec2 meshScale;
++uniform vec2 texScale;
+ 
+ layout (location = 0) in vec2 position;
+ layout (location = 1) in vec2 texCoords;
+diff --git a/groundsdk/src/main/res/raw/gsdk_internal_hmd_overlay_fragment.glsl b/groundsdk/src/main/res/raw/gsdk_internal_hmd_overlay_fragment.glsl
+index c173510..6205485 100644
+--- a/groundsdk/src/main/res/raw/gsdk_internal_hmd_overlay_fragment.glsl
++++ b/groundsdk/src/main/res/raw/gsdk_internal_hmd_overlay_fragment.glsl
+@@ -3,7 +3,7 @@
+ 
+ precision highp float;
+ 
+-layout (location = 0) uniform samplerExternalOES sampler;
++uniform samplerExternalOES sampler; // texture unit 0 (default)
+ 
+ in vec2 fragTexCoords;
+ 

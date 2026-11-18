@@ -728,6 +728,26 @@ explicitly in the chat (no terminal access at the time); the marker
   `MockArsdkCore` for fast tests; new tools in TypeScript. See `PLAN.md`
   section 2a.
 
+## 18. Findings from building the test rig and app (2026-11-18)
+
+- **Parrot's stream receiver and periodic IDR frames.** libvideo-streaming
+  (`vstrm_rtp_h264_rx_check_missing_frames`) treats the H.264 `frame_num`
+  reset at an IDR as missing frames ("TODO: handle reset to 0 for IDR
+  frame"), and the decoder then hides frames. A stream with periodic IDRs
+  plays black or frozen at random. Parrot's drones stream with intra
+  refresh; the fake camera now does too.
+- **GroundSdk HMD shaders are invalid GLSL ES 3.00** (explicit uniform
+  locations need 3.10): black headset view on strict GL implementations
+  (emulator SwiftShader and ANGLE). Phone drivers may tolerate it. Fixed by
+  our SDK patch (`patches/packages/groundsdk-android/`). Worth checking on
+  the Fairphone 5 (Adreno 643) at checkpoint A whether FreeFlight-era
+  Parrot code would have worked there unpatched.
+- **Parrot's example device accepted one mux session at a time** and
+  refused newcomers until pings timed out: fixed in fake-sc2 (a new
+  connection replaces the old session).
+- **Targeting Android 15 with the 2020 SDK** needed only
+  `android:exported` on the SDK's `RcAccessoryBootstrapActivity`.
+
 ## Sources
 
 - FPV_VR_OS: https://github.com/Consti10/FPV_VR_OS

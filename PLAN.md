@@ -244,7 +244,10 @@ Each milestone ends green on `make check` and is committed.
    projects at our forks; `make sdk` does
    `repo init -u https://github.com/BitOne/groundsdk-manifest`. Until then we
    use the upstream manifest pinned to a revision.
-3. **Forks of individual SDK repos, on demand** (most likely
+3. **SDK fixes:** kept first as patch files in this repo
+   (`patches/<sdk project path>/*.patch`, applied by `make sdk-sync` after
+   the pinned sync), e.g. the HMD shader fix. Then **forks of individual
+   SDK repos, on demand** (most likely
    `groundsdk-android`, maybe `arsdk-ng`, `groundsdk-product`), each with a
    branch per fix, and pull requests back to `UnifiedGroundSdk` so fixes
    don't stay with us.

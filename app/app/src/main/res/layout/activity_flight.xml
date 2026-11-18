@@ -8,30 +8,5 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- HUD: left column flight data, right column systems -->
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="start|top"
-        android:layout_margin="16dp"
-        android:orientation="vertical">
-
-        <TextView android:id="@+id/hud_state" style="@style/Hud" />
-        <TextView android:id="@+id/hud_altitude" style="@style/Hud" />
-        <TextView android:id="@+id/hud_air_speed" style="@style/Hud" />
-        <TextView android:id="@+id/hud_ground_speed" style="@style/Hud" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="end|top"
-        android:layout_margin="16dp"
-        android:gravity="end"
-        android:orientation="vertical">
-
-        <TextView android:id="@+id/hud_battery" style="@style/Hud" />
-        <TextView android:id="@+id/hud_rc_battery" style="@style/Hud" />
-        <TextView android:id="@+id/hud_gps" style="@style/Hud" />
-    </LinearLayout>
+    <include layout="@layout/hud" />
 </FrameLayout>

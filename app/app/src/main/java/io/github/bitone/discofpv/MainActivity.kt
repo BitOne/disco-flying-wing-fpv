@@ -13,8 +13,8 @@ import com.parrot.drone.groundsdk.ManagedGroundSdk
 import com.parrot.drone.groundsdk.device.DeviceState
 
 /**
- * Connection screen: remote control and drone states; opens the flight view
- * once a drone is connected.
+ * Connection screen: remote control and drone states; opens the flight or
+ * headset view once a drone is connected.
  */
 class MainActivity : Activity() {
 
@@ -22,6 +22,7 @@ class MainActivity : Activity() {
     private lateinit var rcStatus: TextView
     private lateinit var droneStatus: TextView
     private lateinit var flightButton: Button
+    private lateinit var headsetButton: Button
     private var connectedDroneUid: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,7 +32,11 @@ class MainActivity : Activity() {
         droneStatus = findViewById(R.id.drone_status)
         flightButton = findViewById(R.id.flight_button)
         flightButton.setOnClickListener {
-            connectedDroneUid?.let { startActivity(FlightActivity.intent(this, it)) }
+            connectedDroneUid?.let { startActivity(DroneScreenActivity.intent(this, FlightActivity::class.java, it)) }
+        }
+        headsetButton = findViewById(R.id.headset_button)
+        headsetButton.setOnClickListener {
+            connectedDroneUid?.let { startActivity(DroneScreenActivity.intent(this, HeadsetActivity::class.java, it)) }
         }
 
         groundSdk = ManagedGroundSdk.obtainSession(this)
@@ -45,6 +50,7 @@ class MainActivity : Activity() {
                 it.state.connectionState == DeviceState.ConnectionState.CONNECTED
             }?.uid
             flightButton.isEnabled = connectedDroneUid != null
+            headsetButton.isEnabled = connectedDroneUid != null
         }
     }
 

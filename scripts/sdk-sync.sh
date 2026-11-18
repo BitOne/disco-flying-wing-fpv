@@ -4,6 +4,10 @@
 # Reproducibility: the manifest repo is pinned to MANIFEST_REV. After the first
 # sync, the exact revision of every project is written to sdk.lock.xml (committed).
 # When sdk.lock.xml exists, later syncs use it instead of the manifest's default.
+#
+# Local fixes: patches/<project path>/*.patch (e.g. patches/packages/groundsdk-android/)
+# are applied in name order after the sync. Patched projects are reset before
+# syncing so repo never sees local changes; applying is therefore idempotent.
 set -euo pipefail
 
 MANIFEST_URL=${MANIFEST_URL:-https://github.com/UnifiedGroundSdk/groundsdk-manifest}
@@ -20,6 +24,19 @@ if [ ! -d .repo ]; then
     repo init --no-repo-verify -u "$MANIFEST_URL" -b "$MANIFEST_REV" -m default.xml
 fi
 
+PATCHES=$ROOT/patches
+patched_projects() {
+    [ -d "$PATCHES" ] || return 0
+    find "$PATCHES" -name '*.patch' -printf '%h\n' | sort -u | sed "s|^$PATCHES/||"
+}
+
+# Reset patched projects (drop previously applied patches) before syncing.
+for project in $(patched_projects); do
+    if [ -d "$project/.git" ] || [ -f "$project/.git" ]; then
+        git -C "$project" checkout -q -- .
+    fi
+done
+
 if [ -f "$LOCK" ]; then
     echo "== repo sync from $LOCK"
     cp "$LOCK" .repo/manifests/disco-fpv-lock.xml
@@ -30,5 +47,12 @@ else
     repo --no-pager manifest -r -o "$LOCK"
     echo "== wrote $LOCK"
 fi
+
+for project in $(patched_projects); do
+    for patch in $(ls "$PATCHES/$project"/*.patch | sort); do
+        echo "== apply $(basename "$patch") to $project"
+        git -C "$project" apply --whitespace=nowarn "$patch"
+    done
+done
 
 echo "== projects: $(repo --no-pager list | wc -l)"

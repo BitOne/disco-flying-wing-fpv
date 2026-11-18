@@ -163,19 +163,15 @@ side must open 4 and 5 itself to send on them.
   err=-71 (Protocol error)` logged at start without visible effect: to
   investigate if it matters later. Screenshot
   `docs/screenshots/t2.2-hud-video.png`.
-- [!] **T2.3 Headset view.** Blocked 2026-11-18 (still black after the
-  T3.4 video fixes, so a separate problem): the demo's HMD view
-  (`HmdActivity` + `GsdkHmdView`) renders only black on the emulator, in
-  portrait and landscape, with both GPU backends (SwiftShader GLES 3.0 and
-  ANGLE/SwiftShader-Vulkan GLES 3.1, `EMU_GPU=swangle_indirect`). Facts:
-  stream starts (`Gles2Renderer` STARTED, decoder running), no GL error in
-  logcat, GL thread busy in `eglSwapBuffers` (continuous rendering, ~20 s
-  CPU), main thread idle; the config panel doesn't show on tap (GL surface
-  probably on top); UIAutomator can't reach idle on that screen. The same
-  stream renders fine in the HUD view (`GsdkStreamView`). Next: (1) check
-  the demo HMD on the Fairphone at checkpoint A (emulator-only or not);
-  (2) in M4, instrument `GsdkHmdView` (geometry, FBO status, per-layer
-  `glReadPixels`) in our SDK fork, or render side by side ourselves.
+- [x] **T2.3 Headset view.** Resolved 2026-11-18 (during M4). Root cause:
+  GroundSdk's HMD shaders are `#version 300 es` but declare uniforms with
+  `layout (location = N)`, which GLSL ES only allows from 3.10. Strict
+  compilers (SwiftShader, ANGLE) fail to link them; every frame raised
+  `GL_INVALID_OPERATION` in `LensProjection.draw` (found with per-step
+  `glGetError` checks), so the view stayed black. Fixed by
+  `patches/packages/groundsdk-android/0001-hmd-glsl-es-300-uniform-locations.patch`
+  (plain uniforms + `glGetUniformLocation`), applied by `make sdk-sync`.
+  Lenient phone drivers may have hidden the bug; the fix makes it portable.
 - [x] **T2.4 Video e2e checks.** Runner step `expect_video` (`region`
   as screen fractions, `min_contrast`, `min_change`, `interval`): two
   screenshots `interval` apart, decoded by a dependency-free PNG decoder
@@ -254,11 +250,40 @@ consumes them and re-declares their Maven dependencies.
   meanwhile, so the next app got no or a broken connection. Now a new mux
   connection closes the previous session (the real controller has one USB
   port). Demo and our app alternate reliably.
-- [ ] **T3.5 Fast tests on `MockArsdkCore`.** Instrumented tests (on the
-  emulator, no fake process) for connection states and HUD values with a
-  mocked SkyController 2 + Disco. `make unit`. Done: tests pass, and fail
-  when a mapping is broken.
+- [~] **T3.5 Fast tests on `MockArsdkCore`.** Deferred 2026-11-18. Findings:
+  `sdkcore-testing.aar` contains `MockArsdkCore`, `Expectation`,
+  `ExpectedCmd` and the generated `ArsdkEncoder` (drone events). Parrot's
+  harness (`ArsdkEngineTestBase`) wasn't published. Hook:
+  `ArsdkEngine.createArsdkCore()` is package-private "to allow mocking";
+  a debug-only subclass in package `com.parrot.drone.groundsdk.arsdkengine`
+  (app debug sources, same class loader as the AAR) registered through the
+  `com.parrot.drone.groundsdk.engine.arsdkengine` manifest meta-data can
+  return a `MockArsdkCore`. The mock enforces a strict ordered queue of
+  expected connects and commands (controller date/time, AllSettings,
+  AllStates, then the proxied drone's Common date/time, AllSettings,
+  AllStates, VideoEnable, ...), so each test needs that full sequence.
+  The e2e suite already covers connection, HUD and video; revisit when app
+  logic grows beyond display.
 
-## M4 and later
+## M4. Headset view
+
+- [x] **T4.1 Headset screen.** `HeadsetActivity` (landscape, full screen,
+  immersive) with `GsdkHmdView`: live stream per eye with lens distortion
+  correction, our HUD (`hud.xml`) as the HMD overlay in both eyes.
+  "Headset view" button on the main screen. Refactor: `DroneScreenActivity`
+  (drone lookup, screen on, immersive, `withLiveStream`), `HudBinder`
+  shared by flight and headset screens. Done:
+  `tests/scenarios/app-headset.yaml` (live video in left and right eye
+  areas) passes 3/3 on SwiftShader (also on ANGLE); `app-flight-hud.yaml`
+  still passes. Screenshot `docs/screenshots/m4-headset-view.png`.
+- [ ] **T4.2 HUD layout for the headset.** The HUD overlaps the video's top
+  edge and is cut by the lens shape; lay it out for the lens area (smaller,
+  centred, larger fonts for readability through lenses).
+- [ ] **T4.3 Lens settings.** Expose and persist left/right lens offsets
+  and vertical offset (`GsdkHmdView` setters), with a calibration screen.
+- [ ] **T4.4 Headset checks.** Left/right similarity check in the runner
+  (both eyes show the same picture), and HUD presence in both eyes.
+
+## M5 and later
 
 See `PLAN.md` section 4.
