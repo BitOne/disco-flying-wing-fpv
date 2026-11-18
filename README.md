@@ -12,7 +12,7 @@ Not affiliated with or endorsed by Parrot. "Parrot", "Disco",
 
 ## Licence
 
-BSD-3-Clause, see `LICENSE`. The app uses Parrot's Ground SDK, distributed
+BSD-3-Clause, see `LICENSE` and `NOTICE`. The app uses Parrot's Ground SDK, distributed
 under the PARROT GROUND SDK End User License Agreement (`EULA.md` in the
 SDK manifest), whose open-source components are BSD-3-Clause.
 

@@ -1,0 +1,13 @@
+disco-flying-wing-fpv
+Copyright (c) 2026, Benoit Jacquemont
+Portions copyright (c) 2019–Present PARROT DRONES SAS. All rights reserved.
+
+This project uses Parrot's Ground SDK (via the Unified GroundSdk fork),
+distributed under the PARROT GROUND SDK End User License Agreement, whose
+open-source components (Ground SDK Mobile, PDrAW, Olympe) are released
+under the BSD 3-Clause license. The Parrot notice above is required by
+section 2.2 of that agreement.
+
+"Parrot", "Disco", "SkyController" and "FreeFlight" are trademarks of
+Parrot Drones SAS. This project is not affiliated with or endorsed by
+Parrot.

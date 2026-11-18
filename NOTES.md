@@ -693,7 +693,7 @@ BSD-3-Clause (EULA 2.3). What matters for us (my reading, not legal advice):
   provided as source. We only use source.
 - 2.2(3): our source must carry "Portions copyright (c) 2019–Present PARROT
   DRONES SAS. All rights reserved." where our own copyright notice is
-  (added to `LICENSE` and `README.md`; also to put in source file headers).
+  (in `NOTICE` and `README.md`, kept out of `LICENSE` so GitHub detects plain BSD-3-Clause; also to put in source file headers).
 - Sphinx has its own licence (testing only, no modification); not used.
 - 4.3: Parrot warns that modifying the SDK may affect drone control and
   cause damage or injury; relevant once we patch the fork.
