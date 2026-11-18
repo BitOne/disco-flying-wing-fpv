@@ -129,7 +129,7 @@ Each milestone ends green on `make check` and is committed.
 - Done when: `groundsdkdemo` APK builds, installs on the headless emulator,
   and a screenshot shows its device list.
 
-**M1. Fake controller connects**
+**M1. Fake controller connects** — done 2026-11-18
 - Build Parrot's `arsdk-ng-device` example for the PC as is, check the demo
   app reaches it over mux/TCP.
 - Adapt it into `fake-sc2`: it presents a SkyController 2 over mux/TCP,

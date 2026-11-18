@@ -1,0 +1,37 @@
+name: Demo app shows Disco telemetry from fake-sc2
+description: >
+  The GroundSdk demo app (e2e build, auto-connect) connects to the fake
+  SkyController 2 and shows the Disco's instruments with the values set
+  through the control socket; a later change is reflected live.
+app:
+  package: com.parrot.drone.groundsdkdemo
+  activity: .DeviceListActivity
+steps:
+  - send:
+      - battery 73
+      - rc_battery 58
+      - altitude 42.5
+      - airspeed 15.2
+      - speed 12 3 -0.5
+      - attitude 0.1 -0.05 1.57
+      - gps 45.1885 5.7245 250
+      - flying_state flying
+  - restart_app
+  - tap_text: DRONES
+  - expect_texts: [DISCO-FAKE01, CONNECTED]
+    timeout: 20000
+  - tap_text: DISCO-FAKE01
+  - expect_texts:
+      - 42.50 m
+      - FLYING
+      - 73 %
+      - 15.20 m/s
+      - 12.37 m/s
+      - 45.188500,5.724500
+    scroll: true
+    timeout: 15000
+  - screenshot: disco-info
+  - send: battery 21
+  - expect_texts: [21 %]
+    scroll: true
+    timeout: 10000

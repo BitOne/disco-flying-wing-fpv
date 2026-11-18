@@ -7,7 +7,9 @@ SHELL := /bin/bash
 
 ROOT        := $(abspath .)
 OUT         := $(ROOT)/out
+# Evaluated once (:=), so every use in a run sees the same timestamp.
 RUN_ID      ?= $(shell date +%Y%m%d-%H%M%S)
+RUN_ID      := $(RUN_ID)
 RUN_DIR     := $(OUT)/$(RUN_ID)
 
 SDK_IMAGE   := disco-fpv/sdk-build:1
@@ -198,9 +200,31 @@ demo-run: ## Install and launch the demo app (DEMO_APK, default the e2e build), 
 	@sleep 5
 	@$(MAKE) --no-print-directory emu-screenshot
 
+# End-to-end runner (TypeScript, tests/e2e). npm dependencies are installed and
+# type-checked in a Node container (third-party code stays in Docker); the
+# runner itself runs on the host (Node >= 22.18, type stripping) because it
+# drives the emulator container through the Docker CLI.
+NODE_IMAGE := node:22.18.0-bookworm-slim
+NODE_RUN   = docker run --rm -u $(UID):$(GID) -e npm_config_cache=/tmp/npm \
+	-v "$(ROOT)/tests":/tests -w /tests/e2e $(NODE_IMAGE)
+SCENARIOS  ?= tests/scenarios/*.yaml
+
+tests/e2e/node_modules: tests/e2e/package.json tests/e2e/package-lock.json
+	$(NODE_RUN) npm ci --ignore-scripts --no-audit --no-fund
+	@touch $@
+
+.PHONY: e2e-deps
+e2e-deps: tests/e2e/node_modules ## Install the e2e runner's npm dependencies (in Docker)
+
+.PHONY: e2e-unit
+e2e-unit: e2e-deps ## Type-check and unit-test the e2e runner (in Docker)
+	$(NODE_RUN) sh -c 'node_modules/.bin/tsc --noEmit && npm test --silent'
+
 .PHONY: e2e
-e2e: ## Run end-to-end scenarios against emulator + fake
-	$(call not_implemented,T1.6)
+e2e: e2e-unit ## Run end-to-end scenarios (SCENARIOS) against emulator + fake; out/latest
+	@mkdir -p $(RUN_DIR)
+	@ln -sfn $(RUN_ID) $(OUT)/latest
+	node tests/e2e/src/run.ts --out $(RUN_DIR) --ctrl-port 4322 $(SCENARIOS)
 
 .PHONY: check
 check: app unit fake emu e2e ## Full verification; exit code is the verdict

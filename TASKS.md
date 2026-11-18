@@ -117,12 +117,23 @@ Note: both images accept the Android SDK licences non-interactively
   heading 90°, FLYING, GPS fixed 45.1885/5.7245/250 m with 10 satellites,
   ground speed 12.37 m/s, air speed 15.20 m/s.
   Screenshot `docs/screenshots/t1.5-disco-telemetry.png`.
-- [ ] **T1.6 TypeScript e2e runner.** `tests/e2e` (Node LTS, strict
-  TypeScript): reads a YAML scenario (timeline of control-socket commands
-  and UI expectations), drives `fake-sc2` through its control socket and
-  the emulator through `adb` (UIAutomator text dumps, screenshots), writes
-  `out/<run>/summary.md`. `make e2e`. Done: a Disco telemetry scenario
-  against the demo app passes, and fails when an expected value is changed.
+- [x] **T1.6 TypeScript e2e runner.** `tests/e2e` (Node >= 22.18 with
+  type stripping, strict TypeScript, `yaml` 2.8.1): `src/run.ts` plays YAML
+  scenarios (`tests/scenarios/*.yaml`) with steps `send`, `wait`,
+  `restart_app`, `tap_text` (exact, then substring), `back`, `expect_texts`
+  (substring, polling, optional `scroll` through long screens),
+  `screenshot`; drives fake-sc2's control socket and the emulator through
+  `docker exec ... adb` (UIAutomator dumps); on failure saves a screenshot
+  and the screen text; writes `summary.md` and `results.json`.
+  `make e2e-unit` type-checks and runs 7 unit tests in a `node:22.18.0`
+  container (npm deps installed there with `--ignore-scripts`);
+  `make e2e` runs the scenarios on the host into `out/<run>/`, with
+  `out/latest` pointing at the last run. Done: `demo-disco-telemetry.yaml`
+  passes (9 steps, including a live battery change), and fails with
+  `missing text(s): "74 %"` plus evidence files when an expectation is
+  changed.
+
+M1 done (2026-11-18). Note: `make check` still stops at `app` (M3).
 
 ## M2 and later
 
