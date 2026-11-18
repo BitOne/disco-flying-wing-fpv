@@ -1,0 +1,20 @@
+From: disco-flying-wing-fpv
+Subject: [PATCH] sdkcore: static libc++, 16 KB page alignment
+
+Android 15+ devices may use 16 KB memory pages and refuse native
+libraries whose LOAD segments are 4 KB aligned (NDK r21 default), as Play
+does for new apps. Link libsdkcore with max-page-size=16384, and link
+libc++ statically: libsdkcore is the only C++ library in the app, and the
+NDK r21 libc++_shared.so is itself 4 KB aligned.
+---
+diff --git a/sdkcore/src/main/jni/Application.mk b/sdkcore/src/main/jni/Application.mk
+index 4c4fbc7..d4a1179 100644
+--- a/sdkcore/src/main/jni/Application.mk
++++ b/sdkcore/src/main/jni/Application.mk
+@@ -1,2 +1,5 @@
+ APP_PLATFORM := android-24
+-APP_STL := c++_shared
++# Disco FPV: static libc++ (libsdkcore is the only C++ library in the app)
++# and 16 KB ELF segment alignment, for Android 15+ devices with 16 KB pages.
++APP_STL := c++_static
++APP_LDFLAGS += -Wl,-z,max-page-size=16384

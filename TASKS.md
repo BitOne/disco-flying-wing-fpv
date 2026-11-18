@@ -422,13 +422,19 @@ video, headset view). Demo-app scenarios run with
 
 M5 done (2026-11-18): `make check` green with the six app scenarios.
 
-## M7 notes (release)
+## M7. Release (started)
 
-- 16 KB pages: on arm64, `libsdkcore.so` and `libc++_shared.so` (NDK r21)
-  are 4 KB-aligned (`readelf -l`, LOAD alignment 0x1000). Fine on the
-  Fairphone 5 (4 KB pages), refused on 16 KB devices and by Play. To do:
-  link `libsdkcore` with `-Wl,-z,max-page-size=16384` and ship a 16 KB
-  aligned `libc++_shared.so` (NDK r27+), or link libc++ statically.
+- [x] **T7.1 16 KB pages.** `libsdkcore.so` (NDK r21) was 4 KB aligned on
+  arm64, and so was the NDK's `libc++_shared.so`. SDK patch
+  `patches/packages/groundsdk-android/0002-sdkcore-static-stl-16k-pages.patch`:
+  link with `-z max-page-size=16384` and libc++ statically (libsdkcore is
+  the only C++ library). arm64: libsdkcore 16 KB, conscrypt 64 KB; APK
+  `zipalign -c -P 16` OK. `make apk-check` (part of `make check`) fails if
+  an arm64 library drops below 16 KB. x86_64 (emulator only) not checked.
+  `make check` green with the rebuilt libraries.
+- [ ] **T7.2 CI.** GitHub Actions running `make check` (KVM runner).
+- [ ] **T7.3 Signed release APK.**
+- [x] **T7.4 README** with the current state, build and test commands.
 
 ## M6 and later
 

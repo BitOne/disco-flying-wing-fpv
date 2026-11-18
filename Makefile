@@ -149,6 +149,11 @@ app: app-image ## Build the app debug APK (out/disco-fpv-debug.apk); needs sdk-a
 		| tee $(OUT)/app-build.log; exit $${PIPESTATUS[0]}
 	cp $(APP_DEBUG_APK) $(OUT)/disco-fpv-debug.apk
 
+.PHONY: apk-check
+apk-check: ## Check out/disco-fpv-debug.apk's arm64 native libraries are 16 KB aligned
+	$(SDK_RUN) scripts/apk-check.sh out/disco-fpv-debug.apk \
+		$(SDK_NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf
+
 .PHONY: app-install
 app-install: ## Install out/disco-fpv-debug.apk on the emulator
 	docker cp $(OUT)/disco-fpv-debug.apk $(EMU_NAME):/tmp/disco-fpv.apk
@@ -328,7 +333,7 @@ freeflight-stop: ## Stop FreeFlight, the in-emulator fake Disco and its mDNS ann
 	-$(ADB) shell cat /data/local/tmp/fake.log > $(OUT)/fake-disco-android.log
 
 .PHONY: check
-check: app unit fake video emu app-install e2e ## Full verification; exit code is the verdict
+check: app apk-check unit fake video emu app-install e2e ## Full verification; exit code is the verdict
 
 .PHONY: clean
 clean: ## Remove build outputs and test artifacts (keeps sdk/ and Docker caches)
