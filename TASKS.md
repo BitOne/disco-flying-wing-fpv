@@ -76,15 +76,31 @@ Note: both images accept the Android SDK licences non-interactively
   `is_devtype_supported`) drops types outside the app's USB list, and the
   example announces `ARSDK_DEVICE_TYPE_BEBOP_2`. Fixed by T1.3/T1.4.
   Also: `device.c` parses `--replay-file` but never uses it.
-- [ ] **T1.3 `fake-sc2` source in our repo.** Copy `device.c` into
-  `fake-sc2/` with its licence header, build it with Alchemy as our own
-  module (no edits inside `sdk/`). Done: same behaviour as T1.2 from our
-  copy; `make fake` starts it.
-- [ ] **T1.4 SkyController 2 + Disco identity.** Announce a SkyController 2
-  (device type, name, serial) with a drone manager listing one Disco,
-  connected. Use `MockArsdkCore`-based knowledge of the events the SDK's
-  `SkyControllerFamilyController` and `SkyControllerDroneFinder` expect.
-  Done: the demo app shows the SkyController 2 and the Disco as connected.
+- [x] **T1.3 `fake-sc2` source in our repo.** `fake-sc2/src/fake_sc2.c`
+  (copy of `device.c`, Parrot licence header kept) built as our Alchemy
+  module `fake-sc2` (`fake-sc2/atom.mk`, which also includes
+  `host-libs/atom.mk` since Alchemy doesn't scan below a directory with an
+  `atom.mk`). Added `--mux-port` (default 4321). `make fake` starts it in
+  container `disco-fpv-fake` (host network), `make fake-stop` saves its log.
+- [x] **T1.4 SkyController 2 + Disco identity.** Publisher announces
+  `ARSDK_DEVICE_TYPE_SKYCTRL_2` "SkyController 2 (fake)", serial
+  `PI040443FAKESC2`. Replies (from `RCController`/`DeviceController`):
+  `Skyctrl.Settings.AllSettings` → `Skyctrl.SettingsState.ProductVersionChanged`
+  + `AllSettingsChanged`; `Skyctrl.Common.AllStates` →
+  `Skyctrl.DeviceState.ConnexionChanged(CONNECTED, "DISCO-FAKE01", 0x090e)`
+  + `Skyctrl.CommonState.AllStatesChanged`; drone side
+  `Common.Settings.AllSettings` / `Common.Common.AllStates` answered the
+  same way. Done: demo shows the controller CONNECTED (USB-LOCAL) and
+  "DISCO-FAKE01 DISCO CONNECTED" via the controller; the app then sends
+  `Ardrone3.MediaStreaming.VideoEnable=1` and a steady `Ardrone3.Piloting.PCMD`
+  stream. Screenshots in `docs/screenshots/t1.4-*`.
+- [ ] **T1.4b Reconnection.** After the app closes the mux session, the
+  example doesn't accept a new one (restarting the fake is needed). Fix the
+  mux server so the app can disconnect and reconnect. Done: force-stop and
+  restart the app twice, it reconnects each time without restarting the fake.
+- [ ] **T1.4c Demo auto-connect for tests.** The demo needs two taps to
+  connect; find a non-UI way (intent, auto-connection setting, or our own
+  test app in M3) so e2e runs don't depend on screen coordinates.
 - [ ] **T1.5 Telemetry from a scenario file.** `fake-sc2` reads a YAML
   timeline (battery, altitude, attitude, speed, airspeed, GPS) and sends the
   Disco events through the drone manager. Done: values visible in the demo

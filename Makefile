@@ -115,7 +115,12 @@ FAKE_PRUNE := $(addprefix /work/sdk/packages/, pdraw olympe groundsdk-android \
 	common/libmediacodec-wrapper common/librtsp common/libsdp common/librtp \
 	common/libARMavlink common/mavlink common/lz4 \
 	common/logger)
-FAKE_MODULES ?= arsdk-ng-device arsdk-ng-controller
+FAKE_MODULES ?= fake-sc2 arsdk-ng-controller
+FAKE_NAME    := disco-fpv-fake
+FAKE_BIN_DIR := /work/sdk/out/olympe-linux/staging/usr/bin
+FAKE_LIB_DIR := /work/sdk/out/olympe-linux/staging/usr/lib
+FAKE_PORT    ?= 4321
+FAKE_ARGS    ?=
 
 .PHONY: fake-build
 fake-build: ## Build the fake controller (and Parrot's C examples) for Linux x86_64
@@ -128,8 +133,22 @@ fake-build: ## Build the fake controller (and Parrot's C examples) for Linux x86
 		| tee $(OUT)/fake-build.log; exit $${PIPESTATUS[0]}
 
 .PHONY: fake
-fake: ## Build and start the fake SkyController 2 + Disco
-	$(call not_implemented,T1.3)
+fake: fake-build ## Build and start the fake SkyController 2 + Disco (container disco-fpv-fake)
+	docker rm -f $(FAKE_NAME) >/dev/null 2>&1 || true
+	docker run -d --name $(FAKE_NAME) --network host \
+		-v "$(ROOT)":/work -e LD_LIBRARY_PATH=$(FAKE_LIB_DIR) \
+		-e ULOG_LEVEL=D -e ULOG_STDERR=y $(SDK_IMAGE) \
+		$(FAKE_BIN_DIR)/fake-sc2 --mux --mux-port $(FAKE_PORT) \
+		--no-publisher-avahi --no-publisher-net $(FAKE_ARGS) >/dev/null
+	@sleep 1; docker ps --format '{{.Names}}' | grep -qx $(FAKE_NAME) \
+		|| { docker logs $(FAKE_NAME); exit 1; }
+	@echo "fake-sc2 listening on mux/TCP port $(FAKE_PORT)"
+
+.PHONY: fake-stop
+fake-stop: ## Stop the fake controller and save its log to out/fake-sc2.log
+	@mkdir -p $(OUT)
+	-docker logs $(FAKE_NAME) > $(OUT)/fake-sc2.log 2>&1
+	docker rm -f $(FAKE_NAME) >/dev/null 2>&1 || true
 
 EMU_IMAGE := disco-fpv/emulator:1
 EMU_NAME  := disco-fpv-emu
