@@ -5,11 +5,13 @@
  * Usage: node src/run.ts [--out <dir>] [--ctrl-port <port>] <scenario.yaml>...
  * Exit code: 0 if every scenario passed, 1 otherwise, 2 on usage/setup error.
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { Emulator } from './emulator.ts';
 import { sleep } from './exec.ts';
 import { FakeControl } from './fake.ts';
+import { changedFraction, lumaStats } from './imagecheck.ts';
+import { decodePng } from './png.ts';
 import { loadScenario, type Scenario, type Step } from './scenario.ts';
 import { missingTexts, textsOf } from './uidump.ts';
 
@@ -38,6 +40,8 @@ function label(step: Step): string {
     case 'back': return 'back';
     case 'expect_texts': return `expect ${step.texts.map((t) => `"${t}"`).join(', ')}${step.scroll ? ' (scroll)' : ''}`;
     case 'screenshot': return `screenshot ${step.name}`;
+    case 'expect_video':
+      return `expect video in [${step.region.join(', ')}] (contrast >= ${step.minContrast}, change >= ${step.minChange})`;
   }
 }
 
@@ -94,6 +98,31 @@ async function runStep(
       const path = join(dir, `${step.name}.png`);
       await emu.screenshot(path);
       return path;
+    }
+    case 'expect_video': {
+      // Two screenshots `interval` apart: the region must have image content
+      // (luminance spread) and change between them (live frames).
+      const deadline = Date.now() + step.timeoutMs;
+      const a = join(dir, 'video-check-a.png');
+      const b = join(dir, 'video-check-b.png');
+      for (;;) {
+        await emu.screenshot(a);
+        await sleep(step.intervalMs);
+        await emu.screenshot(b);
+        const imgA = decodePng(await readFile(a));
+        const imgB = decodePng(await readFile(b));
+        if (imgA.width !== imgB.width || imgA.height !== imgB.height) {
+          // screen rotating between the two shots: measure again
+          if (Date.now() > deadline) throw new Error('screen size kept changing');
+          continue;
+        }
+        const { stddev, mean } = lumaStats(imgB, step.region);
+        const change = changedFraction(imgA, imgB, step.region);
+        const detail = `contrast ${stddev.toFixed(1)} (mean ${mean.toFixed(0)}), change ${(change * 100).toFixed(2)} %`;
+        if (stddev >= step.minContrast && change >= step.minChange) return detail;
+        if (Date.now() > deadline) throw new Error(`no live video: ${detail}`);
+        await sleep(500);
+      }
     }
   }
 }

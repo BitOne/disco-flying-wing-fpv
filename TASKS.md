@@ -163,13 +163,35 @@ side must open 4 and 5 itself to send on them.
   err=-71 (Protocol error)` logged at start without visible effect: to
   investigate if it matters later. Screenshot
   `docs/screenshots/t2.2-hud-video.png`.
-- [ ] **T2.3 Headset view.** The demo's HMD view shows the pattern in both
-  eyes. Done: screenshot.
-- [ ] **T2.4 Video e2e checks.** Runner step(s) checking video from
-  screenshots: content present (not black/uniform) in given regions,
-  frames changing between two screenshots, left/right similarity for the
-  headset view. Scenario `demo-video.yaml`. Done: passes, and fails when
-  the video source is stopped.
+- [!] **T2.3 Headset view.** Blocked 2026-11-18: the demo's HMD view
+  (`HmdActivity` + `GsdkHmdView`) renders only black on the emulator, in
+  portrait and landscape, with both GPU backends (SwiftShader GLES 3.0 and
+  ANGLE/SwiftShader-Vulkan GLES 3.1, `EMU_GPU=swangle_indirect`). Facts:
+  stream starts (`Gles2Renderer` STARTED, decoder running), no GL error in
+  logcat, GL thread busy in `eglSwapBuffers` (continuous rendering, ~20 s
+  CPU), main thread idle; the config panel doesn't show on tap (GL surface
+  probably on top); UIAutomator can't reach idle on that screen. The same
+  stream renders fine in the HUD view (`GsdkStreamView`). Next: (1) check
+  the demo HMD on the Fairphone at checkpoint A (emulator-only or not);
+  (2) in M4, instrument `GsdkHmdView` (geometry, FBO status, per-layer
+  `glReadPixels`) in our SDK fork, or render side by side ourselves.
+- [x] **T2.4 Video e2e checks.** Runner step `expect_video` (`region`
+  as screen fractions, `min_contrast`, `min_change`, `interval`): two
+  screenshots `interval` apart, decoded by a dependency-free PNG decoder
+  (`src/png.ts`, Node zlib); passes when the region's luminance spread
+  (`lumaStats`) and changed-pixel fraction (`changedFraction`) reach the
+  thresholds; retries while the screen rotates (size change). Scenario
+  `tests/scenarios/demo-video.yaml` (HUD view, needs `make video`). Done:
+  passes with the camera running (contrast 73.8, change 79 %), fails with
+  it stopped (contrast 48.7 from the HUD graphics, change 0.00 %). 12 unit
+  tests. Left-right similarity for the headset view waits for T2.3.
+  Note: 79 % change on a mostly static pattern is more than the clock and
+  noise patch explain (frame-to-frame encoder noise, or scaling); tighten
+  if it ever hides a problem.
+
+M2 done except T2.3 (headset view on the emulator), 2026-11-18.
+`make emu` accepts `EMU_GPU` (default `swiftshader_indirect`, also
+`swangle_indirect`).
 
 ## M3 and later
 

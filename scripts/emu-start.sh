@@ -16,7 +16,7 @@ else
         -v "$OUT":/out \
         "$IMAGE" \
         emulator -avd disco-test -no-window -no-audio -no-boot-anim \
-            -gpu swiftshader_indirect -no-snapshot -accel on -read-only \
+            -gpu "${EMU_GPU:-swiftshader_indirect}" -no-snapshot -accel on -read-only \
             -ports 5554,5555 >/dev/null
     echo "started emulator container $NAME"
 fi

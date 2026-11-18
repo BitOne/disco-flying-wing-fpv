@@ -140,7 +140,7 @@ Each milestone ends green on `make check` and is committed.
   handshake. Disco telemetry events (battery, altitude, GPS) appear in the
   demo's info screens.
 
-**M2. Video**
+**M2. Video** — done 2026-11-18, except the headset view (T2.3, black on the emulator)
 - GStreamer test pattern sent as RTP over the mux RTP channel.
 - Done when: the demo app's HMD activity shows the pattern in both eyes
   (automated screenshot check), and frame counters advance across two

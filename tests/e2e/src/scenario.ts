@@ -9,7 +9,15 @@ export type Step =
   | { kind: 'tap_text'; text: string }
   | { kind: 'back' }
   | { kind: 'expect_texts'; texts: string[]; timeoutMs: number; scroll: boolean }
-  | { kind: 'screenshot'; name: string };
+  | { kind: 'screenshot'; name: string }
+  | {
+      kind: 'expect_video';
+      region: [number, number, number, number];
+      minContrast: number;
+      minChange: number;
+      intervalMs: number;
+      timeoutMs: number;
+    };
 
 export interface Scenario {
   name: string;
@@ -58,6 +66,31 @@ function parseStep(raw: unknown, index: number): Step {
         texts: stringList(value, where),
         timeoutMs: timeout,
         scroll: raw['scroll'] === true,
+      };
+    }
+    case 'expect_video': {
+      if (!isRecord(value)) throw new Error(`${where}: expect_video expects a map`);
+      const region = value['region'] ?? [0.25, 0.25, 0.75, 0.75];
+      if (
+        !Array.isArray(region) || region.length !== 4 ||
+        !region.every((v) => typeof v === 'number' && v >= 0 && v <= 1)
+      ) {
+        throw new Error(`${where}: region must be [left, top, right, bottom] fractions in 0..1`);
+      }
+      const num = (key: string, fallback: number): number => {
+        const v = value[key] ?? fallback;
+        if (typeof v !== 'number' || v < 0) throw new Error(`${where}: ${key} must be a non-negative number`);
+        return v;
+      };
+      const timeout = raw['timeout'] ?? 10_000;
+      if (typeof timeout !== 'number') throw new Error(`${where}: timeout must be milliseconds`);
+      return {
+        kind: 'expect_video',
+        region: region as [number, number, number, number],
+        minContrast: num('min_contrast', 20),
+        minChange: num('min_change', 0.002),
+        intervalMs: num('interval', 1000),
+        timeoutMs: timeout,
       };
     }
     case 'screenshot':

@@ -1,0 +1,24 @@
+name: Demo app plays the fake Disco video in the HUD view
+description: >
+  Needs `make video` (fake camera) as well as `make fake` and `make emu`.
+  Opens the Disco's HUD view in the GroundSdk demo app (e2e build) and
+  checks the centre of the screen shows live video: enough contrast (test
+  pattern bars) and pixels changing between two screenshots (running clock,
+  noise patch).
+app:
+  package: com.parrot.drone.groundsdkdemo
+  activity: .DeviceListActivity
+steps:
+  - restart_app
+  - tap_text: DRONES
+  - expect_texts: [DISCO-FAKE01, CONNECTED]
+    timeout: 20000
+  - tap_text: DISCO-FAKE01
+  - tap_text: HUD
+  - expect_video:
+      region: [0.3, 0.2, 0.7, 0.75]
+      min_contrast: 30
+      min_change: 0.002
+      interval: 1000
+    timeout: 15000
+  - screenshot: hud-video
