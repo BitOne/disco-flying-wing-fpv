@@ -5,7 +5,7 @@ a side-by-side headset view, built by Claude in a loop and tested entirely in
 software (fake drone + Android emulator), with a few human checkpoints on
 real hardware.
 
-Background research: `NOTES.md` sections 10 to 14.
+Background research: `NOTES.md` sections 10 to 17.
 
 ## 1. Key findings that make this possible
 
@@ -17,17 +17,22 @@ Background research: `NOTES.md` sections 10 to 14.
   `gsdk_usb_debug_enabled` (already `true` in the demo app). So the app in an
   emulator follows the same code path as with the real controller, except
   the Android USB accessory layer at the very bottom.
-- **Parrot's `arsdk-ng` ships a fake drone** (`examples/device.c`) that can
-  already listen for mux over TCP (`mux_new` on an accepted socket), as well
-  as the Wi-Fi protocol (TCP 44444 handshake). We use it as the **reference**
-  for our fake, not as its code base: new software is written in
-  **TypeScript** (Node). The fake ports the needed protocol layers from the C
-  references: mux framing and channels (`libmux`, ~5,000 lines of C including
-  the IP proxy we don't need), ARSDK transport and handshake (`arsdk-ng`
-  `libarsdk`, ~5,300 lines), and command encoding generated from the
-  `arsdk-xml` definitions. The C example stays useful as a conformance
-  check: our TypeScript fake and Parrot's C controller example must
-  interoperate.
+- **Parrot's `arsdk-ng` ships a fake drone** (`examples/device.c`, 674
+  lines) that already listens for mux over TCP (`mux_new` on an accepted
+  socket) and for the Wi-Fi protocol (TCP 44444 handshake), with message
+  encoders generated from `arsdk-xml`. It is an Alchemy module
+  (`arsdk-ng-device`), and the synced SDK also has a Linux product
+  (`olympe-linux`) to build it for the PC. **We adapt it** into the fake
+  SkyController 2 + Disco (C, decided 2026-11-18): far less work and risk
+  than porting ~10,000 lines of protocol code (`libmux`, `libarsdk`) to
+  TypeScript. Genuinely new tools around it (scenario control, end-to-end
+  test runner, SITL bridge) are written in **TypeScript**.
+- **The SDK also has an in-process mock**, `MockArsdkCore` (module
+  `sdkcore-testing`): it replaces the native protocol layer in Java, lets a
+  test add devices of any type (SkyController 2, Disco), drive their
+  connection state, inject events encoded with `ArsdkCommandEncoder` and
+  assert the commands the app sends. No network, no native code, no video.
+  It is the base of the fast test level (section 2a).
 - **The fork builds x86_64 native libraries** (`buildcfg.py`:
   `armeabi-v7a`, `arm64-v8a`, `x86_64`), so the app runs on a fast x86_64
   emulator image.
@@ -37,14 +42,29 @@ Background research: `NOTES.md` sections 10 to 14.
 
 ## 2. Architecture of the test rig
 
+### 2a. Two test levels
+
+| | Fast tests | End-to-end tests |
+|---|---|---|
+| Fake | `MockArsdkCore` (Java, in the app process) | adapted `device.c` (C, separate process) |
+| Runs | JVM (Robolectric) or instrumented on the emulator | emulator + fake + TypeScript runner |
+| Covers | app logic: connection states, HUD values, alarms, settings, reactions to low battery, GPS loss, disconnection | protocol, controller connection over mux/TCP, handshake, **video**, headset view |
+| Doesn't cover | native layer, mux, video | Android USB accessory layer (hardware checkpoints only) |
+| Speed | seconds, many tests | a minute or more, few scenarios |
+
+Most app tests are fast tests; end-to-end tests are kept for what only a
+real protocol peer can show.
+
+### 2b. End-to-end rig
+
 ```
 ┌──────────────── host (or one Docker compose stack) ────────────────┐
 │                                                                     │
-│  fake-sc2 (TypeScript, Node)              scenario control (HTTP)   │
+│  fake-sc2 (C, adapted device.c)           scenario control (HTTP)   │
 │   ├ mux over TCP :13579  ◄──────────┐      ▲  set battery, GPS,     │
 │   ├ presents a SkyController 2      │      │  link loss, attitude…  │
 │   ├ drone manager: one Disco,       │      │                        │
-│   │  "connected"                    │   test runner (pytest)        │
+│   │  "connected"                    │   test runner (TypeScript)    │
 │   ├ Disco state events (telemetry)  │      │  drives scenarios,     │
 │   └ RTP H.264 on the mux RTP        │      │  collects screenshots, │
 │     channel  ◄── GStreamer          │      │  logcat, logs          │
@@ -76,12 +96,13 @@ disco-flying-wing-fpv/
 ├── NOTES.md, PLAN.md, TASKS.md      research, this plan, live backlog
 ├── sdk/                             repo checkout of Unified GroundSdk (not committed; script)
 ├── app/                             our Android app (Gradle, Kotlin), depends on the SDK AARs
-├── fake-sc2/                        TypeScript fake SkyController 2 + Disco (mux, ARSDK), Dockerfile
+├── fake-sc2/                        fake SkyController 2 + Disco: adapted arsdk-ng device.c (C), built with Alchemy
 ├── sim/                             optional SITL bridge (TypeScript), Gazebo camera, GStreamer pipelines
 ├── tests/
 │   ├── scenarios/*.yaml             fake drone timelines
-│   ├── e2e/                         pytest: emulator + fake + screenshot/log checks
+│   ├── e2e/                         TypeScript runner: emulator + fake + screenshot/log checks
 │   └── golden/                      reference screenshots (with tolerances)
+│   (fast tests live in app/src/test and app/src/androidTest, on MockArsdkCore)
 ├── docker/                          build images: sdk-build, android-sdk+emulator
 └── Makefile                         single entry points (below)
 ```
@@ -90,7 +111,8 @@ Entry points the loop relies on (each prints a short summary and writes
 artifacts to `out/<timestamp>/`):
 
 - `make sdk` builds the fork (native + AARs) in Docker; cached.
-- `make app` builds the debug APK; `make unit` runs JVM unit tests.
+- `make app` builds the debug APK; `make unit` runs the fast tests
+  (`MockArsdkCore`).
 - `make fake` builds and starts the fake controller.
 - `make emu` starts a headless emulator (snapshot boot), waits for it.
 - `make e2e` installs the app, runs scenarios, collects screenshots,
@@ -101,19 +123,18 @@ artifacts to `out/<timestamp>/`):
 
 Each milestone ends green on `make check` and is committed.
 
-**M0. Toolchain** (most fragile)
-- Docker image building the fork with `repo`, Alchemy, NDK r21, JDK 11.
+**M0. Toolchain** (most fragile) — done 2026-11-18
+- Docker image building the fork with `repo`, Alchemy, NDK r21, JDK 8.
 - Android SDK + x86_64 system image + emulator in a container or local dir.
 - Done when: `groundsdkdemo` APK builds, installs on the headless emulator,
   and a screenshot shows its device list.
 
 **M1. Fake controller connects**
-- `fake-sc2` (TypeScript) implements mux framing, the ARSDK transport and
-  handshake, and command codecs generated from `arsdk-xml`, with unit tests
-  against byte captures from the C reference (Parrot's `arsdk-ng` example
-  controller and device, built in Docker).
-- It presents a SkyController 2 over mux/TCP, with a Disco in its drone
-  manager, connected.
+- Build Parrot's `arsdk-ng-device` example for the PC as is, check the demo
+  app reaches it over mux/TCP.
+- Adapt it into `fake-sc2`: it presents a SkyController 2 over mux/TCP,
+  with a Disco in its drone manager, connected, and sends Disco telemetry
+  from a scenario file. Scenario control API and e2e runner in TypeScript.
 - Done when: the demo app (debug bridge pointed at `10.0.2.2:13579`) shows
   the SkyController 2 and the Disco as connected, and logcat shows the
   handshake. Disco telemetry events (battery, altitude, GPS) appear in the
@@ -134,11 +155,14 @@ Each milestone ends green on `make check` and is committed.
   tasks.
 
 **M3. Our app skeleton**
-- New app module using `groundsdk`/`arsdkengine`/`sdkcore`.
+- New app module using `groundsdk`/`arsdkengine`/`sdkcore`, plus
+  `sdkcore-testing` for the fast tests.
 - Screens: connection status, normal video view with 2D HUD.
-- Done when: e2e scenarios check that HUD values match the scenario
-  (altitude, speed, airspeed, battery, GPS), on screenshots and through
-  UIAutomator text/content-descriptions.
+- Done when: fast tests on `MockArsdkCore` check connection states and HUD
+  values (altitude, speed, airspeed, battery, GPS) for a mocked
+  SkyController 2 + Disco; one e2e scenario checks the same values arrive
+  through the real protocol from `fake-sc2`.
+- Can start before M1/M2 finish, since the fast tests don't need the fake.
 
 **M4. Headset view**
 - `GsdkHmdView` full screen with HUD overlay, lens offsets saved, entry and
@@ -149,8 +173,9 @@ Each milestone ends green on `make check` and is committed.
 **M5. Robustness scenarios**
 - Low battery, GPS loss, controller-drone link loss and recovery, controller
   unplug (TCP close) and reconnect, app background/foreground, rotation.
-- Done when: each scenario has an e2e test with expected UI states and no
-  crash or ANR in logcat.
+- Done when: each scenario has a fast test on `MockArsdkCore`; controller
+  unplug/reconnect and link loss also have an e2e test; no crash or ANR in
+  logcat.
 
 **M6. Realistic flight data (optional)**
 - ArduPilot SITL plane (flying wing) + MAVLink-to-ARSDK bridge driving
@@ -198,7 +223,8 @@ Each milestone ends green on `make check` and is committed.
 |---|---|
 | Old native toolchain (repo, Alchemy, NDK r21) won't build cleanly | Pin everything in a Docker image; M0 first; ask the fork author if stuck |
 | Fake controller doesn't match the real SkyController 2 (drone manager states, stream setup) | Checkpoint A recording as reference; keep fake behaviour data-driven |
-| TypeScript port of mux/ARSDK has subtle framing bugs | Byte-level tests against the C reference implementations; interop test with Parrot's C example controller |
+| `device.c` is a minimal example; a SkyController 2 + drone manager may need much more state than it sends | Checkpoint A recording; `MockArsdkCore` tests show which events the SDK needs |
+| `MockArsdkCore` tests pass while the real protocol path fails | Keep at least one e2e scenario per feature that touches the protocol or video |
 | Mux-over-TCP skips the Android USB accessory layer | Covered by checkpoint A and B on real hardware only |
 | Emulator GPU (swiftshader) differs from the phone's GPU for the HMD shaders | Checkpoint A visual check; keep shaders GLES 2 |
 | Screenshot tests are flaky | Marker-based checks with tolerances rather than exact pixels; retries |
@@ -222,7 +248,7 @@ Each milestone ends green on `make check` and is committed.
    `groundsdk-android`, maybe `arsdk-ng`, `groundsdk-product`), each with a
    branch per fix, and pull requests back to `UnifiedGroundSdk` so fixes
    don't stay with us.
-4. **Later, maybe `BitOne/parrot-fake-controller`**: if the TypeScript fake
+4. **Later, maybe `BitOne/parrot-fake-controller`**: if the fake controller
    turns out useful beyond the Disco (Bebop, other apps), extract it from
    the monorepo with its history (`git subtree split`). Not before it's
    stable.

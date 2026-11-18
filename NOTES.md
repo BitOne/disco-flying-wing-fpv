@@ -707,6 +707,27 @@ explicitly in the chat (no terminal access at the time); the marker
 (new md5), the build will ask again: re-confirm with the user, or they run
 `make sdk-eula`.
 
+## 17. Fakes available in the SDK (2026-11-18)
+
+- **No protocol-level fake SkyController in the fork.** What exists:
+- **`MockArsdkCore`** (`groundsdk-android/sdkcore/testing`, module
+  `sdkcore-testing`): Java replacement of the native ARSDK core for tests.
+  API: `addDevice(uid, type, name, ...)`, `deviceConnecting/Connected/
+  Disconnected(handle)`, `commandReceived(handle, ArsdkCommand...)` to inject
+  events, `expect(Expectation)` / `assertExpectation` / `assertNoExpectation`
+  to check commands sent, `ArsdkCommandEncoder`/`Decoder` helpers. Parrot's
+  full test suite wasn't published: only
+  `arsdkengine/src/androidTest/.../AnafiBatteryGaugeUpdaterTests.java` uses
+  it. Bypasses native code, mux and video.
+- **`arsdk-ng/examples/device.c`** (674 lines): Alchemy module
+  `arsdk-ng-device`; sends a Bebop 2 identity and one GPS event by default;
+  supports mux over TCP and the Wi-Fi backend. `examples/controller.c`
+  (2,421 lines, module `arsdk-ng-controller`) is the matching controller.
+- `arsdk-ng/tests` has protocol encode/decode tests (`tst-arsdk`).
+- Decision (2026-11-18): adapt `device.c` (C) for the end-to-end fake;
+  `MockArsdkCore` for fast tests; new tools in TypeScript. See `PLAN.md`
+  section 2a.
+
 ## Sources
 
 - FPV_VR_OS: https://github.com/Consti10/FPV_VR_OS

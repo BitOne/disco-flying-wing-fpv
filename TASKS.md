@@ -57,25 +57,37 @@ Note: both images accept the Android SDK licences non-interactively
 
 ## M1. Fake controller connects
 
-- [ ] **T1.1 Reference binaries.** Build Parrot's `arsdk-ng` examples
-  (`device`, `controller`) in Docker for byte captures and interop tests.
-- [ ] **T1.2 TypeScript project.** `fake-sc2/` with Node LTS, strict
-  TypeScript, test runner, lint. Done: `npm test` green on a trivial test.
-- [ ] **T1.3 Mux protocol.** Port mux framing and channels from `libmux`
-  (no IP proxy). Done: unit tests against captured bytes; interop with the
-  C reference over TCP.
-- [ ] **T1.4 ARSDK codecs.** Generate command/event encoders and decoders
-  from `arsdk-xml`. Done: round-trip tests and byte equality with C encoder
-  captures for a sample of commands.
-- [ ] **T1.5 ARSDK transport + handshake.** Done: Parrot's C example
-  controller connects to the fake and exchanges commands.
-- [ ] **T1.6 SkyController 2 + Disco identity.** Device type, drone manager
-  list with one Disco, connection state "connected". Done: demo app on the
-  emulator (debug bridge `10.0.2.2:13579`) shows both connected.
-- [ ] **T1.7 Telemetry events and scenario files.** Battery, altitude,
-  attitude, speed, airspeed, GPS from a YAML timeline. Done: values visible
-  in the demo app's info screens, checked by an e2e test.
+- [ ] **T1.1 Build the C example drone for the PC.** Build Alchemy module
+  `arsdk-ng-device` (and `arsdk-ng-controller` for debugging) for Linux
+  x86_64, probably via the `olympe-linux` product, in the SDK container.
+  `make fake-build`. Done: `arsdk-ng-device --help` runs on the host or in
+  the container.
+- [ ] **T1.2 Demo app reaches the unmodified example.** Run the example
+  with its mux/TCP listener on port 13579; rebuild the demo with
+  `arsdk_debug_usb_bridge_address=10.0.2.2` (resource overlay, not an SDK
+  edit). Done: logcat shows the mux connection and handshake from the demo;
+  whatever device the example announces (Bebop 2 by default) appears or
+  the failure is understood and noted.
+- [ ] **T1.3 `fake-sc2` source in our repo.** Copy `device.c` into
+  `fake-sc2/` with its licence header, build it with Alchemy as our own
+  module (no edits inside `sdk/`). Done: same behaviour as T1.2 from our
+  copy; `make fake` starts it.
+- [ ] **T1.4 SkyController 2 + Disco identity.** Announce a SkyController 2
+  (device type, name, serial) with a drone manager listing one Disco,
+  connected. Use `MockArsdkCore`-based knowledge of the events the SDK's
+  `SkyControllerFamilyController` and `SkyControllerDroneFinder` expect.
+  Done: the demo app shows the SkyController 2 and the Disco as connected.
+- [ ] **T1.5 Telemetry from a scenario file.** `fake-sc2` reads a YAML
+  timeline (battery, altitude, attitude, speed, airspeed, GPS) and sends the
+  Disco events through the drone manager. Done: values visible in the demo
+  app's drone info screen.
+- [ ] **T1.6 TypeScript e2e runner.** `tests/e2e` (Node LTS, strict
+  TypeScript): starts the fake with a scenario, drives the emulator through
+  `adb`, reads UI text (UIAutomator dump) and takes screenshots, writes
+  `out/<run>/summary.md`. `make e2e`. Done: one scenario passes and fails
+  correctly when a value is changed.
 
 ## M2 and later
 
-See `PLAN.md` section 4. Tasks get split here when M1 is done.
+See `PLAN.md` section 4. Tasks get split here when M1 is done. M3's fast
+tests (`MockArsdkCore`) can start in parallel with M1/M2.
