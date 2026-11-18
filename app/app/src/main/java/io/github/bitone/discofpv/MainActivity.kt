@@ -6,30 +6,45 @@ package io.github.bitone.discofpv
 
 import android.app.Activity
 import android.os.Bundle
+import android.widget.Button
 import android.widget.TextView
 import com.parrot.drone.groundsdk.GroundSdk
 import com.parrot.drone.groundsdk.ManagedGroundSdk
 import com.parrot.drone.groundsdk.device.DeviceState
 
-/** Lists the remote control and drone known to GroundSdk with their states. */
+/**
+ * Connection screen: remote control and drone states; opens the flight view
+ * once a drone is connected.
+ */
 class MainActivity : Activity() {
 
     private lateinit var groundSdk: GroundSdk
     private lateinit var rcStatus: TextView
     private lateinit var droneStatus: TextView
+    private lateinit var flightButton: Button
+    private var connectedDroneUid: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         rcStatus = findViewById(R.id.rc_status)
         droneStatus = findViewById(R.id.drone_status)
+        flightButton = findViewById(R.id.flight_button)
+        flightButton.setOnClickListener {
+            connectedDroneUid?.let { startActivity(FlightActivity.intent(this, it)) }
+        }
 
         groundSdk = ManagedGroundSdk.obtainSession(this)
         groundSdk.getRemoteControlList({ true }) { list ->
             rcStatus.text = describe(list.orEmpty().map { Device(it.name, it.model.toString(), it.state) })
         }
         groundSdk.getDroneList({ true }) { list ->
-            droneStatus.text = describe(list.orEmpty().map { Device(it.name, it.model.toString(), it.state) })
+            val drones = list.orEmpty()
+            droneStatus.text = describe(drones.map { Device(it.name, it.model.toString(), it.state) })
+            connectedDroneUid = drones.firstOrNull {
+                it.state.connectionState == DeviceState.ConnectionState.CONNECTED
+            }?.uid
+            flightButton.isEnabled = connectedDroneUid != null
         }
     }
 

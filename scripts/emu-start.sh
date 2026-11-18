@@ -37,4 +37,4 @@ until [ "$(docker exec "$NAME" adb -s emulator-5554 shell getprop sys.boot_compl
 done
 echo "emulator booted in $(( $(date +%s) - start ))s"
 # Keep the screen on and skip animations: steadier screenshots and UI tests.
-docker exec "$NAME" adb -s emulator-5554 shell 'settings put global window_animation_scale 0; settings put global transition_animation_scale 0; settings put global animator_duration_scale 0; svc power stayon true; input keyevent 82' >/dev/null
+docker exec "$NAME" adb -s emulator-5554 shell 'settings put global window_animation_scale 0; settings put global transition_animation_scale 0; settings put global animator_duration_scale 0; svc power stayon true; settings put secure immersive_mode_confirmations confirmed; input keyevent 82' >/dev/null

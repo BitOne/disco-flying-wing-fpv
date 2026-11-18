@@ -751,9 +751,16 @@ static void mux_server_fd_event_cb(int fd, uint32_t revents, void *userdata)
 	if (sockfd < 0)
 		LOG_FD_ERRNO("accept", app->mux.sockfd_server, errno);
 
-	if (app->mux.sockfd != -1) {
-		close(sockfd);
+	if (sockfd < 0)
 		return;
+
+	/* fake-sc2: like the real controller's single USB port, a new phone
+	 * connection replaces the previous session (an app killed on the
+	 * emulator leaves its session open until mux pings time out). */
+	if (app->mux.sockfd != -1) {
+		LOGI("mux: new connection, closing the previous session");
+		shutdown(app->mux.sockfd, SHUT_RDWR);
+		mux_server_fdeof(app->mux.ctx, app);
 	}
 
 	/* For testing purposes, set the not pollable flag for fd */

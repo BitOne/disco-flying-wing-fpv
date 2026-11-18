@@ -57,6 +57,8 @@ dependencies {
     implementation("org.conscrypt:conscrypt-android:2.2.1")
     implementation("com.google.firebase:firebase-crashlytics:17.1.0")
 
+    testImplementation("junit:junit:4.13.2")
+
     androidTestImplementation(files(sdkAarDir.resolve("sdkcore-testing.aar")))
     androidTestImplementation("org.hamcrest:hamcrest:2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")

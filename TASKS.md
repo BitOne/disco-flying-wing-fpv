@@ -221,11 +221,32 @@ consumes them and re-declares their Maven dependencies.
   "DISCO-FAKE01 (DISCO): CONNECTED". Screenshot
   `docs/screenshots/t3.3-app-connected.png`. To fix in T3.4: content draws
   under the status bar (edge-to-edge on target 35).
-- [ ] **T3.4 Flight screen with 2D HUD.** Full-screen live video
-  (`GsdkStreamView`) with our HUD: altitude, airspeed, ground speed,
-  battery (drone and controller), GPS fix/satellites, flying state,
-  distance home. Done: e2e scenario checks HUD texts against fake values
-  and live video with `expect_video`.
+- [ ] **T3.4 Flight screen with 2D HUD.** In progress. Done so far:
+  `FlightActivity` (landscape, full screen, immersive, screen on) with
+  `GsdkStreamView` and a text HUD (`FLYING`, `ALT 42.5 m`, `AIR 15.2 m/s`,
+  `GND 12.4 m/s`, `BAT 73 %`, `RC 58 %`, `GPS 10 sat`), formatting in
+  `HudFormat` with 5 JVM unit tests; "Flight view" button on the main
+  screen once a drone is connected; main screen no longer under the status
+  bar. Scenario `tests/scenarios/app-flight-hud.yaml`: HUD checks pass,
+  **video check fails** (black, or one frozen frame).
+  Facts: fake forwards RTP continuously after `VideoEnable=1`; app pipeline
+  links `StreamDemuxerMux` → `AvcDecoder` (c2.goldfish.h264) →
+  `Gles2Renderer`; the demo's HUD (`DroneHudActivity`) plays the same
+  stream in the same session conditions. Ruled out (each tested twice,
+  after the fake session fix): target SDK 28 vs 35, full-screen theme and
+  immersive flags, smaller stream view, debug vs release SDK AARs, legacy
+  JNI packaging, subscribing to the live stream once / play only when not
+  playing. Not a difference: decoder/renderer start order and the
+  `Codec2Buffer canCopy` log (both apps). Next: bisect from the demo's
+  `DroneHudActivity` copied into our app, moving step by step to ours.
+  Emulator setup now pre-confirms Android's immersive-mode notice
+  (`immersive_mode_confirmations`), which hid the screen from UIAutomator.
+- [x] **T1.4d fake-sc2: new connection replaces the old session.** Found
+  while testing T3.4: an app killed on the emulator leaves its mux session
+  open until pings time out, and Parrot's example refused new connections
+  meanwhile, so the next app got no or a broken connection. Now a new mux
+  connection closes the previous session (the real controller has one USB
+  port). Demo and our app alternate reliably.
 - [ ] **T3.5 Fast tests on `MockArsdkCore`.** Instrumented tests (on the
   emulator, no fake process) for connection states and HUD values with a
   mocked SkyController 2 + Disco. `make unit`. Done: tests pass, and fail

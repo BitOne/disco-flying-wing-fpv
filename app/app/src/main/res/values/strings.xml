@@ -4,4 +4,6 @@
     <string name="remote_control">Remote control</string>
     <string name="drone">Drone</string>
     <string name="none">none</string>
+    <string name="flight_view">Flight view</string>
+    <string name="hud_unknown">--</string>
 </resources>

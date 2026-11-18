@@ -1,0 +1,34 @@
+name: Disco FPV flight view shows live video and the HUD
+description: >
+  Needs `make fake`, `make video` and `make emu`. Sets Disco telemetry on
+  fake-sc2, opens the flight view and checks the HUD values and the live
+  video, then changes values and checks the HUD follows.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - send:
+      - battery 73
+      - rc_battery 58
+      - altitude 42.5
+      - airspeed 15.2
+      - speed 12 3 -0.5
+      - gps 45.1885 5.7245 250
+      - satellites 10
+      - flying_state flying
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flight view
+  - expect_texts: [FLYING, ALT 42.5 m, AIR 15.2 m/s, GND 12.4 m/s, BAT 73 %, RC 58 %, GPS 10 sat]
+    timeout: 10000
+  - expect_video:
+      region: [0.3, 0.25, 0.7, 0.75]
+      min_contrast: 30
+      min_change: 0.002
+    timeout: 15000
+  - screenshot: flight-view
+  - send: [battery 21, altitude 120, gps_lost, flying_state landing]
+  - expect_texts: [BAT 21 %, ALT 120.0 m, GPS no fix, LANDING]
+    timeout: 10000
+  - screenshot: flight-view-updated
