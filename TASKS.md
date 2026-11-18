@@ -37,12 +37,23 @@ blocked (with a one-line reason and date).
   declares `armeabi-v7a` and `x86` only because of `libconscrypt_jni.so`;
   `libsdkcore.so` exists for `x86_64` and `arm64-v8a` only, so our app must
   set `abiFilters`.
-- [ ] **T0.6 Emulator.** Android SDK + `system-images;android-34;google_apis;x86_64`,
-  headless emulator with KVM, swiftshader GPU, snapshot. `make emu` boots
-  and waits for `sys.boot_completed`. Done: `adb shell getprop` works,
-  screenshot saved.
-- [ ] **T0.7 Demo on emulator.** Install demo APK, launch, screenshot.
-  Done: screenshot shows the demo's device list.
+- [x] **T0.6 Emulator.** `docker/emulator` image (Ubuntu 22.04, emulator,
+  `system-images;android-35;google_apis;x86_64`, AVD `disco-test` Pixel 6,
+  swiftshader GPU). `make emu` runs it detached as `disco-fpv-emu` with
+  `--device /dev/kvm --group-add <kvm gid> --network host` and waits for
+  `sys.boot_completed`, then disables animations and keeps the screen on.
+  `make emu-stop`, `make emu-screenshot`. Done: Android 15, ABIs
+  `x86_64,arm64-v8a`, 1080x2400, boot in 43 s, home screen screenshot.
+  Android 15 matches the Fairphone 5. Cold boot each run (no snapshot yet).
+- [x] **T0.7 Demo on emulator.** `make demo-run` installs
+  `out/groundsdkdemo-debug.apk`, launches `DeviceListActivity` (cold start
+  5 s) and takes a screenshot. Done: "GroundSdk Demo" with empty "Remote
+  controls" and "Drones" tabs, no crash in the crash log buffer. The debug
+  mux bridge address is empty by default (DNS-SD discovery only); M1 must
+  set `arsdk_debug_usb_bridge_address` to `10.0.2.2`.
+
+Note: both images accept the Android SDK licences non-interactively
+(`sdkmanager --licenses`), the usual practice for CI images.
 
 ## M1. Fake controller connects
 

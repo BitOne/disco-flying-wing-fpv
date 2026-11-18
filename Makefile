@@ -108,9 +108,35 @@ unit: ## Run JVM unit tests
 fake: ## Build and start the fake SkyController 2 + Disco
 	$(call not_implemented,M1)
 
+EMU_IMAGE := disco-fpv/emulator:1
+EMU_NAME  := disco-fpv-emu
+ADB       := docker exec $(EMU_NAME) adb -s emulator-5554
+
+.PHONY: emu-image
+emu-image: ## Build the Docker image of the headless Android emulator
+	docker build --build-arg UID=$(UID) --build-arg GID=$(GID) \
+		-t $(EMU_IMAGE) docker/emulator
+
 .PHONY: emu
-emu: ## Start a headless Android emulator and wait for boot
-	$(call not_implemented,T0.6)
+emu: emu-image ## Start a headless Android emulator and wait for boot
+	scripts/emu-start.sh $(EMU_IMAGE) $(EMU_NAME) $(OUT)
+
+.PHONY: emu-stop
+emu-stop: ## Stop the emulator container
+	docker rm -f $(EMU_NAME) >/dev/null 2>&1 || true
+
+.PHONY: emu-screenshot
+emu-screenshot: ## Save an emulator screenshot to out/screenshot-<time>.png
+	@f=$(OUT)/screenshot-$$(date +%H%M%S).png; \
+		$(ADB) exec-out screencap -p > $$f && echo $$f
+
+.PHONY: demo-run
+demo-run: ## Install and launch the SDK demo app on the emulator, then screenshot
+	docker cp $(OUT)/groundsdkdemo-debug.apk $(EMU_NAME):/tmp/demo.apk
+	$(ADB) install -r -g /tmp/demo.apk
+	$(ADB) shell am start -W -n com.parrot.drone.groundsdkdemo/.DeviceListActivity
+	@sleep 5
+	@$(MAKE) --no-print-directory emu-screenshot
 
 .PHONY: e2e
 e2e: ## Run end-to-end scenarios against emulator + fake
