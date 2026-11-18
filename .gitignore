@@ -1,0 +1,16 @@
+# SDK checkout (repo sync), build outputs, test artifacts
+/sdk/
+/out/
+build/
+.gradle/
+local.properties
+*.apk
+*.aab
+
+# Node
+node_modules/
+dist/
+
+# Android emulator / SDK if installed locally
+/.android-sdk/
+/.avd/
