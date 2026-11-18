@@ -1,0 +1,45 @@
+name: FreeFlight Pro return home, stop and landing drive the fake Disco
+description: >
+  Checks that FreeFlight's piloting commands change the fake Disco's
+  flying state the way a Disco does (fake-sc2 flight simulation). Same
+  setup as freeflight-disco.yaml. FreeFlight shows no take-off button
+  without a SkyController ("A remote controller is required"), so the
+  Disco is put in flight from the control socket. LANDING and STOP RTH are
+  image buttons, tapped by position on the 2400x1080 landscape screen.
+app:
+  package: com.parrot.freeflight3
+  activity: com.parrot.freeflight.start.StartActivity
+steps:
+  - send:
+      - home 45.1885 5.7245 300
+      - gps 45.1890 5.7250 350
+      - altitude 50
+      - flying_state hovering
+  - restart_app
+  - expect_texts: [Disco, FLY & FILM]
+    timeout: 30000
+  - tap_text: FLY & FILM
+  - expect_texts: ["50"] # altitude, shown with a GPS fix
+    timeout: 20000
+  - expect_video:
+      region: [0.2, 0.2, 0.8, 0.6]
+      min_contrast: 30
+      min_change: 0.002
+    timeout: 30000
+  - screenshot: freeflight-hovering
+  # return home, finished by the fake after 5 s
+  - tap: [0.205, 0.071]
+  - expect_fake: "flying alt=50.0 home=1"
+  - screenshot: freeflight-rth
+  - expect_fake: "hovering alt=50.0 home=0"
+  # return home again, stopped from the app (STOP RTH)
+  - tap: [0.205, 0.071]
+  - expect_fake: "home=1"
+  - tap: [0.525, 0.955]
+  - expect_fake: "hovering alt=50.0 home=0"
+  # landing: descends to the ground
+  - tap: [0.525, 0.955]
+  - expect_fake: landing
+  - expect_fake: "landed alt=0.0"
+    timeout: 25000
+  - screenshot: freeflight-landed

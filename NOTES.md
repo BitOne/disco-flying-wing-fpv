@@ -778,6 +778,17 @@ was).
   `MagnetoCalibrationRequiredState(0)`.
 - Only one controller at a time: other GroundSdk apps on the emulator auto
   connect to the in-emulator Disco over Wi-Fi, so they are force-stopped.
+- Piloting from FreeFlight over Wi-Fi: no take-off button for a Disco
+  without a SkyController ("A remote controller is required to pilot the
+  drone"); LANDING (with a dropdown) and return home / STOP RTH work and
+  send `Ardrone3.Piloting.Landing` and `NavigateHome(1/0)`. FreeFlight also
+  streams PCMD at about 25 Hz while connected. Its HUD shows altitude only
+  with a GPS fix, and the distance from the phone's own location.
+- GroundSdk (demo HUD, `ManualFlightPilotingItf.smartTakeOffLand`) sends
+  `TakeOff` for the Disco (or `UserTakeOff(1)` when the drone reports it is
+  moving, for a thrown take-off) and `Emergency` for the cut-out button; its
+  return home sends `NavigateHome(1)` and needs `NavigateHomeStateChanged`
+  to be available.
 - FPV mode (Cockpitglasses 1/2, manual/auto) is in Interface settings; on a
   Disco it is toggled from the SkyController, so it can't be shown here.
 

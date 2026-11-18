@@ -174,6 +174,31 @@ guest UDP to the host, so the fake Disco runs inside the emulator.
   scenario checks speed and battery. Screenshots:
   `docs/screenshots/m1b-freeflight-*.png`.
 
+- [x] **T1.11 Flight states.** The fake reacts to piloting commands the
+  way a Disco does (flight simulation in `fake_sc2.c`, `flight_tick`):
+  TakeOff gives motor ramping, then after the throw (automatic after 2 s,
+  or `throw` on the control socket) taking off while climbing at 5 m/s to
+  50 m, then hovering (the Disco circles). UserTakeOff(1) arms a hand
+  launch and waits for `throw`. Landing descends at 4 m/s to landed.
+  Emergency cuts the motor and lands after 1 s. NavigateHome(1) reports
+  return home in progress for 5 s then finished (circling), NavigateHome(0)
+  stops it. Home position (`HomeChanged`) set at the first GPS fix or with
+  `home`. The control socket's new `state` query reports
+  `<flying state> alt=<m> home=<0|1> pcmd=<n>`; telemetry set by hand
+  (altitude, airspeed, flying_state) stops the simulation, so scripted
+  scenarios are unchanged. Runner: `expect_fake` (poll a control query),
+  `tap` (screen fractions), `tap_id` (resource id). A controller
+  reconnecting over Wi-Fi now replaces the stale session instead of being
+  rejected until it times out. Checks:
+  `tests/scenarios/freeflight-piloting.yaml` (FreeFlight's return home,
+  STOP RTH and LANDING buttons; FreeFlight has no take-off without a
+  SkyController) and `tests/scenarios/demo-piloting.yaml` (GroundSdk demo
+  through the fake SkyController 2: take-off, return home, landing,
+  take-off then emergency), both passing. FreeFlight shows altitude only
+  with a GPS fix, and the distance from the phone, so `make freeflight`
+  puts the emulator's location at the scenarios' home (68 m shown, as
+  computed).
+
 M1b done (2026-11-18): the fake Disco's protocol (discovery, handshake,
 connection states, telemetry, ARStream2 video) satisfies Parrot's own app.
 The SkyController 2 path of the fake is still validated only by GroundSdk

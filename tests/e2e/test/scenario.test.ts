@@ -15,11 +15,17 @@ test('parses every step kind', () => {
   - restart_app
   - back
   - tap_text: DRONES
+  - tap: [0.5, 0.25]
+  - tap_id: take_off_land_btn
   - expect_texts: [a, b]
     scroll: true
     timeout: 500
   - expect_texts: c
   - screenshot: shot-1
+  - expect_fake: hovering
+    timeout: 2000
+  - expect_fake: connected
+    query: ping
 `);
   assert.deepEqual(s.steps, [
     { kind: 'send', commands: ['battery 50'] },
@@ -28,9 +34,13 @@ test('parses every step kind', () => {
     { kind: 'restart_app' },
     { kind: 'back' },
     { kind: 'tap_text', text: 'DRONES' },
+    { kind: 'tap', x: 0.5, y: 0.25 },
+    { kind: 'tap_id', id: 'take_off_land_btn' },
     { kind: 'expect_texts', texts: ['a', 'b'], timeoutMs: 500, scroll: true },
     { kind: 'expect_texts', texts: ['c'], timeoutMs: 10000, scroll: false },
     { kind: 'screenshot', name: 'shot-1' },
+    { kind: 'expect_fake', query: 'state', contains: 'hovering', timeoutMs: 2000 },
+    { kind: 'expect_fake', query: 'ping', contains: 'connected', timeoutMs: 10000 },
   ]);
 });
 
@@ -40,6 +50,7 @@ test('rejects unknown actions and malformed steps', () => {
   assert.throws(() => parseScenario(`${base}steps:\n  - wait: soon\n`), /milliseconds/);
   assert.throws(() => parseScenario(`${base}steps:\n  - screenshot: ../x\n`), /screenshot expects a name/);
   assert.throws(() => parseScenario(`${base}steps: []\n`), /non-empty/);
+  assert.throws(() => parseScenario(`${base}steps:\n  - tap: [0.5, 2]\n`), /fractions/);
   assert.throws(() => parseScenario(`name: t\nsteps: [back]\n`), /"app" needs/);
 });
 

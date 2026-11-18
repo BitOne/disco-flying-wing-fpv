@@ -56,6 +56,9 @@ $ADB emu redir del udp:$VIDEO_RTCP >/dev/null 2>&1 || true
 $ADB emu redir add udp:$VIDEO_RTP:$VIDEO_RTP >/dev/null
 $ADB emu redir add udp:$VIDEO_RTCP:$VIDEO_RTCP >/dev/null
 $ADB forward tcp:4422 tcp:4322 >/dev/null
+# phone location at the fake Disco's home (scenarios use Grenoble):
+# FreeFlight shows the distance from the phone, not from home
+$ADB emu geo fix 5.7245 45.1885 >/dev/null
 
 # mDNS announce (Android NSD, through the helper app)
 docker cp "$HELPER_APK" "$EMU":/tmp/fakedisco.apk

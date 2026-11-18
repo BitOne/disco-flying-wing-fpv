@@ -38,8 +38,11 @@ function label(step: Step): string {
     case 'restart_app': return 'restart app';
     case 'tap_text': return `tap "${step.text}"`;
     case 'back': return 'back';
+    case 'tap': return `tap at (${step.x}, ${step.y})`;
+    case 'tap_id': return `tap #${step.id}`;
     case 'expect_texts': return `expect ${step.texts.map((t) => `"${t}"`).join(', ')}${step.scroll ? ' (scroll)' : ''}`;
     case 'screenshot': return `screenshot ${step.name}`;
+    case 'expect_fake': return `expect fake "${step.query}" to report "${step.contains}"`;
     case 'expect_video':
       return `expect video in [${step.region.join(', ')}] (contrast >= ${step.minContrast}, change >= ${step.minChange})`;
   }
@@ -63,12 +66,14 @@ async function runStep(
       await emu.stopApp(scenario.app.package);
       await emu.startApp(scenario.app.package, scenario.app.activity);
       return undefined;
-    case 'tap_text': {
+    case 'tap_text':
+    case 'tap_id': {
       // the element may not be there yet right after a screen change
       const deadline = Date.now() + 10_000;
       for (;;) {
         try {
-          await emu.tapText(step.text);
+          if (step.kind === 'tap_text') await emu.tapText(step.text);
+          else await emu.tapId(step.id);
           await sleep(800);
           return undefined;
         } catch (error) {
@@ -76,6 +81,15 @@ async function runStep(
           await sleep(500);
         }
       }
+    }
+    case 'tap': {
+      // size in the current orientation, from a screenshot's PNG header
+      const shot = join(dir, 'tap.png');
+      await emu.screenshot(shot);
+      const { width, height } = decodePng(await readFile(shot));
+      await emu.tap(step.x * width, step.y * height);
+      await sleep(800);
+      return undefined;
     }
     case 'back':
       await emu.back();
@@ -93,6 +107,15 @@ async function runStep(
         await sleep(1000);
       }
       return undefined;
+    }
+    case 'expect_fake': {
+      const deadline = Date.now() + step.timeoutMs;
+      for (;;) {
+        const reply = await fake.send(step.query);
+        if (reply.includes(step.contains)) return undefined;
+        if (Date.now() > deadline) throw new Error(`fake replied "${reply}"`);
+        await sleep(300);
+      }
     }
     case 'screenshot': {
       const path = join(dir, `${step.name}.png`);

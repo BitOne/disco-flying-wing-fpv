@@ -24,3 +24,9 @@ fake against Parrot's FreeFlight Pro inside the emulator:
     make freeflight-stop
 
 `app/fakedisco` is the helper app announcing it over mDNS (Android NSD).
+
+Piloting commands (TakeOff, UserTakeOff, Landing, Emergency, NavigateHome)
+drive a small flight simulation of the Disco's sequences (take-off by
+throw, climb to 50 m and circle, landing, motor cut, return home); see the
+comment above `flight_tick` and the control socket's `state` and `throw`
+commands in `src/fake_sc2.c`.

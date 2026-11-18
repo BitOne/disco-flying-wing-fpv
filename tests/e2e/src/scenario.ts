@@ -7,9 +7,12 @@ export type Step =
   | { kind: 'wait'; ms: number }
   | { kind: 'restart_app' }
   | { kind: 'tap_text'; text: string }
+  | { kind: 'tap'; x: number; y: number }
+  | { kind: 'tap_id'; id: string }
   | { kind: 'back' }
   | { kind: 'expect_texts'; texts: string[]; timeoutMs: number; scroll: boolean }
   | { kind: 'screenshot'; name: string }
+  | { kind: 'expect_fake'; query: string; contains: string; timeoutMs: number }
   | {
       kind: 'expect_video';
       region: [number, number, number, number];
@@ -45,7 +48,7 @@ function parseStep(raw: unknown, index: number): Step {
     throw new Error(`${where}: unknown step "${raw}"`);
   }
   if (!isRecord(raw)) throw new Error(`${where}: expected a map`);
-  const keys = Object.keys(raw).filter((k) => !['timeout', 'scroll'].includes(k));
+  const keys = Object.keys(raw).filter((k) => !['timeout', 'scroll', 'query'].includes(k));
   if (keys.length !== 1) throw new Error(`${where}: expected exactly one action, got ${keys.join(', ') || 'none'}`);
   const key = keys[0] as string;
   const value = raw[key];
@@ -58,6 +61,20 @@ function parseStep(raw: unknown, index: number): Step {
     case 'tap_text':
       if (typeof value !== 'string') throw new Error(`${where}: tap_text expects a string`);
       return { kind: 'tap_text', text: value };
+    case 'tap_id':
+      if (typeof value !== 'string' || !/^[\w.:/]+$/.test(value)) {
+        throw new Error(`${where}: tap_id expects a resource id`);
+      }
+      return { kind: 'tap_id', id: value };
+    case 'tap':
+      // [x, y] as fractions of the current screen, for controls without text
+      if (
+        !Array.isArray(value) || value.length !== 2 ||
+        !value.every((v) => typeof v === 'number' && v >= 0 && v <= 1)
+      ) {
+        throw new Error(`${where}: tap expects [x, y] fractions in 0..1`);
+      }
+      return { kind: 'tap', x: value[0] as number, y: value[1] as number };
     case 'expect_texts': {
       const timeout = raw['timeout'] ?? 10_000;
       if (typeof timeout !== 'number') throw new Error(`${where}: timeout must be milliseconds`);
@@ -92,6 +109,16 @@ function parseStep(raw: unknown, index: number): Step {
         intervalMs: num('interval', 1000),
         timeoutMs: timeout,
       };
+    }
+    case 'expect_fake': {
+      // polls a control-socket query (default "state") until its reply
+      // contains the text
+      const query = raw['query'] ?? 'state';
+      const timeout = raw['timeout'] ?? 10_000;
+      if (typeof value !== 'string' || value === '') throw new Error(`${where}: expect_fake expects a text`);
+      if (typeof query !== 'string') throw new Error(`${where}: query must be a control command`);
+      if (typeof timeout !== 'number') throw new Error(`${where}: timeout must be milliseconds`);
+      return { kind: 'expect_fake', query, contains: value, timeoutMs: timeout };
     }
     case 'screenshot':
       if (typeof value !== 'string' || !/^[\w-]+$/.test(value)) {

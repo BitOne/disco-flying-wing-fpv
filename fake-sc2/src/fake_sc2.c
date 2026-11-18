@@ -71,6 +71,7 @@ struct telemetry {
 	float    airspeed;       /* m/s */
 	double   latitude, longitude, gps_altitude; /* 500 = unknown */
 	uint8_t  gps_fixed;
+	double   home_latitude, home_longitude, home_altitude; /* 500 = unset */
 	uint8_t  satellites;
 	int32_t  flying_state;   /* ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_* */
 };
@@ -136,6 +137,17 @@ struct app {
 	/* --disco: be a Disco reached directly over Wi-Fi (net backend),
 	 * instead of a SkyController 2 over mux */
 	int disco_mode;
+
+	/* fake-sc2: flight simulation driven by the app's piloting commands
+	 * (see flight_tick). Values set from the control socket stop it, so
+	 * scripted telemetry stays as set. */
+	struct {
+		struct pomp_timer *timer;
+		int               active;    /* simulating */
+		unsigned          state_ms;  /* time in the current flying state */
+		int               home;      /* return home in progress */
+		unsigned long     pcmd;      /* PCMD commands received */
+	} flight;
 };
 
 /** */
@@ -181,6 +193,9 @@ static struct app s_app = {
 		.latitude = 500.0,
 		.longitude = 500.0,
 		.gps_altitude = 500.0,
+		.home_latitude = 500.0,
+		.home_longitude = 500.0,
+		.home_altitude = 500.0,
 		.flying_state = ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDED,
 	},
 };
@@ -237,6 +252,8 @@ static void send_rc_state(struct app *app)
 			app->cmd_itf, &send_status, app, app->tm.rc_battery));
 }
 
+static void send_home_state(struct app *app, int32_t reason);
+
 /** fake-sc2: send the whole Disco telemetry. */
 static void send_telemetry(struct app *app)
 {
@@ -270,6 +287,253 @@ static void send_telemetry(struct app *app)
 	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_PositionChanged(
 			app->cmd_itf, &send_status, app,
 			tm->latitude, tm->longitude, tm->gps_altitude));
+	SEND(res, arsdk_cmd_send_Ardrone3_GPSSettingsState_HomeChanged(
+			app->cmd_itf, &send_status, app, tm->home_latitude,
+			tm->home_longitude, tm->home_altitude));
+	send_home_state(app,
+		ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_ENABLED);
+}
+
+/*
+ * fake-sc2: flight simulation, the Disco's own sequences:
+ *   TakeOff: motor ramping, thrown (automatically after FLIGHT_THROW_MS, or
+ *   "throw" on the control socket), taking off while climbing to
+ *   FLIGHT_CIRCLE_ALT, then hovering, which for the Disco means circling.
+ *   UserTakeOff(1): armed for a hand launch, waits for "throw".
+ *   Landing: descends at FLIGHT_DESCENT m/s, then landed.
+ *   Emergency: motor cut, on the ground after FLIGHT_EMERGENCY_MS.
+ *   NavigateHome(1): flying home for FLIGHT_HOME_MS, then circling.
+ */
+#define FLIGHT_TICK_MS       100
+#define FLIGHT_THROW_MS      2000
+#define FLIGHT_CIRCLE_ALT    50.0
+#define FLIGHT_CLIMB         5.0  /* m/s */
+#define FLIGHT_DESCENT       4.0  /* m/s */
+#define FLIGHT_AIRSPEED      12.0 /* m/s */
+#define FLIGHT_EMERGENCY_MS  1000
+#define FLIGHT_HOME_MS       5000
+
+#define FS(_s) ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_##_s
+
+static const struct { const char *name; int32_t value; } flying_states[] = {
+	{ "landed", FS(LANDED) },
+	{ "takingoff", FS(TAKINGOFF) },
+	{ "hovering", FS(HOVERING) },
+	{ "flying", FS(FLYING) },
+	{ "landing", FS(LANDING) },
+	{ "emergency", FS(EMERGENCY) },
+	{ "usertakeoff", FS(USERTAKEOFF) },
+	{ "motor_ramping", FS(MOTOR_RAMPING) },
+	{ "emergency_landing", FS(EMERGENCY_LANDING) },
+};
+#define FLYING_STATES_COUNT (sizeof(flying_states) / sizeof(flying_states[0]))
+
+static const char *flying_state_name(int32_t value)
+{
+	size_t i;
+	for (i = 0; i < FLYING_STATES_COUNT; i++) {
+		if (flying_states[i].value == value)
+			return flying_states[i].name;
+	}
+	return "unknown";
+}
+
+static int is_airborne(int32_t state)
+{
+	return state == FS(TAKINGOFF) || state == FS(HOVERING)
+		|| state == FS(FLYING);
+}
+
+static void send_home_state(struct app *app, int32_t reason)
+{
+	int res = 0;
+	if (app->cmd_itf == NULL)
+		return;
+	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_NavigateHomeStateChanged(
+			app->cmd_itf, &send_status, app,
+			app->flight.home ?
+			ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_STATE_INPROGRESS :
+			ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_STATE_AVAILABLE,
+			reason));
+}
+
+static void flight_set_state(struct app *app, int32_t state)
+{
+	int res = 0;
+	LOGI("flying state %s -> %s", flying_state_name(app->tm.flying_state),
+			flying_state_name(state));
+	app->tm.flying_state = state;
+	app->flight.state_ms = 0;
+	if (app->cmd_itf != NULL)
+		SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_FlyingStateChanged(
+				app->cmd_itf, &send_status, app, state));
+}
+
+static void flight_set_motion(struct app *app, double altitude, float airspeed)
+{
+	int res = 0;
+	struct telemetry *tm = &app->tm;
+	if (altitude != tm->altitude) {
+		tm->altitude = altitude;
+		if (app->cmd_itf != NULL)
+			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AltitudeChanged(
+					app->cmd_itf, &send_status, app, altitude));
+	}
+	if (airspeed != tm->airspeed) {
+		tm->airspeed = airspeed;
+		if (app->cmd_itf != NULL)
+			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AirSpeedChanged(
+					app->cmd_itf, &send_status, app, airspeed));
+	}
+}
+
+static void flight_stop_home(struct app *app, int32_t reason)
+{
+	if (!app->flight.home)
+		return;
+	app->flight.home = 0;
+	send_home_state(app, reason);
+}
+
+/** Hand launch: from motor ramping or armed user take-off to taking off. */
+static int flight_throw(struct app *app)
+{
+	int32_t st = app->tm.flying_state;
+	if (st != FS(MOTOR_RAMPING) && st != FS(USERTAKEOFF))
+		return -EINVAL;
+	app->flight.active = 1;
+	flight_set_state(app, FS(TAKINGOFF));
+	return 0;
+}
+
+static void flight_tick(struct pomp_timer *timer, void *userdata)
+{
+	struct app *app = userdata;
+	struct telemetry *tm = &app->tm;
+	const double dt = FLIGHT_TICK_MS / 1000.0;
+
+	if (!app->flight.active)
+		return;
+	app->flight.state_ms += FLIGHT_TICK_MS;
+
+	switch (tm->flying_state) {
+	case FS(MOTOR_RAMPING):
+		if (app->flight.state_ms >= FLIGHT_THROW_MS)
+			flight_throw(app);
+		break;
+	case FS(TAKINGOFF): {
+		double alt = tm->altitude + FLIGHT_CLIMB * dt;
+		if (alt >= FLIGHT_CIRCLE_ALT) {
+			flight_set_motion(app, FLIGHT_CIRCLE_ALT, FLIGHT_AIRSPEED);
+			flight_set_state(app, FS(HOVERING));
+		} else {
+			flight_set_motion(app, alt, FLIGHT_AIRSPEED);
+		}
+		break;
+	}
+	case FS(FLYING):
+		if (app->flight.home && app->flight.state_ms >= FLIGHT_HOME_MS) {
+			flight_stop_home(app,
+				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_FINISHED);
+			flight_set_state(app, FS(HOVERING));
+		}
+		break;
+	case FS(LANDING): {
+		double alt = tm->altitude - FLIGHT_DESCENT * dt;
+		if (alt <= 0) {
+			flight_set_motion(app, 0, 0);
+			flight_set_state(app, FS(LANDED));
+			app->flight.active = 0;
+		} else {
+			flight_set_motion(app, alt, FLIGHT_AIRSPEED);
+		}
+		break;
+	}
+	case FS(EMERGENCY):
+		if (app->flight.state_ms >= FLIGHT_EMERGENCY_MS) {
+			flight_set_motion(app, 0, 0);
+			flight_set_state(app, FS(LANDED));
+			app->flight.active = 0;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+/** Piloting commands from the app; returns 1 if the command was one. */
+static int flight_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
+{
+	int res = 0;
+	uint8_t arg = 0;
+	int32_t st = app->tm.flying_state;
+
+	switch (cmd->id) {
+	case ARSDK_ID_ARDRONE3_PILOTING_PCMD:
+		app->flight.pcmd++;
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_TAKEOFF:
+		if (st == FS(LANDED)) {
+			app->flight.active = 1;
+			flight_set_state(app, FS(MOTOR_RAMPING));
+		}
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_USERTAKEOFF:
+		res = arsdk_cmd_dec_Ardrone3_Piloting_UserTakeOff(cmd, &arg);
+		if (res < 0)
+			return 1;
+		if (arg && st == FS(LANDED)) {
+			app->flight.active = 1;
+			flight_set_state(app, FS(USERTAKEOFF));
+		} else if (!arg && (st == FS(USERTAKEOFF)
+				|| st == FS(MOTOR_RAMPING))) {
+			flight_set_state(app, FS(LANDED));
+			app->flight.active = 0;
+		}
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_LANDING:
+		if (is_airborne(st)) {
+			app->flight.active = 1;
+			flight_stop_home(app,
+				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_STOPPED);
+			flight_set_state(app, FS(LANDING));
+		} else if (st == FS(MOTOR_RAMPING) || st == FS(USERTAKEOFF)) {
+			flight_set_state(app, FS(LANDED));
+			app->flight.active = 0;
+		}
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_EMERGENCY:
+		if (st != FS(LANDED)) {
+			app->flight.active = 1;
+			flight_stop_home(app,
+				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_STOPPED);
+			flight_set_motion(app, app->tm.altitude, 0);
+			flight_set_state(app, FS(EMERGENCY));
+		}
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_NAVIGATEHOME:
+		res = arsdk_cmd_dec_Ardrone3_Piloting_NavigateHome(cmd, &arg);
+		if (res < 0)
+			return 1;
+		if (arg && !app->flight.home
+				&& (st == FS(HOVERING) || st == FS(FLYING))) {
+			app->flight.active = 1;
+			app->flight.home = 1;
+			send_home_state(app,
+				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_USERREQUEST);
+			flight_set_state(app, FS(FLYING));
+		} else if (!arg && app->flight.home) {
+			flight_stop_home(app,
+				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_STOPPED);
+			flight_set_state(app, FS(HOVERING));
+		} else {
+			send_home_state(app,
+				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_USERREQUEST);
+		}
+		return 1;
+	default:
+		return 0;
+	}
 }
 
 /**
@@ -286,9 +550,13 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 	char buf[512] = "";
 	struct app *app = userdata;
 
-	/* Format and log received command */
-	arsdk_cmd_fmt(cmd, buf, sizeof(buf));
-	LOGI("recv %s", buf);
+	/* Format and log received command (not the 25 Hz piloting stream) */
+	if (cmd->id != ARSDK_ID_ARDRONE3_PILOTING_PCMD) {
+		arsdk_cmd_fmt(cmd, buf, sizeof(buf));
+		LOGI("recv %s", buf);
+	}
+	if (flight_recv_cmd(app, cmd))
+		return;
 
 	switch (cmd->id) {
 	/* SkyController */
@@ -440,6 +708,19 @@ static void conn_req(struct arsdk_peer *peer,
 			info->ctrl_name, info->ctrl_type, info->ctrl_addr,
 			info->json);
 
+	/* One peer at a time. A new controller replaces the current one: a
+	 * killed app never closes its session, so it would otherwise lock
+	 * the fake until the link times out (same as the mux mode). Done
+	 * first, since disconnected() resets the video client. */
+	if (app->peer != NULL) {
+		LOGI("replacing the current controller");
+		res = arsdk_peer_disconnect(app->peer);
+		if (res < 0)
+			LOG_ERRNO("arsdk_peer_disconnect", -res);
+		app->cmd_itf = NULL;
+		app->peer = NULL;
+	}
+
 	/* fake-sc2 Disco mode: the controller tells where it wants video */
 	if (app->disco_mode && info->ctrl_addr != NULL && info->json != NULL) {
 		uint16_t stream = json_int(info->json,
@@ -458,14 +739,6 @@ static void conn_req(struct arsdk_peer *peer,
 		LOGI("video: client %s stream %u control %u (%s)",
 				info->ctrl_addr, stream, ctrl,
 				app->video.client_valid ? "ok" : "invalid address");
-	}
-
-	/* Only one peer at a time */
-	if (app->peer != NULL) {
-		res = arsdk_peer_reject(peer);
-		if (res < 0)
-			LOG_ERRNO("arsdk_peer_reject", -res);
-		return;
 	}
 
 	/* Save peer */
@@ -945,12 +1218,19 @@ static void sig_handler(int signum)
  *   attitude <roll> <pitch> <yaw>   radians
  *   speed <vx> <vy> <vz>         m/s (NED)
  *   airspeed <m/s>
- *   gps <lat> <lon> <alt>        degrees, m; also sets the fix
+ *   gps <lat> <lon> <alt>        degrees, m; also sets the fix, and the
+ *                                home position at the first fix
+ *   home <lat> <lon> <alt>       home position
  *   gps_lost                     fix lost, position unknown (500)
  *   satellites <n>
- *   flying_state <landed|takingoff|hovering|flying|landing|emergency>
+ *   flying_state <landed|takingoff|hovering|flying|landing|emergency|
+ *                 usertakeoff|motor_ramping|emergency_landing>
  *   send_all                     resend all telemetry
+ *   throw                        hand launch after TakeOff / UserTakeOff
+ *   state                        "ok <flying state> alt=<m> home=<0|1> pcmd=<n>"
  *   ping
+ * Setting altitude, airspeed or flying_state stops the flight simulation
+ * (flight_tick) until the app's next piloting command.
  */
 static int ctrl_handle_line(struct app *app, char *line,
 		char *reply, size_t reply_size)
@@ -976,7 +1256,16 @@ static int ctrl_handle_line(struct app *app, char *line,
 	} else if (strcmp(word, "rc_battery") == 0 && n == 2) {
 		tm->rc_battery = (uint8_t)a;
 		send_rc_state(app);
+	} else if (strcmp(word, "state") == 0 && n == 1) {
+		return snprintf(reply, reply_size, "ok %s alt=%.1f home=%d pcmd=%lu\n",
+				flying_state_name(tm->flying_state), tm->altitude,
+				app->flight.home, app->flight.pcmd);
+	} else if (strcmp(word, "throw") == 0 && n == 1) {
+		if (flight_throw(app) < 0)
+			return snprintf(reply, reply_size, "error not ready for launch (%s)\n",
+					flying_state_name(tm->flying_state));
 	} else if (strcmp(word, "altitude") == 0 && n == 2) {
+		app->flight.active = 0;
 		tm->altitude = a;
 		if (app->cmd_itf)
 			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AltitudeChanged(
@@ -995,6 +1284,7 @@ static int ctrl_handle_line(struct app *app, char *line,
 				app->cmd_itf, &send_status, app,
 				tm->speed_x, tm->speed_y, tm->speed_z));
 	} else if (strcmp(word, "airspeed") == 0 && n == 2) {
+		app->flight.active = 0;
 		tm->airspeed = (float)a;
 		if (app->cmd_itf)
 			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AirSpeedChanged(
@@ -1004,6 +1294,13 @@ static int ctrl_handle_line(struct app *app, char *line,
 		tm->gps_fixed = 1;
 		if (tm->satellites == 0)
 			tm->satellites = 10;
+		if (tm->home_latitude == 500.0) {
+			tm->home_latitude = a; tm->home_longitude = b;
+			tm->home_altitude = c;
+		}
+		send_telemetry(app);
+	} else if (strcmp(word, "home") == 0 && n == 4) {
+		tm->home_latitude = a; tm->home_longitude = b; tm->home_altitude = c;
 		send_telemetry(app);
 	} else if (strcmp(word, "gps_lost") == 0 && n == 1) {
 		tm->latitude = tm->longitude = tm->gps_altitude = 500.0;
@@ -1017,24 +1314,17 @@ static int ctrl_handle_line(struct app *app, char *line,
 				app->cmd_itf, &send_status, app, tm->satellites));
 	} else if (strcmp(word, "flying_state") == 0) {
 		char state[32] = "";
-		static const struct { const char *name; int32_t value; } states[] = {
-			{ "landed", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDED },
-			{ "takingoff", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_TAKINGOFF },
-			{ "hovering", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_HOVERING },
-			{ "flying", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_FLYING },
-			{ "landing", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDING },
-			{ "emergency", ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_EMERGENCY },
-		};
 		size_t i;
 		if (sscanf(line, "%*s %31s", state) != 1)
 			return snprintf(reply, reply_size, "error missing state\n");
-		for (i = 0; i < sizeof(states) / sizeof(states[0]); i++) {
-			if (strcmp(state, states[i].name) == 0)
+		for (i = 0; i < FLYING_STATES_COUNT; i++) {
+			if (strcmp(state, flying_states[i].name) == 0)
 				break;
 		}
-		if (i == sizeof(states) / sizeof(states[0]))
+		if (i == FLYING_STATES_COUNT)
 			return snprintf(reply, reply_size, "error unknown state\n");
-		tm->flying_state = states[i].value;
+		app->flight.active = 0;
+		tm->flying_state = flying_states[i].value;
 		if (app->cmd_itf)
 			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_FlyingStateChanged(
 				app->cmd_itf, &send_status, app, tm->flying_state));
@@ -1254,6 +1544,10 @@ int main(int argc, char *argv[])
 	/* fake-sc2: control socket and video input */
 	ctrl_server_create(&s_app);
 	video_udp_create(&s_app);
+	s_app.flight.timer = pomp_timer_new(s_app.loop, &flight_tick, &s_app);
+	if (s_app.flight.timer != NULL)
+		pomp_timer_set_periodic(s_app.flight.timer,
+				FLIGHT_TICK_MS, FLIGHT_TICK_MS);
 
 	/* Create backend */
 	if (s_app.backend_type == ARSDK_BACKEND_TYPE_MUX)
@@ -1273,6 +1567,11 @@ out:
 	backend_destroy(&s_app);
 	ctrl_server_destroy(&s_app);
 	video_udp_destroy(&s_app);
+	if (s_app.flight.timer != NULL) {
+		pomp_timer_clear(s_app.flight.timer);
+		pomp_timer_destroy(s_app.flight.timer);
+		s_app.flight.timer = NULL;
+	}
 
 	if (s_app.loop != NULL) {
 		res = pomp_loop_destroy(s_app.loop);

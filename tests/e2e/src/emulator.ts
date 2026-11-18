@@ -79,6 +79,15 @@ export class Emulator {
     await this.tap((x1 + x2) / 2, (y1 + y2) / 2);
   }
 
+  /** Taps the element whose resource id is `id` or ends with ":id/<id>". */
+  async tapId(id: string): Promise<void> {
+    const nodes = await this.dumpUi();
+    const node = nodes.find((n) => n.resourceId === id || n.resourceId.endsWith(`:id/${id}`));
+    if (!node) throw new Error(`no element with id "${id}" on screen`);
+    const { x1, y1, x2, y2 } = node.bounds;
+    await this.tap((x1 + x2) / 2, (y1 + y2) / 2);
+  }
+
   async back(): Promise<void> {
     await this.shell('input keyevent 4');
   }

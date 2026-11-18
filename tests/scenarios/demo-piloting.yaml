@@ -1,0 +1,37 @@
+name: Demo app take-off, return home, landing and emergency drive the fake Disco
+description: >
+  Needs `make fake`, `make video`, `make emu` and the demo app (`make
+  sdk-demo-e2e demo-run`). Uses the GroundSdk demo's HUD buttons (manual
+  piloting interface: smart take-off/land, emergency cut-out, return home)
+  through the fake SkyController 2, and checks the fake Disco's flying
+  states (fake-sc2 flight simulation).
+app:
+  package: com.parrot.drone.groundsdkdemo
+  activity: .DeviceListActivity
+steps:
+  - send: [flying_state landed, altitude 0, airspeed 0, gps 45.1885 5.7245 300]
+  - restart_app
+  - tap_text: DRONES
+  - expect_texts: [DISCO-FAKE01, CONNECTED]
+    timeout: 20000
+  - tap_text: DISCO-FAKE01
+  - tap_text: HUD
+  - tap_id: take_off_land_btn
+  - expect_fake: motor_ramping
+  - expect_fake: "hovering alt=50.0"
+    timeout: 20000
+  - screenshot: demo-circling
+  - tap_id: return_home_btn
+  - expect_fake: "flying alt=50.0 home=1"
+  - expect_fake: "hovering alt=50.0 home=0"
+  - tap_id: take_off_land_btn
+  - expect_fake: landing
+  - expect_fake: "landed alt=0.0"
+    timeout: 25000
+  - tap_id: take_off_land_btn
+  - expect_fake: "takingoff"
+    timeout: 5000
+  - tap_id: emergency_btn
+  - expect_fake: emergency
+  - expect_fake: "landed alt=0.0"
+  - screenshot: demo-landed
