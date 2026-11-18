@@ -832,6 +832,52 @@ Findings on the Android 15 x86_64 emulator (kernel 6.6 GKI):
   unplug and replug (`unplug` on the fake closes the session; aoa-host
   unbinds and rebinds the gadget and does the handshake again).
 
+## 21. Simulated Disco with a camera (2026-11-19)
+
+Chosen stack (all in Docker, `make sim`):
+
+- **ArduPilot SITL, ArduPlane 4.5.7**, model `plane-elevon` (flying wing),
+  `sim/disco.parm`: take-off to 50 m, 80 m circles, return home at 50 m,
+  simulated 3S 2700 mAh battery, no failsafes. ArduPilot is GPLv3 and
+  FlightGear GPLv2: separate programs in containers, not linked into the
+  BSD app. ArduPilot flew on the real Disco (community port), so its
+  flight behaviour is a fair stand-in.
+- **FlightGear 2020.3** as a pure viewer (`--fdm=external`, native-fdm from
+  SITL), invisible `ufo` aircraft, view from the nose = the Disco's camera.
+  Findings:
+  - Mesa's software rasterizer (llvmpipe) is unusable for FlightGear's
+    scenery: about one frame per five minutes (main thread blocked on
+    texture uploads), even with 3D clouds and random objects off.
+  - The host has an Intel Arc iGPU (Lunar Lake): VirtualGL 3.1's EGL back
+    end (`vglrun -d /dev/dri/card1`) renders on it and draws into Xvfb;
+    15 fps (the throttle) at 960x540. Lunar Lake needs Mesa 24.1+, hence
+    Debian trixie (Mesa 25); EGL wants the card device, not the render node.
+  - trixie's `flightgear-data-base` (2020.3.19+dfsg) has no terrain at all;
+    bookworm's (2020.3.17) ships Hawaii and Iceland: copied in a build
+    stage. Home is Kapiolani Park, Honolulu (Waikiki towers, Diamond Head,
+    coast). FlightGear starts at the home position so its tiles are loaded.
+  - SITL sends a native-fdm packet every physics step; FlightGear reads one
+    per frame and lags by minutes (full UDP queue). The bridge keeps only
+    the latest packet (5503) and forwards it at the frame rate (5504).
+  - FlightGear asserts in D-Bus without a session bus:
+    `DBUS_FATAL_WARNINGS=0`.
+  - GStreamer captures the Xvfb display (ximagesrc), H.264 intra-refresh,
+    RTP to fake-sc2's video input: the same path as the test pattern.
+- **Bridge** (`sim/bridge`, TypeScript, own minimal MAVLink codec, no npm
+  runtime dependency): SITL telemetry (attitude, position, speeds, VFR_HUD,
+  battery, GPS, home) to fake-sc2's control socket at 10 Hz (`sim
+  external`); the app's piloting commands, queued by fake-sc2 (`events`),
+  to ArduPlane: take-off = mode TAKEOFF + arm, then LOITER at 50 m
+  (circling, the Disco's "hovering"); return home = RTL, stop = LOITER;
+  landing = a two-item mission (home, NAV_LAND at home) in AUTO; emergency
+  = forced disarm. Flying states map Disco semantics (`model.ts`,
+  unit-tested). `--auto-takeoff` takes off once the EKF uses GPS.
+- fake-sc2's control socket now takes several clients (tests and the
+  bridge at once).
+- Check: `tests/scenarios/sim-flight.yaml` (circling at about 50 m, live
+  camera video, fighter HUD, headset with the same picture in both eyes),
+  green over the emulated USB accessory as well.
+
 ## Sources
 
 - FPV_VR_OS: https://github.com/Consti10/FPV_VR_OS

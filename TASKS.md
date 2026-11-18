@@ -471,6 +471,18 @@ scenario one run in three; now set only when it changes.
 
 M5 done (2026-11-18): `make check` green with the six app scenarios.
 
+## M6. Realistic flight data (done 2026-11-19)
+
+- [x] **T6.1 Simulated Disco.** `make sim-image`, `make sim` / `sim-stop`,
+  `make sim-unit`: ArduPilot SITL (ArduPlane, flying wing) for the flight,
+  FlightGear on the host GPU (VirtualGL) for the camera, TypeScript bridge
+  to fake-sc2 (`sim external`, `events`, `position`, `rth`). Check
+  `tests/scenarios/sim-flight.yaml`. See `NOTES.md` section 21.
+  Screenshots `docs/screenshots/sim-*.png`.
+- [ ] **T6.2 Piloting the simulation from the app side.** Take-off, return
+  home, landing and emergency from the GroundSdk demo through the bridge
+  (actions implemented and unit-tested; end-to-end run to do).
+
 ## M7. Release (started)
 
 - [x] **T7.1 16 KB pages.** `libsdkcore.so` (NDK r21) was 4 KB aligned on

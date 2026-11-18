@@ -189,6 +189,57 @@ check-usb: app-usb fake video ## make check through the emulated USB accessory i
 	scripts/emu-usb-setup.sh $(EMU_NAME) $(OUT)/aoa-host $(FAKE_PORT)
 	$(MAKE) --no-print-directory e2e
 
+# Simulated Disco (sim/): ArduPilot SITL (ArduPlane, flying wing) for the
+# flight, FlightGear following it for the camera (streamed to fake-sc2's
+# video input instead of the test pattern), and a TypeScript bridge feeding
+# fake-sc2 from SITL's MAVLink and turning the app's piloting commands into
+# autopilot modes. Replaces `make video`; needs `make fake`.
+SITL_IMAGE := disco-fpv/sitl:1
+FG_IMAGE   := disco-fpv/flightgear:1
+# lat,lon,alt,heading: Kapiolani Park, Honolulu (Waikiki, Diamond Head),
+# in the Hawaii scenery bundled with FlightGear
+SIM_HOME   ?= 21.2665,-157.8205,3,60
+SIM_ARGS   ?= --auto-takeoff
+SIM_NAMES  := disco-fpv-sitl disco-fpv-fg disco-fpv-bridge
+# The host GPU for FlightGear (VirtualGL's EGL back end wants the card
+# device): software rendering is far too slow. SIM_CARD=none to go without.
+SIM_CARD   ?= $(firstword $(wildcard /dev/dri/card*))
+SIM_RENDER ?= $(firstword $(wildcard /dev/dri/renderD*))
+SIM_GPU     = $(if $(filter-out none,$(SIM_CARD)),--device $(SIM_CARD) --device $(SIM_RENDER) \
+	--group-add $(shell stat -c %g $(SIM_CARD)) --group-add $(shell stat -c %g $(SIM_RENDER)) \
+	-e GPU_DEVICE=$(SIM_CARD))
+
+.PHONY: sim-image
+sim-image: ## Build the simulator images (ArduPilot SITL, FlightGear)
+	docker build -t $(SITL_IMAGE) docker/sitl
+	docker build -t $(FG_IMAGE) docker/flightgear
+
+sim/bridge/node_modules: sim/bridge/package.json
+	docker run --rm -u $(UID):$(GID) -e npm_config_cache=/tmp/npm -v "$(ROOT)/sim/bridge":/b -w /b \
+		$(NODE_IMAGE) npm install --ignore-scripts --no-audit --no-fund
+	@touch $@
+
+.PHONY: sim-unit
+sim-unit: sim/bridge/node_modules ## Type-check and unit-test the simulator bridge (in Docker)
+	docker run --rm -u $(UID):$(GID) -v "$(ROOT)/sim/bridge":/b -w /b $(NODE_IMAGE) \
+		sh -c 'node_modules/.bin/tsc --noEmit -p . && node --test test/*.test.ts'
+
+.PHONY: sim
+sim: ## Fly the simulated Disco: SITL, FlightGear camera, bridge to fake-sc2 (needs make fake)
+	docker rm -f $(VIDEO_NAME) $(SIM_NAMES) >/dev/null 2>&1 || true
+	docker run -d --name disco-fpv-sitl --network host -e HOME_LOC=$(SIM_HOME) \
+		-v "$(ROOT)/sim":/sim:ro $(SITL_IMAGE) >/dev/null
+	docker run -d --name disco-fpv-fg --network host $(SIM_GPU) -e HOME_LOC=$(SIM_HOME) $(FG_IMAGE) >/dev/null
+	docker run -d --name disco-fpv-bridge --network host -u $(UID):$(GID) \
+		-v "$(ROOT)/sim/bridge":/b -w /b $(NODE_IMAGE) node src/main.ts $(SIM_ARGS) >/dev/null
+	@echo "simulated Disco started (logs: docker logs disco-fpv-bridge, -sitl, -fg)"
+
+.PHONY: sim-stop
+sim-stop: ## Stop the simulated Disco, logs to out/sim-*.log
+	@mkdir -p $(OUT)
+	-for c in $(SIM_NAMES); do docker logs $$c > $(OUT)/sim-$${c#disco-fpv-}.log 2>&1; done
+	docker rm -f $(SIM_NAMES) >/dev/null 2>&1 || true
+
 .PHONY: apk-check
 apk-check: ## Check out/disco-fpv-debug.apk's arm64 native libraries are 16 KB aligned
 	$(SDK_RUN) scripts/apk-check.sh out/disco-fpv-debug.apk \

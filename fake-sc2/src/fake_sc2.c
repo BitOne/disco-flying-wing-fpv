@@ -78,6 +78,9 @@ struct telemetry {
 	int32_t  flying_state;   /* ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_* */
 };
 
+/* control socket clients at once (tests, simulator bridge, a shell) */
+#define CTRL_MAX_CLIENTS 4
+
 struct app {
 	int                          stopped;
 	enum arsdk_backend_type      backend_type;
@@ -113,10 +116,12 @@ struct app {
 	/* fake-sc2: line-based control socket (see ctrl_handle_line) */
 	struct {
 		int               server_fd;
-		int               client_fd;
 		uint16_t          port;
-		char              buf[1024];
-		size_t            len;
+		struct ctrl_client {
+			int       fd;
+			char      buf[1024];
+			size_t    len;
+		} clients[CTRL_MAX_CLIENTS];
 	} ctrl;
 
 	struct telemetry   tm;
@@ -157,10 +162,16 @@ struct app {
 		double            center_lat, center_lon; /* 500 = unset */
 	} flight;
 
+	/* fake-sc2: "sim external": flight dynamics come from an external
+	 * simulator (sim/bridge); piloting commands are queued as events */
+	int sim_external;
+	char events[256];
+
 	/* fake-sc2: controller buttons grabbed by the app (Mapper feature) */
 	uint32_t grabbed_buttons;
 	struct pomp_timer *button_timer; /* release of the pressed button */
 	uint32_t pressed_button;
+	int button_pending;
 };
 
 /** */
@@ -190,9 +201,8 @@ static struct app s_app = {
 	},
 	.ctrl = {
 		.server_fd = -1,
-		.client_fd = -1,
 		.port = 4322,
-		.len = 0,
+		.clients = { { .fd = -1 }, { .fd = -1 }, { .fd = -1 }, { .fd = -1 } },
 	},
 	.video = {
 		.rtp_fd = -1,
@@ -292,6 +302,7 @@ static void button_release_cb(struct pomp_timer *timer, void *userdata)
 {
 	int res = 0;
 	struct app *app = userdata;
+	app->button_pending = 0;
 	if (app->cmd_itf == NULL)
 		return;
 	SEND(res, arsdk_cmd_send_Mapper_Grab_button_event(app->cmd_itf,
@@ -595,12 +606,55 @@ static void flight_tick(struct pomp_timer *timer, void *userdata)
 	}
 }
 
+/** Queues a piloting event for the external simulator ("events"). */
+static void sim_event(struct app *app, const char *name)
+{
+	size_t len = strlen(app->events);
+	LOGI("sim event %s", name);
+	if (len + strlen(name) + 2 < sizeof(app->events))
+		snprintf(app->events + len, sizeof(app->events) - len, "%s%s",
+				len ? " " : "", name);
+}
+
+/** Piloting commands in external simulation mode: queued, not simulated. */
+static int sim_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
+{
+	uint8_t arg = 0;
+	switch (cmd->id) {
+	case ARSDK_ID_ARDRONE3_PILOTING_PCMD:
+		app->flight.pcmd++;
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_TAKEOFF:
+		sim_event(app, "takeoff");
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_USERTAKEOFF:
+		if (arsdk_cmd_dec_Ardrone3_Piloting_UserTakeOff(cmd, &arg) >= 0 && arg)
+			sim_event(app, "usertakeoff");
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_LANDING:
+		sim_event(app, "landing");
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_EMERGENCY:
+		sim_event(app, "emergency");
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_NAVIGATEHOME:
+		if (arsdk_cmd_dec_Ardrone3_Piloting_NavigateHome(cmd, &arg) >= 0)
+			sim_event(app, arg ? "home_start" : "home_stop");
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 /** Piloting commands from the app; returns 1 if the command was one. */
 static int flight_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
 {
 	int res = 0;
 	uint8_t arg = 0;
 	int32_t st = app->tm.flying_state;
+
+	if (app->sim_external)
+		return sim_recv_cmd(app, cmd);
 
 	switch (cmd->id) {
 	case ARSDK_ID_ARDRONE3_PILOTING_PCMD:
@@ -1360,7 +1414,7 @@ static void sig_handler(int signum)
 }
 
 /*
- * fake-sc2 control socket: one TCP client at a time on 127.0.0.1:<ctrl port>,
+ * fake-sc2 control socket: up to CTRL_MAX_CLIENTS TCP clients on 127.0.0.1:<ctrl port>,
  * one command per line, answered "ok" or "error <reason>":
  *   battery <percent>            drone battery
  *   rc_battery <percent>         controller battery
@@ -1377,6 +1431,14 @@ static void sig_handler(int signum)
  *                 usertakeoff|motor_ramping|emergency_landing>
  *   send_all                     resend all telemetry
  *   throw                        hand launch after TakeOff / UserTakeOff
+ *   sim external|internal        flight dynamics from an external simulator
+ *                                (sim/bridge: telemetry through this socket,
+ *                                piloting commands queued) or the built-in one
+ *   events                       "ok <queued piloting events>" (external sim):
+ *                                takeoff usertakeoff landing emergency
+ *                                home_start home_stop
+ *   position <lat> <lon> <alt>   GPS position only (fix kept)
+ *   rth <0|1>                    return home in progress or not
  *   circle                       straight to circling at the circle altitude
  *                                with the flight simulation running (demos)
  *   button <name>                press and release a controller button the
@@ -1456,11 +1518,49 @@ static int ctrl_handle_line(struct app *app, char *line,
 			return snprintf(reply, reply_size, "error unknown button\n");
 		if (app->cmd_itf == NULL || !(app->grabbed_buttons & (1u << code)))
 			return snprintf(reply, reply_size, "error button %s not grabbed\n", name);
+		/* a press still waiting for its release: release it first */
+		if (app->button_timer != NULL && app->button_pending) {
+			pomp_timer_clear(app->button_timer);
+			button_release_cb(app->button_timer, app);
+		}
 		SEND(res, arsdk_cmd_send_Mapper_Grab_button_event(app->cmd_itf,
 				&send_status, app, code, ARSDK_MAPPER_BUTTON_EVENT_PRESS));
 		app->pressed_button = code;
+		app->button_pending = 1;
 		if (app->button_timer != NULL)
 			pomp_timer_set(app->button_timer, 150);
+	} else if (strcmp(word, "sim") == 0) {
+		char what[16] = "";
+		if (sscanf(line, "%*s %15s", what) != 1
+				|| (strcmp(what, "external") != 0 && strcmp(what, "internal") != 0))
+			return snprintf(reply, reply_size, "error sim external|internal\n");
+		app->sim_external = strcmp(what, "external") == 0;
+		app->flight.active = 0;
+		app->events[0] = '\0';
+		LOGI("flight simulation %s", what);
+	} else if (strcmp(word, "events") == 0 && n == 1) {
+		int len = snprintf(reply, reply_size, "ok%s%s\n",
+				app->events[0] ? " " : "", app->events);
+		app->events[0] = '\0';
+		return len;
+	} else if (strcmp(word, "position") == 0 && n == 4) {
+		tm->latitude = a; tm->longitude = b; tm->gps_altitude = c;
+		tm->gps_fixed = 1;
+		if (app->cmd_itf) {
+			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_PositionChanged(
+				app->cmd_itf, &send_status, app,
+				tm->latitude, tm->longitude, tm->gps_altitude));
+			SEND(res, arsdk_cmd_send_Ardrone3_GPSSettingsState_GPSFixStateChanged(
+				app->cmd_itf, &send_status, app, 1));
+		}
+	} else if (strcmp(word, "rth") == 0 && n == 2) {
+		int on = a != 0;
+		if (on != app->flight.home) {
+			app->flight.home = on;
+			send_home_state(app, on ?
+				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_USERREQUEST :
+				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_FINISHED);
+		}
 	} else if (strcmp(word, "circle") == 0 && n == 1) {
 		app->flight.active = 1;
 		flight_set_motion(app, FLIGHT_CIRCLE_ALT, FLIGHT_AIRSPEED);
@@ -1545,59 +1645,79 @@ static int ctrl_handle_line(struct app *app, char *line,
 	return snprintf(reply, reply_size, "ok\n");
 }
 
-static void ctrl_client_close(struct app *app)
+static struct ctrl_client *ctrl_client_of(struct app *app, int fd)
 {
-	if (app->ctrl.client_fd < 0)
+	int i;
+	for (i = 0; i < CTRL_MAX_CLIENTS; i++) {
+		if (app->ctrl.clients[i].fd == fd)
+			return &app->ctrl.clients[i];
+	}
+	return NULL;
+}
+
+static void ctrl_client_close(struct app *app, struct ctrl_client *c)
+{
+	if (c == NULL || c->fd < 0)
 		return;
-	pomp_loop_remove(app->loop, app->ctrl.client_fd);
-	close(app->ctrl.client_fd);
-	app->ctrl.client_fd = -1;
-	app->ctrl.len = 0;
+	pomp_loop_remove(app->loop, c->fd);
+	close(c->fd);
+	c->fd = -1;
+	c->len = 0;
 }
 
 static void ctrl_client_cb(int fd, uint32_t revents, void *userdata)
 {
 	struct app *app = userdata;
-	char reply[128];
+	struct ctrl_client *c = ctrl_client_of(app, fd);
+	char reply[512];
 	char *nl = NULL;
-	ssize_t r = read(fd, app->ctrl.buf + app->ctrl.len,
-			sizeof(app->ctrl.buf) - 1 - app->ctrl.len);
+	ssize_t r;
+	if (c == NULL)
+		return;
+	r = read(fd, c->buf + c->len, sizeof(c->buf) - 1 - c->len);
 	if (r <= 0) {
-		ctrl_client_close(app);
+		ctrl_client_close(app, c);
 		return;
 	}
-	app->ctrl.len += (size_t)r;
-	app->ctrl.buf[app->ctrl.len] = '\0';
-	while ((nl = strchr(app->ctrl.buf, '\n')) != NULL) {
+	c->len += (size_t)r;
+	c->buf[c->len] = '\0';
+	while ((nl = strchr(c->buf, '\n')) != NULL) {
 		int len;
 		*nl = '\0';
-		if (nl > app->ctrl.buf && nl[-1] == '\r')
+		if (nl > c->buf && nl[-1] == '\r')
 			nl[-1] = '\0';
-		LOGI("ctrl: %s", app->ctrl.buf);
-		len = ctrl_handle_line(app, app->ctrl.buf, reply, sizeof(reply));
+		LOGD("ctrl: %s", c->buf);
+		len = ctrl_handle_line(app, c->buf, reply, sizeof(reply));
 		if (len > 0 && write(fd, reply, (size_t)len) < 0)
 			LOG_FD_ERRNO("write", fd, errno);
-		app->ctrl.len -= (size_t)(nl + 1 - app->ctrl.buf);
-		memmove(app->ctrl.buf, nl + 1, app->ctrl.len + 1);
+		c->len -= (size_t)(nl + 1 - c->buf);
+		memmove(c->buf, nl + 1, c->len + 1);
 	}
-	if (app->ctrl.len >= sizeof(app->ctrl.buf) - 1) {
+	if (c->len >= sizeof(c->buf) - 1) {
 		LOGW("ctrl: line too long, dropping");
-		app->ctrl.len = 0;
+		c->len = 0;
 	}
 }
 
 static void ctrl_server_cb(int fd, uint32_t revents, void *userdata)
 {
 	struct app *app = userdata;
+	struct ctrl_client *c;
 	int res;
 	int client = accept(fd, NULL, NULL);
 	if (client < 0) {
 		LOG_FD_ERRNO("accept", fd, errno);
 		return;
 	}
-	/* one client at a time: a new one replaces the previous */
-	ctrl_client_close(app);
-	app->ctrl.client_fd = client;
+	/* several clients (tests and the simulator bridge); when all slots
+	 * are taken, the oldest connection gives way */
+	c = ctrl_client_of(app, -1);
+	if (c == NULL) {
+		c = &app->ctrl.clients[0];
+		ctrl_client_close(app, c);
+	}
+	c->fd = client;
+	c->len = 0;
 	res = pomp_loop_add(app->loop, client, POMP_FD_EVENT_IN,
 			&ctrl_client_cb, app);
 	if (res < 0)
@@ -1639,7 +1759,9 @@ static void ctrl_server_create(struct app *app)
 
 static void ctrl_server_destroy(struct app *app)
 {
-	ctrl_client_close(app);
+	int i;
+	for (i = 0; i < CTRL_MAX_CLIENTS; i++)
+		ctrl_client_close(app, &app->ctrl.clients[i]);
 	if (app->ctrl.server_fd >= 0) {
 		pomp_loop_remove(app->loop, app->ctrl.server_fd);
 		close(app->ctrl.server_fd);

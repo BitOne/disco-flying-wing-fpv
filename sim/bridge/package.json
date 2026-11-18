@@ -1,0 +1,8 @@
+{
+  "name": "disco-sim-bridge",
+  "private": true,
+  "type": "module",
+  "description": "ArduPilot SITL to fake-sc2 bridge (simulated Disco)",
+  "scripts": { "test": "node --test test/*.test.ts" },
+  "devDependencies": { "typescript": "5.9.3", "@types/node": "22.18.0" }
+}

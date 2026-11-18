@@ -1,0 +1,33 @@
+name: Disco FPV flies the simulated Disco (ArduPilot SITL, FlightGear camera)
+description: >
+  Needs `make fake`, `make sim` (instead of `make video`) and `make emu`
+  (or `make emu-usb`). The simulated Disco takes off by itself and circles
+  at 50 m; the app shows it circling with live camera video, the fighter
+  HUD with its altitude, and the headset view with the same picture in
+  both eyes. Run with `make e2e SCENARIOS=tests/scenarios/sim-*.yaml`.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml # HUD mode back to CLASSIC
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 30000
+  - tap_text: Flight view
+  - expect_texts: [CIRCLING, ALT 4] # 50 m give or take a few
+    timeout: 240000 # first run: SITL start, take-off and climb
+  - expect_video: { region: [0.25, 0.25, 0.75, 0.75], min_contrast: 15 }
+    timeout: 30000
+  - screenshot: sim-classic
+  - send: [button settings]
+  - expect_texts: ["HUD MINIMAL"]
+  - send: [button settings]
+  - expect_texts: ["HUD FIGHTER"]
+  - screenshot: sim-fighter
+  - back
+  - tap_text: Headset view
+  - expect_video: { region: [0.12, 0.3, 0.45, 0.65], min_contrast: 15 }
+    timeout: 30000
+  - expect_stereo: { region: [0.10, 0.17, 0.47, 0.82], max_diff: 8, min_contrast: 15 }
+  - screenshot: sim-headset
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml

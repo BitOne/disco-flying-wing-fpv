@@ -1,0 +1,32 @@
+# Simulated Disco on ArduPlane SITL (model plane-elevon): a flying wing that
+# takes off to 50 m and circles, like Parrot's firmware does. Loaded after
+# ArduPilot's plane.parm and plane-elevons.parm (docker/sitl/run-sitl.sh).
+#
+# no pre-arm checks in simulation (the app arms through the bridge)
+ARMING_CHECK 0
+# take-off (mode TAKEOFF): climb to 50 m, then loiter there
+TKOFF_ALT 50
+TKOFF_LVL_ALT 10
+# circles of 80 m radius when loitering and at home, like fake-sc2's own
+WP_LOITER_RAD 80
+RTL_RADIUS 80
+# return home at 50 m and circle there (no automatic landing)
+ALT_HOLD_RTL 5000
+RTL_AUTOLAND 0
+# no radio in simulation: no RC failsafe
+THR_FAILSAFE 0
+FS_SHORT_ACTN 3
+FS_LONG_ACTN 0
+# simulated battery: Disco 3S 2700 mAh
+BATT_MONITOR 4
+BATT_CAPACITY 2700
+SIM_BATT_VOLTAGE 12.6
+# landing at home (bridge "landing"): flare and disarm
+LAND_FLARE_ALT 3
+LAND_DISARMDELAY 3
+# telemetry streams on the bridge's link (10 Hz)
+SR0_POSITION 10
+SR0_EXTRA1 10
+SR0_EXTRA2 10
+SR0_EXTRA3 2
+SR0_EXT_STAT 2
