@@ -57,11 +57,18 @@ RUN mkdir -p ${ANDROID_HOME}/cmdline-tools \
 # JDK 8 first on PATH (installing JDK 17 made it the system default).
 ENV PATH=${JAVA_HOME}/bin:${ANDROID_NDK_PATH}:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/build-tools/${BUILD_TOOLS}:${PATH}
 
+# less: Parrot's build tool pages the Ground SDK EULA with it (make sdk-eula).
+RUN apt-get update && apt-get install -y --no-install-recommends less \
+    && rm -rf /var/lib/apt/lists/*
+
 # Non-root user matching the host user, so files in the mounted workspace keep
 # the host ownership. repo needs a git identity; a neutral one is set here.
+# The dragon_build config dir is pre-created so its Docker volume is user-owned.
 RUN groupadd -g ${GID} builder \
     && useradd -m -u ${UID} -g ${GID} -s /bin/bash builder \
-    && echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder
+    && echo "builder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/builder \
+    && mkdir -p /home/builder/.config/dragon_build /home/builder/.cache /home/builder/.gradle \
+    && chown -R builder:builder /home/builder
 USER builder
 RUN git config --global user.name "disco-fpv builder" \
     && git config --global user.email "builder@localhost" \

@@ -16,11 +16,13 @@ GID         := $(shell id -g)
 
 # Run a command inside the SDK build container, with the project mounted at /work
 # and a persistent cache volume for repo, Gradle and ccache data.
-SDK_RUN = docker run --rm \
+# The dragon_build volume keeps the Parrot EULA acceptance marker (make sdk-eula).
+SDK_VOLUMES = \
 	-v "$(ROOT)":/work \
 	-v disco-fpv-cache:/home/builder/.cache \
 	-v disco-fpv-gradle:/home/builder/.gradle \
-	-w /work $(SDK_IMAGE)
+	-v disco-fpv-dragon:/home/builder/.config/dragon_build
+SDK_RUN = docker run --rm $(SDK_VOLUMES) -w /work $(SDK_IMAGE)
 
 define not_implemented
 	@echo "make $@: not implemented yet ($(1), see TASKS.md)" >&2; exit 1
@@ -53,11 +55,15 @@ sdk-image-check: sdk-image ## Smoke-test the SDK image (repo, NDK, Java, Android
 
 .PHONY: sdk-shell
 sdk-shell: ## Open a shell in the SDK build container
-	docker run --rm -it \
-		-v "$(ROOT)":/work \
-		-v disco-fpv-cache:/home/builder/.cache \
-		-v disco-fpv-gradle:/home/builder/.gradle \
-		-w /work $(SDK_IMAGE) bash
+	docker run --rm -it $(SDK_VOLUMES) -w /work $(SDK_IMAGE) bash
+
+# Parrot's build tool shows the Ground SDK EULA and asks for acceptance on its
+# first run, then stores a marker (kept in the disco-fpv-dragon volume).
+# Interactive on purpose: the user reads and accepts it, not the agent.
+.PHONY: sdk-eula
+sdk-eula: sdk-image ## Read and accept Parrot's Ground SDK EULA (interactive, run it yourself)
+	docker run --rm -it $(SDK_VOLUMES) -w /work/sdk $(SDK_IMAGE) \
+		./build.sh -p groundsdk-android -l
 
 # --- Main entry points (PLAN.md section 3) --------------------------------
 
