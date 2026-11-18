@@ -23,8 +23,12 @@ blocked (with a one-line reason and date).
   (ignored by git). Done: 37 projects, 423 MB; every project pinned to a
   commit hash in `sdk.lock.xml` (committed); later syncs use the lock.
   The manifest's Parrot EULA was reviewed: see `NOTES.md` section 16.
-- [ ] **T0.4 Native build.** Build the SDK native libraries for `x86_64` and
-  `arm64-v8a` in the container. Done: `.so` files produced, log in `out/`.
+- [x] **T0.4 Native build.** `make sdk-native` runs Parrot's
+  `./build.sh -p groundsdk-android -t build-jni` for `SDK_ABIS` (default
+  `x86_64 arm64-v8a`). Done: `libsdkcore.so` + `libc++_shared.so` per ABI in
+  `sdk/out/groundsdk-android/jni/sdkcore/libs/`, NDK r21e, API 24. Needed
+  cmake, autotools, nasm/yasm in the image, and the Parrot EULA acceptance
+  marker (`NOTES.md` section 16).
 - [ ] **T0.5 Demo APK.** Build `groundsdkdemo` debug APK. Done: APK in
   `out/`, `aapt2 dump badging` shows the package.
 - [ ] **T0.6 Emulator.** Android SDK + `system-images;android-34;google_apis;x86_64`,

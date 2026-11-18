@@ -698,6 +698,15 @@ BSD-3-Clause (EULA 2.3). What matters for us (my reading, not legal advice):
 - 4.3: Parrot warns that modifying the SDK may affect drone control and
   cause damage or injury; relevant once we patch the fork.
 
+**Acceptance (2026-11-18):** Parrot's build tool (`dragon_build`) requires
+accepting the EULA on first run and stores a marker
+`~/.config/dragon_build/EULA-<md5 of EULA.md>`. The user accepted the EULA
+explicitly in the chat (no terminal access at the time); the marker
+`EULA-9f6684a0241a5a845bfc8395aaec0886` was created in the
+`disco-fpv-dragon` Docker volume on their behalf. If the EULA text changes
+(new md5), the build will ask again: re-confirm with the user, or they run
+`make sdk-eula`.
+
 ## Sources
 
 - FPV_VR_OS: https://github.com/Consti10/FPV_VR_OS

@@ -58,7 +58,9 @@ RUN mkdir -p ${ANDROID_HOME}/cmdline-tools \
 ENV PATH=${JAVA_HOME}/bin:${ANDROID_NDK_PATH}:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/build-tools/${BUILD_TOOLS}:${PATH}
 
 # less: Parrot's build tool pages the Ground SDK EULA with it (make sdk-eula).
-RUN apt-get update && apt-get install -y --no-install-recommends less \
+# cmake, autotools, nasm/yasm: Alchemy native builds (liblz4, ffmpeg, ...).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        less cmake autoconf automake libtool nasm yasm bison flex gettext \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user matching the host user, so files in the mounted workspace keep

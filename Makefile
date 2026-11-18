@@ -71,9 +71,19 @@ sdk-eula: sdk-image ## Read and accept Parrot's Ground SDK EULA (interactive, ru
 sdk-sync: ## Check out the GroundSdk fork into sdk/ (pinned by sdk.lock.xml)
 	$(SDK_RUN) scripts/sdk-sync.sh
 
+# ABIs we need: x86_64 for the emulator, arm64-v8a for the Fairphone 5.
+SDK_ABIS ?= x86_64 arm64-v8a
+
+.PHONY: sdk-native
+sdk-native: ## Build the SDK native libraries (JNI) for $(SDK_ABIS)
+	@mkdir -p $(OUT)
+	$(SDK_RUN) bash -c 'cd sdk && ./build.sh -p groundsdk-android --no-color -j \
+		--abis $(SDK_ABIS) -t build-jni' 2>&1 | tee $(OUT)/sdk-native.log; \
+		exit $${PIPESTATUS[0]}
+
 .PHONY: sdk
-sdk: sdk-sync ## Sync and build the GroundSdk fork (native libs + AARs)
-	$(call not_implemented,T0.4 and T0.5)
+sdk: sdk-sync sdk-native ## Sync and build the GroundSdk fork (native libs + AARs)
+	$(call not_implemented,T0.5)
 
 .PHONY: app
 app: ## Build the app debug APK
