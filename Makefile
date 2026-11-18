@@ -167,6 +167,27 @@ fake-stop: ## Stop the fake controller and save its log to out/fake-sc2.log
 	-docker logs $(FAKE_NAME) > $(OUT)/fake-sc2.log 2>&1
 	docker rm -f $(FAKE_NAME) >/dev/null 2>&1 || true
 
+# Fake Disco camera (GStreamer): RTP H.264 to fake-sc2 on 127.0.0.1:55004/55005.
+VIDEO_IMAGE := disco-fpv/video-src:1
+VIDEO_NAME  := disco-fpv-video
+VIDEO_ENV   ?=
+
+.PHONY: video-image
+video-image: ## Build the Docker image of the fake camera (GStreamer test pattern)
+	docker build -t $(VIDEO_IMAGE) docker/video-src
+
+.PHONY: video
+video: video-image ## Start the fake camera (container disco-fpv-video); VIDEO_ENV="-e PATTERN=ball"
+	docker rm -f $(VIDEO_NAME) >/dev/null 2>&1 || true
+	docker run -d --name $(VIDEO_NAME) --network host $(VIDEO_ENV) $(VIDEO_IMAGE) >/dev/null
+	@sleep 1; docker ps --format '{{.Names}}' | grep -qx $(VIDEO_NAME) \
+		|| { docker logs $(VIDEO_NAME); exit 1; }
+	@echo "fake camera streaming RTP to 127.0.0.1:55004 (RTCP 55005)"
+
+.PHONY: video-stop
+video-stop: ## Stop the fake camera
+	docker rm -f $(VIDEO_NAME) >/dev/null 2>&1 || true
+
 EMU_IMAGE := disco-fpv/emulator:1
 EMU_NAME  := disco-fpv-emu
 ADB       := docker exec $(EMU_NAME) adb -s emulator-5554

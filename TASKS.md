@@ -135,7 +135,43 @@ Note: both images accept the Android SDK licences non-interactively
 
 M1 done (2026-11-18). Note: `make check` still stops at `app` (M3).
 
-## M2 and later
+## M2. Video
 
-See `PLAN.md` section 4. Tasks get split here when M1 is done. M3's fast
-tests (`MockArsdkCore`) can start in parallel with M1/M2.
+How the app receives video through a SkyController 2 (pdraw
+`StreamDemuxerMux`, URL `mux/arstream2`): it opens mux channels 4
+(`STREAM_DATA`, raw RTP packets) and 5 (`STREAM_CONTROL`, RTCP) and feeds
+them to Parrot's stream receiver (`vstrm`). Channel 6 (RTP over RTSP) is
+the Anafi path. libmux only logs a remote channel open: the controller
+side must open 4 and 5 itself to send on them.
+
+- [x] **T2.1 Video source.** `docker/video-src` (Debian bookworm,
+  GStreamer good/bad/ugly + `gstreamer1.0-x` for text overlays):
+  `videotestsrc` 856x480 at 30 fps, "FAKE DISCO" label and running clock,
+  x264 baseline (zerolatency, 1500 kbit/s, keyframe every 30 frames,
+  SPS/PPS repeated), `rtph264pay pt=96 mtu=1400` through `rtpbin` to
+  `127.0.0.1:55004`, RTCP to 55005. Env `PATTERN`, `BITRATE`, `LABEL`,
+  ports. `make video` / `make video-stop` (container `disco-fpv-video`).
+  Done: ~360 RTP packets/s at ~1.5 Mbit/s, RTCP sender reports every ~5 s.
+- [x] **T2.2 Forward video into mux.** `fake-sc2` binds UDP
+  `127.0.0.1:55004/55005` (`--video-port`), opens mux channels 4 and 5 for
+  each session and forwards datagrams once the app has sent
+  `VideoEnable=1` (answered with `VideoEnableChanged`); otherwise drops
+  them (counted). Done: demo HUD view plays the pattern with the SDK's HUD
+  on top (GPS position from the fake), clock advances 32.477 → 34.911 s
+  across two screenshots; app logs show `StreamDemuxerMux` started, SPS/PPS
+  found, `c2.goldfish.h264.decoder` created. One `pdraw_open_resp
+  err=-71 (Protocol error)` logged at start without visible effect: to
+  investigate if it matters later. Screenshot
+  `docs/screenshots/t2.2-hud-video.png`.
+- [ ] **T2.3 Headset view.** The demo's HMD view shows the pattern in both
+  eyes. Done: screenshot.
+- [ ] **T2.4 Video e2e checks.** Runner step(s) checking video from
+  screenshots: content present (not black/uniform) in given regions,
+  frames changing between two screenshots, left/right similarity for the
+  headset view. Scenario `demo-video.yaml`. Done: passes, and fails when
+  the video source is stopped.
+
+## M3 and later
+
+See `PLAN.md` section 4. M3's fast tests (`MockArsdkCore`) can start in
+parallel.

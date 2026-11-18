@@ -37,6 +37,7 @@
 
 #include <libpomp.h>
 #include <libmux.h>
+#include <libmux-arsdk.h>
 
 #include "arsdk/arsdk.h"
 #define ULOG_TAG device
@@ -112,6 +113,20 @@ struct app {
 	} ctrl;
 
 	struct telemetry   tm;
+
+	/* fake-sc2: video, RTP/RTCP from the fake camera forwarded into mux
+	 * channels STREAM_DATA (4) and STREAM_CONTROL (5), like the real
+	 * SkyController 2 does for the Disco's arstream2 stream. */
+	struct {
+		int               rtp_fd;
+		int               rtcp_fd;
+		uint16_t          port;      /* RTP; RTCP is port + 1 */
+		int               enabled;   /* app sent VideoEnable=1 */
+		int               channels;  /* mux channels opened */
+		unsigned long     rtp_packets;
+		unsigned long     rtcp_packets;
+		unsigned long     dropped;
+	} video;
 };
 
 /** */
@@ -144,6 +159,11 @@ static struct app s_app = {
 		.client_fd = -1,
 		.port = 4322,
 		.len = 0,
+	},
+	.video = {
+		.rtp_fd = -1,
+		.rtcp_fd = -1,
+		.port = 55004,
 	},
 	.tm = {
 		.battery = 100,
@@ -282,6 +302,22 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 		SEND(res, arsdk_cmd_send_Common_SettingsState_AllSettingsChanged(
 				app->cmd_itf, &send_status, app));
 		break;
+	case ARSDK_ID_ARDRONE3_MEDIASTREAMING_VIDEOENABLE: {
+		uint8_t enable = 0;
+		res = arsdk_cmd_dec_Ardrone3_MediaStreaming_VideoEnable(cmd, &enable);
+		if (res < 0) {
+			LOG_ERRNO("decode VideoEnable", -res);
+			break;
+		}
+		app->video.enabled = enable != 0;
+		LOGI("video %s", app->video.enabled ? "enabled" : "disabled");
+		SEND(res, arsdk_cmd_send_Ardrone3_MediaStreamingState_VideoEnableChanged(
+				app->cmd_itf, &send_status, app,
+				app->video.enabled ?
+				ARSDK_ARDRONE3_MEDIASTREAMINGSTATE_VIDEOENABLECHANGED_ENABLED_ENABLED :
+				ARSDK_ARDRONE3_MEDIASTREAMINGSTATE_VIDEOENABLECHANGED_ENABLED_DISABLED));
+		break;
+	}
 	case ARSDK_ID_COMMON_COMMON_ALLSTATES:
 		send_telemetry(app);
 		SEND(res, arsdk_cmd_send_Common_CommonState_AllStatesChanged(
@@ -325,6 +361,7 @@ static void disconnected(struct arsdk_peer *peer,
 
 	app->cmd_itf = NULL;
 	app->peer = NULL;
+	app->video.enabled = 0;
 }
 
 /**
@@ -579,11 +616,121 @@ static void backend_destroy(struct app *app)
 	}
 }
 
+/* fake-sc2: data the app sends on the video channels (RTCP receiver reports)
+ * is not needed; only log channel resets. */
+static void video_mux_cb(struct mux_ctx *ctx, uint32_t chanid,
+		enum mux_channel_event event, struct pomp_buffer *buf,
+		void *userdata)
+{
+	if (event == MUX_CHANNEL_RESET)
+		LOGI("video: mux channel 0x%08x reset", chanid);
+}
+
+static void video_channels_open(struct app *app)
+{
+	int res;
+	res = mux_channel_open(app->mux.ctx, MUX_ARSDK_CHANNEL_ID_STREAM_DATA,
+			&video_mux_cb, app);
+	if (res < 0) {
+		LOG_ERRNO("mux_channel_open(STREAM_DATA)", -res);
+		return;
+	}
+	res = mux_channel_open(app->mux.ctx, MUX_ARSDK_CHANNEL_ID_STREAM_CONTROL,
+			&video_mux_cb, app);
+	if (res < 0) {
+		LOG_ERRNO("mux_channel_open(STREAM_CONTROL)", -res);
+		return;
+	}
+	app->video.channels = 1;
+}
+
+static void video_udp_cb(int fd, uint32_t revents, void *userdata)
+{
+	struct app *app = userdata;
+	uint8_t data[65536];
+	ssize_t len;
+	int rtcp = fd == app->video.rtcp_fd;
+
+	while ((len = recv(fd, data, sizeof(data), MSG_DONTWAIT)) > 0) {
+		struct pomp_buffer *buf;
+		int res;
+		if (app->mux.ctx == NULL || !app->video.channels ||
+				!app->video.enabled || app->cmd_itf == NULL) {
+			app->video.dropped++;
+			continue;
+		}
+		buf = pomp_buffer_new_with_data(data, (size_t)len);
+		if (buf == NULL)
+			continue;
+		res = mux_encode(app->mux.ctx, rtcp ?
+				MUX_ARSDK_CHANNEL_ID_STREAM_CONTROL :
+				MUX_ARSDK_CHANNEL_ID_STREAM_DATA, buf);
+		pomp_buffer_unref(buf);
+		if (res < 0) {
+			app->video.dropped++;
+			continue;
+		}
+		if (rtcp)
+			app->video.rtcp_packets++;
+		else if (++app->video.rtp_packets % 3000 == 1)
+			LOGI("video: forwarded rtp=%lu rtcp=%lu dropped=%lu",
+					app->video.rtp_packets,
+					app->video.rtcp_packets,
+					app->video.dropped);
+	}
+}
+
+static int video_udp_bind(struct app *app, uint16_t port)
+{
+	int res;
+	struct sockaddr_in addr;
+	int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+	if (fd < 0) {
+		LOG_ERRNO("socket", errno);
+		return -1;
+	}
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_port = htons(port);
+	if (bind(fd, (const struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		LOG_FD_ERRNO("bind", fd, errno);
+		close(fd);
+		return -1;
+	}
+	res = pomp_loop_add(app->loop, fd, POMP_FD_EVENT_IN, &video_udp_cb, app);
+	if (res < 0)
+		LOG_ERRNO("pomp_loop_add", -res);
+	return fd;
+}
+
+static void video_udp_create(struct app *app)
+{
+	app->video.rtp_fd = video_udp_bind(app, app->video.port);
+	app->video.rtcp_fd = video_udp_bind(app, (uint16_t)(app->video.port + 1));
+	LOGI("video: RTP on 127.0.0.1:%u, RTCP on %u", app->video.port,
+			app->video.port + 1);
+}
+
+static void video_udp_destroy(struct app *app)
+{
+	int *fds[] = { &app->video.rtp_fd, &app->video.rtcp_fd };
+	size_t i;
+	for (i = 0; i < 2; i++) {
+		if (*fds[i] < 0)
+			continue;
+		pomp_loop_remove(app->loop, *fds[i]);
+		close(*fds[i]);
+		*fds[i] = -1;
+	}
+}
+
 /**
  */
 static void mux_server_fdeof(struct mux_ctx *ctx, void *userdata)
 {
 	struct app *app = userdata;
+	app->video.channels = 0;
 	mux_stop(app->mux.ctx);
 	backend_destroy(app);
 	mux_unref(app->mux.ctx);
@@ -618,6 +765,7 @@ static void mux_server_fd_event_cb(int fd, uint32_t revents, void *userdata)
 			MUX_FLAG_FD_NOT_POLLABLE);
 
 	backend_create(app);
+	video_channels_open(app);
 }
 
 /**
@@ -917,6 +1065,7 @@ static void usage(const char *progname)
 		"  --mux\n"
 		"  --mux-port <port>  : TCP port of the mux listener (default 4321)\n"
 		"  --ctrl-port <port> : TCP port of the control socket on 127.0.0.1 (default 4322)\n"
+		"  --video-port <port>: UDP port receiving RTP on 127.0.0.1, RTCP on port+1 (default 55004)\n"
 		"  --codec <codec>\n"
 		"  --replay-file <file>\n");
 }
@@ -971,6 +1120,13 @@ int main(int argc, char *argv[])
 				return -1;
 			}
 			s_app.ctrl.port = (uint16_t)atoi(argv[++argidx]);
+		} else if (strcmp(argv[argidx], "--video-port") == 0) {
+			if (argidx + 1 >= argc) {
+				fprintf(stderr, "Missing video port\n");
+				usage(argv[0]);
+				return -1;
+			}
+			s_app.video.port = (uint16_t)atoi(argv[++argidx]);
 		} else if (strcmp(argv[argidx], "--publisher-net") == 0) {
 			s_app.backend_type = ARSDK_BACKEND_TYPE_NET;
 			s_app.use_publisher_net = 1;
@@ -989,8 +1145,9 @@ int main(int argc, char *argv[])
 		goto out;
 	}
 
-	/* fake-sc2: control socket */
+	/* fake-sc2: control socket and video input */
 	ctrl_server_create(&s_app);
+	video_udp_create(&s_app);
 
 	/* Create backend */
 	if (s_app.backend_type == ARSDK_BACKEND_TYPE_MUX)
@@ -1009,6 +1166,7 @@ out:
 
 	backend_destroy(&s_app);
 	ctrl_server_destroy(&s_app);
+	video_udp_destroy(&s_app);
 
 	if (s_app.loop != NULL) {
 		res = pomp_loop_destroy(s_app.loop);
