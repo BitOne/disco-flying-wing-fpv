@@ -133,7 +133,7 @@ Note: both images accept the Android SDK licences non-interactively
   `missing text(s): "74 %"` plus evidence files when an expectation is
   changed.
 
-M1 done (2026-11-18). Note: `make check` still stops at `app` (M3).
+M1 done (2026-11-18).
 
 ## M2. Video
 
@@ -283,6 +283,12 @@ consumes them and re-declares their Maven dependencies.
   and vertical offset (`GsdkHmdView` setters), with a calibration screen.
 - [ ] **T4.4 Headset checks.** Left/right similarity check in the runner
   (both eyes show the same picture), and HUD presence in both eyes.
+
+`make check` is green end to end since 2026-11-18: app build, JVM unit
+tests, fake controller and camera, emulator, install, and the app
+scenarios (`tests/scenarios/app-*.yaml`: connection, flight HUD with live
+video, headset view). Demo-app scenarios run with
+`SCENARIOS="tests/scenarios/demo-*.yaml"` after `make sdk-demo-e2e demo-run`.
 
 ## M5 and later
 

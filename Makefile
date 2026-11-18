@@ -157,8 +157,10 @@ app-install: ## Install out/disco-fpv-debug.apk on the emulator
 		docker exec $(EMU_NAME) adb -s emulator-5554 install -r -g /tmp/disco-fpv.apk; }
 
 .PHONY: unit
-unit: ## Run JVM unit tests
-	$(call not_implemented,M3)
+unit: app-image ## Run the app's JVM unit tests
+	@mkdir -p $(OUT)
+	$(APP_RUN) gradle --no-daemon --console=plain :app:testDebugUnitTest 2>&1 \
+		| tee $(OUT)/app-unit.log; exit $${PIPESTATUS[0]}
 
 # Fake controller: built for Linux x86_64 with the SDK's olympe-linux product.
 # Our own modules (fake-sc2/) are added to the Alchemy scan, and SDK packages
@@ -267,7 +269,9 @@ demo-run: ## Install and launch the demo app (DEMO_APK, default the e2e build), 
 NODE_IMAGE := node:22.18.0-bookworm-slim
 NODE_RUN   = docker run --rm -u $(UID):$(GID) -e npm_config_cache=/tmp/npm \
 	-v "$(ROOT)/tests":/tests -w /tests/e2e $(NODE_IMAGE)
-SCENARIOS  ?= tests/scenarios/*.yaml
+# Default: our app's scenarios. The demo-*.yaml ones need the SDK demo APK
+# (make sdk-demo-e2e demo-run): SCENARIOS="tests/scenarios/demo-*.yaml".
+SCENARIOS  ?= tests/scenarios/app-*.yaml
 
 tests/e2e/node_modules: tests/e2e/package.json tests/e2e/package-lock.json
 	$(NODE_RUN) npm ci --ignore-scripts --no-audit --no-fund
@@ -287,7 +291,7 @@ e2e: e2e-unit ## Run end-to-end scenarios (SCENARIOS) against emulator + fake; o
 	node tests/e2e/src/run.ts --out $(RUN_DIR) --ctrl-port 4322 $(SCENARIOS)
 
 .PHONY: check
-check: app unit fake emu e2e ## Full verification; exit code is the verdict
+check: app unit fake video emu app-install e2e ## Full verification; exit code is the verdict
 
 .PHONY: clean
 clean: ## Remove build outputs and test artifacts (keeps sdk/ and Docker caches)
