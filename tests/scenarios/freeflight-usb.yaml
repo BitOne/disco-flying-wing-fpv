@@ -1,0 +1,23 @@
+name: FreeFlight Pro reaches the fake SkyController 2 over the emulated USB accessory
+description: >
+  Validates the SkyController 2 side of fake-sc2 against Parrot's own app,
+  which only talks to a SkyController through a USB accessory. Needs `make
+  fake`, `make video` or `make sim`, `make emu-usb`, FreeFlight installed
+  (your own APK) with its conditions of use accepted and "Always open
+  FreeFlight Pro" ticked once for the accessory, and our app uninstalled
+  (so FreeFlight is the accessory's app). Run with
+  `make e2e SCENARIOS=tests/scenarios/freeflight-usb.yaml`.
+app:
+  package: com.parrot.freeflight3
+  activity: com.parrot.freeflight.start.StartActivity
+steps:
+  - restart_app
+  - expect_texts: [Disco, FLY & FILM]
+    timeout: 60000
+  - expect_video: { region: [0.4, 0.35, 0.95, 0.75], min_contrast: 15 }
+    timeout: 30000
+  - screenshot: freeflight-usb-home
+  - tap_text: FLY & FILM
+  - expect_video: { region: [0.25, 0.2, 0.75, 0.6], min_contrast: 15 }
+    timeout: 30000
+  - screenshot: freeflight-usb-flight

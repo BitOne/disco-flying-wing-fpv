@@ -199,6 +199,11 @@ guest UDP to the host, so the fake Disco runs inside the emulator.
   puts the emulator's location at the scenarios' home (68 m shown, as
   computed).
 
+Update 2026-11-19: the SkyController 2 side is now validated with
+FreeFlight too, over the emulated USB accessory
+(`tests/scenarios/freeflight-usb.yaml`, `NOTES.md` section 20), flying the
+simulated Disco up to its Cockpitglasses mode.
+
 M1b done (2026-11-18): the fake Disco's protocol (discovery, handshake,
 connection states, telemetry, ARStream2 video) satisfies Parrot's own app.
 The SkyController 2 path of the fake is still validated only by GroundSdk
@@ -489,6 +494,10 @@ M5 done (2026-11-18): `make check` green with the six app scenarios.
   can't dump them ("could not get idle state", which used to leave the
   previous dump in place and fool the runner: now an error); its buttons
   are tapped by position.
+
+Known gap: on the ground before take-off, the simulator's camera can sit
+just below FlightGear's terrain (SITL home altitude 3 m vs the scenery's
+elevation there), so the near ground isn't drawn; fine once airborne.
 
 Known flake (2026-11-19): `app-unplug.yaml` failed twice in about 25 runs
 (video not back after the replug or after resume). Not reproduced in 13

@@ -832,6 +832,25 @@ Findings on the Android 15 x86_64 emulator (kernel 6.6 GKI):
   unplug and replug (`unplug` on the fake closes the session; aoa-host
   unbinds and rebinds the gadget and does the handshake again).
 
+- **FreeFlight Pro over the emulated USB** (2026-11-19): with
+  `make emu-usb`, our app uninstalled and FreeFlight installed, Android
+  offers "Open FreeFlight Pro to handle Fake SkyController 2"; FreeFlight
+  then connects to the fake SkyController 2 and the Disco behind it, shows
+  the controller page (USB icon, battery, serial, versions), live video,
+  telemetry, and, with a controller present, its hand-launch and
+  Cockpitglasses buttons. Gaps it showed, fixed in the fake: controller
+  serial (`ProductSerialChanged`) and magnetometer calibration
+  (`MagnetoCalibrationState` and `V2`, else a red CALIBRATION alert).
+  FreeFlight keeps a stuck frame when the stream's resolution changes
+  mid-stream (test pattern 1280x720 to another size): the simulator's
+  camera is 1280x720 too. FreeFlight takes off a Disco from the
+  controller's own take-off button (no app command): fake-sc2's `button
+  takeoff` / `button rth` on a button the app didn't grab now act on the
+  drone like the real controller. Reference screenshots of FreeFlight's
+  Cockpitglasses mode flying the simulated Disco:
+  `docs/screenshots/freeflight-cockpitglasses-sim.png` (small central
+  green text cluster, dashed horizon, centre marker, home arrows).
+
 ## 21. Simulated Disco with a camera (2026-11-19)
 
 Chosen stack (all in Docker, `make sim`):

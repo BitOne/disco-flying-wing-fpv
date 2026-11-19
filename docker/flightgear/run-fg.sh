@@ -6,8 +6,8 @@
 # Rendered on the GPU through VirtualGL when the container has a render
 # node; optional effects off and visibility limited to keep it light.
 set -eu
-WIDTH=${WIDTH:-960}
-HEIGHT=${HEIGHT:-540}
+WIDTH=${WIDTH:-1280}
+HEIGHT=${HEIGHT:-720}
 FPS=${FPS:-15}
 HOST=${HOST:-127.0.0.1}
 RTP_PORT=${RTP_PORT:-55004}

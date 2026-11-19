@@ -40,3 +40,10 @@ Controller buttons: the app grabs buttons through the Mapper feature;
 `button <name>` (settings, rth, takeoff, b, a, rear_left, rear_right)
 presses and releases a grabbed one. `circle` puts the Disco straight into
 its circle around home, with heading, bank and position moving.
+
+The controller's own buttons: `button takeoff` (take-off when landed, else
+landing) and `button rth` (return home on or off) act on the Disco when the
+app hasn't grabbed them, as on the real SkyController 2, which is how
+FreeFlight takes off a Disco. Over the emulated USB link (`make emu-usb`),
+FreeFlight Pro talks to this fake as to a real controller
+(`tests/scenarios/freeflight-usb.yaml`).

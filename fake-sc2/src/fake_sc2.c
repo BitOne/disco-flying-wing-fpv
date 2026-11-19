@@ -725,6 +725,33 @@ static int flight_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
 }
 
 /**
+ * A SkyController button the app didn't grab acts on the drone, as on the
+ * real controller: take-off/land (code 2) takes off when landed and lands
+ * otherwise, return home (code 1) starts or stops it. Returns 0 if the
+ * button has a drone action.
+ */
+static int drone_button(struct app *app, uint32_t code)
+{
+	struct arsdk_cmd cmd;
+	int res = -ENOENT;
+	arsdk_cmd_init(&cmd);
+	if (code == 2) {
+		res = app->tm.flying_state == FS(LANDED) ?
+			arsdk_cmd_enc_Ardrone3_Piloting_TakeOff(&cmd) :
+			arsdk_cmd_enc_Ardrone3_Piloting_Landing(&cmd);
+	} else if (code == 1) {
+		res = arsdk_cmd_enc_Ardrone3_Piloting_NavigateHome(&cmd,
+				app->flight.home ? 0 : 1);
+	}
+	if (res >= 0) {
+		LOGI("controller button %u: drone action", code);
+		flight_recv_cmd(app, &cmd);
+	}
+	arsdk_cmd_clear(&cmd);
+	return res < 0 ? res : 0;
+}
+
+/**
  * fake-sc2: answer the GroundSDK connection sequences.
  * Controller (Skyctrl feature): AllSettings -> AllSettingsChanged, then
  * AllStates -> drone connection state + AllStatesChanged. The SDK then
@@ -752,11 +779,21 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 		SEND(res, arsdk_cmd_send_Skyctrl_SettingsState_ProductVersionChanged(
 				app->cmd_itf, &send_status, app,
 				FAKE_SC2_SOFTWARE, FAKE_SC2_HARDWARE));
+		SEND(res, arsdk_cmd_send_Skyctrl_SettingsState_ProductSerialChanged(
+				app->cmd_itf, &send_status, app, "PI040443FAKESC2"));
 		SEND(res, arsdk_cmd_send_Skyctrl_SettingsState_AllSettingsChanged(
 				app->cmd_itf, &send_status, app));
 		break;
 	case ARSDK_ID_SKYCTRL_COMMON_ALLSTATES:
 		send_drone_link(app);
+		/* calibrated magnetometer: no "calibration" alert in FreeFlight */
+		SEND(res, arsdk_cmd_send_Skyctrl_CalibrationState_MagnetoCalibrationStateV2(
+				app->cmd_itf, &send_status, app,
+				ARSDK_SKYCTRL_CALIBRATIONSTATE_MAGNETOCALIBRATIONSTATEV2_STATE_CALIBRATED));
+		SEND(res, arsdk_cmd_send_Skyctrl_CalibrationState_MagnetoCalibrationState(
+				app->cmd_itf, &send_status, app,
+				ARSDK_SKYCTRL_CALIBRATIONSTATE_MAGNETOCALIBRATIONSTATE_STATUS_CALIBRATED,
+				100, 100, 100));
 		send_rc_state(app);
 		SEND(res, arsdk_cmd_send_Skyctrl_CommonState_AllStatesChanged(
 				app->cmd_itf, &send_status, app));
@@ -1445,9 +1482,12 @@ static void sig_handler(int signum)
  *   rth <0|1>                    return home in progress or not
  *   circle                       straight to circling at the circle altitude
  *                                with the flight simulation running (demos)
- *   button <name>                press and release a controller button the
- *                                app grabbed (settings, rth, takeoff, b, a,
- *                                rear_left, rear_right); error if not grabbed
+ *   button <name>                press and release a controller button
+ *                                (settings, rth, takeoff, b, a, rear_left,
+ *                                rear_right): to the app if it grabbed it,
+ *                                else the controller's own drone action
+ *                                (takeoff: take-off/land, rth: return home
+ *                                on/off); error otherwise
  *   state                        "ok <flying state> alt=<m> home=<0|1> pcmd=<n>"
  *   drone_link <lost|ok>         Disco out of / back in the controller's
  *                                range (mux mode): drone disconnected for
@@ -1520,8 +1560,12 @@ static int ctrl_handle_line(struct app *app, char *line,
 		}
 		if (code == sizeof(names) / sizeof(names[0]))
 			return snprintf(reply, reply_size, "error unknown button\n");
-		if (app->cmd_itf == NULL || !(app->grabbed_buttons & (1u << code)))
+		if (app->cmd_itf == NULL || !(app->grabbed_buttons & (1u << code))) {
+			/* not grabbed: the controller's own action, if any */
+			if (drone_button(app, code) == 0)
+				return snprintf(reply, reply_size, "ok drone action\n");
 			return snprintf(reply, reply_size, "error button %s not grabbed\n", name);
+		}
 		/* a press still waiting for its release: release it first */
 		if (app->button_timer != NULL && app->button_pending) {
 			pomp_timer_clear(app->button_timer);
