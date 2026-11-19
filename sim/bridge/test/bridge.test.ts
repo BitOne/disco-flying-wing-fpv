@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as mav from '../src/mavlink.ts';
-import { actionFor, batteryPercent, flyingState, Mode, returningHome, type PlaneState } from '../src/model.ts';
+import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState } from '../src/model.ts';
 
 test('crc16 matches the MAVLink reference value', () => {
   // X.25 of "123456789" is 0x6F91
@@ -68,4 +68,15 @@ test('battery percent from voltage when not reported', () => {
   assert.equal(batteryPercent(64, 0), 64);
   assert.equal(batteryPercent(-1, 12.6), 100);
   assert.equal(batteryPercent(-1, 10.5), 0);
+});
+
+test('approach point is on the plane side of home, at the distance asked', () => {
+  const home = { lat: 21.2665, lon: -157.8205 };
+  const east = approachPoint(home, { lat: 21.2665, lon: -157.81 }, 250);
+  assert.ok(Math.abs(east.lat - home.lat) < 1e-9);
+  assert.ok(east.lon > home.lon);
+  const metres = (east.lon - home.lon) * 111_320 * Math.cos((home.lat * Math.PI) / 180);
+  assert.ok(Math.abs(metres - 250) < 0.01);
+  const above = approachPoint(home, home, 250);
+  assert.ok(above.lat > home.lat);
 });

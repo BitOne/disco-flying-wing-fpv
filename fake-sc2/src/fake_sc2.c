@@ -840,7 +840,11 @@ static void disconnected(struct arsdk_peer *peer,
 
 	app->cmd_itf = NULL;
 	app->peer = NULL;
-	app->video.enabled = 0;
+	/* the SkyController 2 streams the Disco's video by itself (GroundSdk
+	 * notes it; its VideoEnable is a no-op there): only a direct Wi-Fi
+	 * controller (Disco mode) has to ask again */
+	if (app->disco_mode)
+		app->video.enabled = 0;
 	app->grabbed_buttons = 0;
 	app->video.client_valid = 0;
 }
@@ -1877,6 +1881,10 @@ int main(int argc, char *argv[])
 	if (s_app.flight.timer != NULL)
 		pomp_timer_set_periodic(s_app.flight.timer,
 				FLIGHT_TICK_MS, FLIGHT_TICK_MS);
+
+	/* SkyController mode: video on from the start, like the real one */
+	if (s_app.backend_type == ARSDK_BACKEND_TYPE_MUX)
+		s_app.video.enabled = 1;
 
 	/* Create backend */
 	if (s_app.backend_type == ARSDK_BACKEND_TYPE_MUX)

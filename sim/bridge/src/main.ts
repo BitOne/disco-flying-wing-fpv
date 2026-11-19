@@ -20,7 +20,7 @@ import { createSocket } from 'node:dgram';
 import { Socket } from 'node:net';
 import { Control } from './control.ts';
 import * as mav from './mavlink.ts';
-import { actionFor, batteryPercent, flyingState, Mode, returningHome, type PlaneState } from './model.ts';
+import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState } from './model.ts';
 
 const args = process.argv.slice(2);
 const opt = (name: string, def: string): string => {
@@ -164,9 +164,12 @@ function land(): void {
   }
   log('landing: uploading a landing at home');
   plane.landing = true;
+  // a straight final: approach point 250 m out at 30 m, then land at home
+  const approach = approachPoint(home, position ?? home, 250);
   pendingMission = [
     mav.missionItemInt(0, MAV_CMD.NAV_WAYPOINT, home.lat, home.lon, 0),
-    mav.missionItemInt(1, MAV_CMD.NAV_LAND, home.lat, home.lon, 0),
+    mav.missionItemInt(1, MAV_CMD.NAV_WAYPOINT, approach.lat, approach.lon, 30),
+    mav.missionItemInt(2, MAV_CMD.NAV_LAND, home.lat, home.lon, 0),
   ];
   sendMav(mav.MSG.MISSION_COUNT, mav.missionCount(pendingMission.length));
 }

@@ -69,3 +69,28 @@ export function batteryPercent(remaining: number, voltage: number): number {
   const perCell = voltage / 3;
   return Math.max(0, Math.min(100, Math.round(((perCell - 3.5) / (4.2 - 3.5)) * 100)));
 }
+
+/**
+ * Approach point for a landing at home: [distance] m from home towards
+ * [from] (where the plane is), so it glides in on a straight final
+ * (flat-earth approximation, fine at these distances).
+ */
+export function approachPoint(
+  home: { lat: number; lon: number },
+  from: { lat: number; lon: number },
+  distance: number,
+): { lat: number; lon: number } {
+  const mPerDegLat = 111_320;
+  const mPerDegLon = 111_320 * Math.cos((home.lat * Math.PI) / 180);
+  let north = (from.lat - home.lat) * mPerDegLat;
+  let east = (from.lon - home.lon) * mPerDegLon;
+  const d = Math.hypot(north, east);
+  if (d < 1) {
+    north = 1; // on top of home: approach from the north
+    east = 0;
+  } else {
+    north /= d;
+    east /= d;
+  }
+  return { lat: home.lat + (north * distance) / mPerDegLat, lon: home.lon + (east * distance) / mPerDegLon };
+}

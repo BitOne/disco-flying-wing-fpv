@@ -31,6 +31,9 @@ Working in the test rig (not yet tried on the real hardware):
 - Robustness: Disco out of range (LINK LOST, video cleared, everything
   back by itself), controller unplugged and plugged back, app in the
   background, rotation; low battery shown as a warning.
+- HUD modes cycled with the controller's SETTINGS button: classic text,
+  minimal (battery and an arrow pointing home), fighter (artificial
+  horizon, speed and altitude tapes, heading with a home marker).
 
 ## Building and testing
 
@@ -48,6 +51,15 @@ tests, starts the fake SkyController 2 with a Disco (`fake-sc2/`), the
 fake camera and a headless Android emulator, and plays the end-to-end
 scenarios in `tests/scenarios/` (TypeScript runner in `tests/e2e/`). Its
 exit code is the verdict; screenshots and results go to `out/latest/`.
+
+`make check-usb` runs the same scenarios through Android's real USB
+accessory path: the emulated phone is put in accessory mode on the
+emulator's dummy USB controller and `aoa-host` plays the SkyController's
+USB side (`NOTES.md` section 20).
+
+`make sim` (with `make fake`, instead of `make video`) flies a simulated
+Disco: ArduPilot SITL for the flight, FlightGear for the camera (on the
+host GPU), a TypeScript bridge in `sim/bridge` (`NOTES.md` section 21).
 
 The fake Disco was also checked against Parrot's own FreeFlight Pro
 (`make freeflight FREEFLIGHT_APK=<your copy>`, see `fake-sc2/README.md`).

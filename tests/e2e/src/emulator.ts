@@ -87,7 +87,11 @@ export class Emulator {
     // uiautomator occasionally fails while the UI is changing: retry.
     for (let attempt = 1; ; attempt++) {
       try {
-        await this.shell('uiautomator dump /sdcard/disco-fpv-ui.xml');
+        // uiautomator prints "ERROR: could not get idle state." and exits 0
+        // without writing when the UI never settles (live data): never read
+        // a previous dump in that case
+        const out = await this.shell('rm -f /sdcard/disco-fpv-ui.xml; uiautomator dump /sdcard/disco-fpv-ui.xml');
+        if (out.includes('ERROR')) throw new Error(`uiautomator: ${out}`);
         const xml = (await this.adb(['exec-out', 'cat', '/sdcard/disco-fpv-ui.xml'])).toString('utf8');
         return parseUiDump(xml);
       } catch (error) {

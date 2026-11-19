@@ -479,9 +479,21 @@ M5 done (2026-11-18): `make check` green with the six app scenarios.
   to fake-sc2 (`sim external`, `events`, `position`, `rth`). Check
   `tests/scenarios/sim-flight.yaml`. See `NOTES.md` section 21.
   Screenshots `docs/screenshots/sim-*.png`.
-- [ ] **T6.2 Piloting the simulation from the app side.** Take-off, return
-  home, landing and emergency from the GroundSdk demo through the bridge
-  (actions implemented and unit-tested; end-to-end run to do).
+- [x] **T6.2 Piloting the simulation from the app side.**
+  `tests/scenarios/sim-piloting.yaml` (`make sim SIM_ARGS=`, demo app):
+  take-off (TAKEOFF, then circling at 50 m), return home (RTL) and its
+  cancellation (LOITER), landing (mission: approach point 250 m out at
+  30 m, then NAV_LAND at home: 8.6 degree glide, touchdown at 0.2 m/s,
+  disarmed), all through the fake SkyController 2 and the bridge. The
+  demo's screens update continuously with live data and UIAutomator then
+  can't dump them ("could not get idle state", which used to leave the
+  previous dump in place and fool the runner: now an error); its buttons
+  are tapped by position.
+
+Known flake (2026-11-19): `app-unplug.yaml` failed twice in about 25 runs
+(video not back after the replug or after resume). Not reproduced in 13
+runs after fake-sc2 started streaming by default in SkyController mode,
+as the real SC2 does (GroundSdk's VideoEnable is a no-op there). Watch.
 
 ## M7. Release (started)
 

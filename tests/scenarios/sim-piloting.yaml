@@ -1,0 +1,44 @@
+name: GroundSdk demo pilots the simulated Disco (take-off, return home, landing)
+description: >
+  Needs `make fake`, `make sim SIM_ARGS=` (no automatic take-off), `make
+  emu` and the demo app (`make sdk-demo-e2e demo-run`). The demo's HUD
+  buttons go through the fake SkyController 2 to the bridge, which flies
+  ArduPlane: take-off (TAKEOFF, then circling at 50 m), return home (RTL)
+  and its cancellation, landing (a landing at home in AUTO). The demo's
+  screens update continuously with live data and UIAutomator can't dump
+  them, so buttons are tapped by position (portrait drone page, landscape
+  HUD, 1080x2400 screen).
+app:
+  package: com.parrot.drone.groundsdkdemo
+  activity: .DeviceListActivity
+steps:
+  - restart_app
+  - tap_text: DRONES
+  - expect_texts: [DISCO-FAKE01, CONNECTED]
+    timeout: 30000
+  - tap_text: DISCO-FAKE01
+  # the drone page's instruments update ten times a second with the
+  # simulation, so UIAutomator never sees it idle: tap by position
+  - wait: 2000
+  - tap: [0.746, 0.153] # HUD
+  - wait: 3000
+  - expect_fake: landed
+    timeout: 120000 # SITL start and GPS lock
+  - tap: [0.579, 0.883] # take-off / land
+  - expect_fake: takingoff
+    timeout: 30000
+  - expect_fake: hovering
+    timeout: 180000
+  - screenshot: sim-demo-circling
+  - tap: [0.965, 0.883] # return home
+  - expect_fake: home=1
+    timeout: 20000
+  - tap: [0.965, 0.883] # return home
+  - expect_fake: "hovering alt="
+    timeout: 20000
+  - tap: [0.579, 0.883] # take-off / land
+  - expect_fake: landing
+    timeout: 20000
+  - expect_fake: landed
+    timeout: 300000
+  - screenshot: sim-demo-landed
