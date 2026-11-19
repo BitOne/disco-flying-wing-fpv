@@ -269,7 +269,7 @@ FAKE_PRUNE := $(addprefix /work/sdk/packages/, pdraw olympe groundsdk-android \
 	common/libmediacodec-wrapper common/librtsp common/libsdp common/librtp \
 	common/libARMavlink common/mavlink common/lz4 \
 	common/logger)
-FAKE_MODULES ?= fake-sc2 arsdk-ng-controller
+FAKE_MODULES ?= fake-sc2 disco-probe arsdk-ng-controller
 FAKE_NAME    := disco-fpv-fake
 FAKE_BIN_DIR := /work/sdk/out/olympe-linux/staging/usr/bin
 FAKE_LIB_DIR := /work/sdk/out/olympe-linux/staging/usr/lib
@@ -308,6 +308,11 @@ fake-stop: ## Stop the fake controller and save its log to out/fake-sc2.log
 VIDEO_IMAGE := disco-fpv/video-src:1
 VIDEO_NAME  := disco-fpv-video
 VIDEO_ENV   ?=
+
+.PHONY: fake-test
+fake-test: fake-build ## Protocol tests of the fake Disco (tests/fake/*.probe), no emulator needed
+	chmod +x scripts/fake-test.sh
+	scripts/fake-test.sh $(SDK_IMAGE) $(OUT) $(PROBES)
 
 .PHONY: video-image
 video-image: ## Build the Docker image of the fake camera (GStreamer test pattern)
@@ -424,7 +429,7 @@ freeflight-stop: ## Stop FreeFlight, the in-emulator fake Disco and its mDNS ann
 	-$(ADB) shell cat /data/local/tmp/fake.log > $(OUT)/fake-disco-android.log
 
 .PHONY: check
-check: app apk-check unit fake video emu app-install e2e ## Full verification; exit code is the verdict
+check: app apk-check unit fake-test fake video emu app-install e2e ## Full verification; exit code is the verdict
 
 .PHONY: clean
 clean: ## Remove build outputs and test artifacts (keeps sdk/ and Docker caches)

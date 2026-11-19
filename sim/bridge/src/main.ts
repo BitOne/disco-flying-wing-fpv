@@ -20,7 +20,7 @@ import { createSocket } from 'node:dgram';
 import { Socket } from 'node:net';
 import { Control } from './control.ts';
 import * as mav from './mavlink.ts';
-import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState } from './model.ts';
+import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState, parseSticks, sticksToRc, parseCircling, circlingParams, type Circling } from './model.ts';
 
 const args = process.argv.slice(2);
 const opt = (name: string, def: string): string => {
@@ -49,6 +49,8 @@ function relayFlightGear(): void {
 
 /** TKOFF_ALT in sim/disco.parm. */
 const TAKEOFF_ALT = 50;
+// WP_LOITER_RAD / RTL_RADIUS of sim/disco.parm (the sign is the direction)
+const LOITER_RADIUS = 80;
 
 const log = (...m: unknown[]) => console.log(new Date().toISOString().slice(11, 19), ...m);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -139,9 +141,13 @@ function onMessage(m: mav.Message): void {
   }
 }
 
-const MAV_CMD = { DO_SET_MODE: 176, COMPONENT_ARM_DISARM: 400, NAV_LAND: 21, NAV_WAYPOINT: 16 };
+const MAV_CMD = { DO_SET_MODE: 176, COMPONENT_ARM_DISARM: 400, NAV_LAND: 21, NAV_WAYPOINT: 16, GET_HOME_POSITION: 410 };
+
+// the mode the bridge last asked for (the heartbeat confirms it later)
+let requestedMode: number = Mode.MANUAL;
 
 function setMode(mode: number): void {
+  requestedMode = mode;
   sendMav(mav.MSG.COMMAND_LONG, mav.commandLong(MAV_CMD.DO_SET_MODE, [1, mode]));
 }
 
@@ -206,6 +212,8 @@ async function main(): Promise<void> {
   relayFlightGear();
   await connectSitl();
   let ctrl = new Control();
+  // a (re)started fake-sc2 knows nothing: send the home position again
+  let resync = false;
   // (re)connects to fake-sc2 and hands it the flight dynamics; fake-sc2 may
   // be restarted while the simulation runs
   const ensureCtrl = async (): Promise<void> => {
@@ -214,6 +222,7 @@ async function main(): Promise<void> {
         ctrl = new Control();
         await ctrl.connect(ctrlPort);
         await ctrl.send('sim external');
+        resync = true;
         log(`connected to fake-sc2 control on ${ctrlPort}`);
       } catch {
         await sleep(1000);
@@ -227,6 +236,9 @@ async function main(): Promise<void> {
   let lastHomeSent = '';
   let lastRth = false;
   let loiterAsked = false;
+  let takeoffAlt = TAKEOFF_ALT;
+  let circling: Circling | null = null;
+  let piloting = false; // the pilot's sticks fly it (FBWB)
   for (;;) {
     await sleep(100);
     tick++;
@@ -246,6 +258,13 @@ async function main(): Promise<void> {
         cmds.push('gps_lost');
       }
       cmds.push(`satellites ${gps.satellites}`);
+    }
+    // SITL sends its home when it sets it: ask after a bridge restart
+    if (!home && tick % 50 === 0) sendMav(mav.MSG.COMMAND_LONG, mav.commandLong(MAV_CMD.GET_HOME_POSITION, []));
+    if (resync) {
+      resync = false;
+      lastHomeSent = '';
+      circling = null;
     }
     if (tick % 10 === 0) {
       cmds.push(`battery ${battery}`);
@@ -276,12 +295,43 @@ async function main(): Promise<void> {
           else if (action.kind === 'disarm') arm(false, true);
         }
       }
+      // the pilot's sticks: from circling, ArduPlane's FBWB with RC
+      // overrides flies like the Disco's manual flight (sticks centred:
+      // straight and level); loiter, return home or landing take over again
+      const sticks = parseSticks(await ctrl.send('pcmd'));
+      if (sticks && plane.armed && !plane.landing) {
+        if (sticks.on && !piloting && (plane.mode === Mode.LOITER || plane.mode === Mode.CIRCLE)) {
+          log('pilot sticks: manual flight (FBWB)');
+          setMode(Mode.FBWB);
+          piloting = true;
+        }
+        if (piloting && requestedMode !== Mode.FBWB) {
+          piloting = false;
+          sendMav(mav.MSG.RC_CHANNELS_OVERRIDE, mav.rcOverride([0, 0, 0, 0]));
+        } else if (piloting) {
+          sendMav(mav.MSG.RC_CHANNELS_OVERRIDE, mav.rcOverride(sticksToRc(sticks)));
+        }
+      } else if (piloting) {
+        piloting = false;
+        sendMav(mav.MSG.RC_CHANNELS_OVERRIDE, mav.rcOverride([0, 0, 0, 0]));
+      }
+      // the Disco's circling settings: altitude and direction
+      if (tick % 20 === 0) {
+        const c = parseCircling(await ctrl.send('disco'));
+        if (c && (circling === null || c.ccw !== circling.ccw || c.altitude !== circling.altitude)) {
+          circling = c;
+          takeoffAlt = c.altitude;
+          const params = circlingParams(c, LOITER_RADIUS);
+          for (const [name, value] of Object.entries(params)) sendMav(mav.MSG.PARAM_SET, mav.paramSet(name, value));
+          log('circling settings:', JSON.stringify(params));
+        }
+      }
     } catch (error) {
       log('fake-sc2:', (error as Error).message);
       await ensureCtrl();
     }
     // like the Disco: once at take-off altitude, circle there
-    if (plane.armed && plane.mode === Mode.TAKEOFF && plane.relativeAlt >= TAKEOFF_ALT - 2 && !loiterAsked) {
+    if (plane.armed && plane.mode === Mode.TAKEOFF && plane.relativeAlt >= takeoffAlt - 2 && !loiterAsked) {
       loiterAsked = true;
       log('take-off altitude reached: circling (LOITER)');
       setMode(Mode.LOITER);

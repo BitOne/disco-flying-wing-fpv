@@ -31,19 +31,28 @@ abstract class DroneScreenActivity : Activity() {
     /** Called once the drone is found; set up views and observers here. */
     protected abstract fun onDroneReady(drone: Drone)
 
-    private var hud: Hud? = null
+    /** The HUD, once [setupHud] has run. */
+    protected var hud: Hud? = null
+        private set
     private var hudButton: HudButton? = null
+
+    /** The user's settings, read when the screen opens. */
+    protected val settings: AppSettings by lazy { AppSettings.load(this) }
 
     /**
      * Sets up the HUD under [root] (hud.xml or hud_headset.xml) in the saved
-     * mode, fed from the drone; the controller's HUD button cycles the modes
-     * while this screen is in front.
+     * mode, fed from the drone; while this screen is in front, the
+     * controller's HUD button cycles the modes and its map button (see the
+     * settings) shows the moving map, while held or until pressed again.
      */
     protected fun setupHud(root: View) {
         val h = Hud(root, HudMode.load(this))
         hud = h
-        HudBinder(groundSdk, drone) { h.render(it) }.bind()
-        hudButton = HudButton(groundSdk) { cycleHud() }
+        val store = if (settings.rememberLastFix) LastFixStore(this) else null
+        HudBinder(groundSdk, drone, store) { h.render(it) }.bind()
+        hudButton = HudButton(groundSdk, settings.mapButton, onCycle = { cycleHud() }) { pressed ->
+            if (settings.mapHold) h.showMap(pressed) else if (pressed) h.showMap(!h.mapShown)
+        }
     }
 
     /** Next HUD mode, saved for the next sessions. */

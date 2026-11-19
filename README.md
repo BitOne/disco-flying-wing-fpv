@@ -47,7 +47,9 @@ you to accept Parrot's Ground SDK EULA once (`make sdk-eula`).
     make check                         # app, unit tests, fakes, emulator, scenarios
 
 `make check` builds the app (`out/disco-fpv-debug.apk`), runs the JVM unit
-tests, starts the fake SkyController 2 with a Disco (`fake-sc2/`), the
+tests and the fake Disco's protocol tests (`make fake-test`: its settings,
+states and flight, modelled on the Disco's firmware, `NOTES.md` section
+22), starts the fake SkyController 2 with a Disco (`fake-sc2/`), the
 fake camera and a headless Android emulator, and plays the end-to-end
 scenarios in `tests/scenarios/` (TypeScript runner in `tests/e2e/`). Its
 exit code is the verdict; screenshots and results go to `out/latest/`.

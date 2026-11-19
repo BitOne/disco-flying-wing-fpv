@@ -17,7 +17,10 @@ enum class HudMode {
     MINIMAL,
 
     /** Jet fighter style: artificial horizon, speed and altitude tapes. */
-    FIGHTER;
+    FIGHTER,
+
+    /** Moving map: trail, home, last fix. */
+    MAP;
 
     fun next(): HudMode = entries[(ordinal + 1) % entries.size]
 

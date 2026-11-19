@@ -1,0 +1,41 @@
+name: Disco FPV shows the Disco's failures
+description: >
+  Needs `make fake`, `make video` and `make emu`. Failures injected on the
+  fake Disco ("fail <name>": motor error, magnetometer needing
+  calibration, weak Wi-Fi link, lost GPS fix, motor cut-out) reach the app
+  through GroundSdk (alarms, magnetometer, radio, GPS) and show as warnings
+  below the centre of the HUD, with the last GPS position when the fix is
+  lost; they go away when the failures clear.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml shared_prefs/settings.xml
+  - send: [drone_link ok, fail motor off, fail magneto off, fail link_weak off, fail cut_out off, fail gps off,
+      battery 64, home 45.1885 5.7245 300, gps 45.1890 5.7250 350, satellites 12, circle]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flight view
+  - expect_texts: [CIRCLING]
+  - send: [fail motor]
+  - expect_texts: [MOTOR ERROR]
+  - send: [fail magneto]
+  - expect_texts: [CALIBRATE COMPASS]
+  - send: [fail link_weak]
+  - expect_texts: [WEAK LINK]
+  - send: [fail gps]
+  - expect_texts: [GPS LOST, "LAST FIX 45.18"]
+  - screenshot: failures
+  - send: [fail motor off, fail magneto off, fail link_weak off, fail gps off]
+  - expect_gone: [MOTOR ERROR, CALIBRATE COMPASS, WEAK LINK, GPS LOST]
+  # a motor cut-out: the alarm, and the Disco glides down (landing); the
+  # descent is then frozen (setting the altitude stops the simulation): a
+  # screen changing ten times a second never gets idle for UIAutomator
+  - send: [fail cut_out]
+  - expect_fake: landing
+  - send: [altitude 25]
+  - expect_texts: [MOTOR CUT OUT, LANDING]
+  - screenshot: cut-out
+  - send: [fail cut_out off, circle]
+  - expect_gone: [MOTOR CUT OUT]

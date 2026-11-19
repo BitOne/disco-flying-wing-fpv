@@ -25,11 +25,34 @@ fake against Parrot's FreeFlight Pro inside the emulator:
 
 `app/fakedisco` is the helper app announcing it over mDNS (Android NSD).
 
-Piloting commands (TakeOff, UserTakeOff, Landing, Emergency, NavigateHome)
-drive a small flight simulation of the Disco's sequences (take-off by
-throw, climb to 50 m and circle, landing, motor cut, return home); see the
-comment above `flight_tick` and the control socket's `state` and `throw`
+Piloting commands (TakeOff, UserTakeOff, Landing, Emergency,
+NavigateHome, Circle, PCMD) drive a flight simulation of the Disco with its
+firmware's values: take-off by throw, climb to the circling altitude and
+circle (30 m radius, 12 m/s), manual flight with the sticks (`sticks
+<roll> <pitch> <gaz>` for the controller's, or the app's PCMD), the loiter
+button, a return home that flies over home and circles it (also after
+`return_home_delay` without the controller, and on a critical battery), a
+circular landing on a 10 degree slope, the geofence (minimum and maximum
+altitude, maximum distance), battery drain, and the flight plan's playing
+state. See the comment above `flight_tick` and the control socket's
 commands in `src/fake_sc2.c`.
+
+The Disco's other settings and states live in `src/disco.c`, modelled on
+the Disco firmware 1.7.1 (the commands its flight program decodes and the
+events it generates, with its default configuration): identity, geofence
+and circling settings, return home settings, camera settings and
+orientation, video recording and pictures with the internal storage
+counters, magnetometer and pitot calibrations, Wi-Fi settings, scan and
+authorised channels, battery alerts, sensors, flight meter, run id, flight
+plan states. Commands the real flight program ignores get no answer.
+`disco` on the control socket prints them; `alert <name|auto>` forces an
+alert.
+
+Protocol tests: `make fake-test` runs each `tests/fake/*.probe` script
+with `disco-probe` (`src/probe.c`, a scripted ARSDK controller that
+connects over mux like the phone) against a fresh fake, without the
+emulator. A script sends commands by name and expects the fake's answers
+(see the comment at the top of `src/probe.c`).
 
 Faults for robustness tests (SkyController mode): `drone_link lost|ok`
 (the Disco leaves or comes back in the controller's range) and

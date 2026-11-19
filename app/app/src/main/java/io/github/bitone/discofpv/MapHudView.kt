@@ -1,0 +1,140 @@
+/*
+ * Disco FPV. Copyright (c) 2026, Benoit Jacquemont. BSD-3-Clause.
+ */
+package io.github.bitone.discofpv
+
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.util.AttributeSet
+import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.min
+import kotlin.math.sin
+
+/**
+ * Moving map, track up: the Disco at the centre pointing up, its trail,
+ * home (on the edge with its distance when beyond the range ring), north,
+ * and a range ring sized to keep home in view. Without a GPS position it is
+ * centred on the last fix, drawn as a cross with its coordinates and age.
+ * No map tiles: it works offline, over the video, in a dark disc.
+ */
+class MapHudView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+) : HudCanvasView(context, attrs) {
+
+    private val disc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.parseColor("#90000000")
+    }
+    private val path = Path()
+
+    override fun describe(model: HudModel): String {
+        val ring = MapProjection.ringFor(rangeOf(model))
+        return "HUD MAP, ${HudFormat.home(model.homeDistance)}, RING ${ring.toInt()} m" +
+            (model.lastFix?.takeIf { model.position == null }?.let { ", LAST FIX" } ?: "")
+    }
+
+    /** The distance the ring must cover: home, from the drone or last fix. */
+    private fun rangeOf(m: HudModel): Double? {
+        val c = m.mapPosition ?: return null
+        val home = m.home ?: return null
+        return Geo.distance(c, home)
+    }
+
+    override fun drawHud(canvas: Canvas) {
+        scalePaints(0.045f)
+        val m = model
+        val cx = w / 2f
+        val cy = h / 2f
+        val r = min(w, h) * 0.44f
+        canvas.drawCircle(cx, cy, r * 1.08f, disc)
+        val center = m.mapPosition
+        text.textAlign = Paint.Align.CENTER
+        if (center == null) {
+            text.color = WARNING_COLOR
+            canvas.drawText("NO POSITION", cx, cy + text.textSize / 3, text)
+            return
+        }
+        val lost = m.position == null
+        val heading = if (lost) 0.0 else m.heading ?: 0.0
+        val ringMetres = MapProjection.ringFor(rangeOf(m))
+        val proj = MapProjection(center, heading, r / ringMetres)
+
+        // range ring and its half
+        line.color = HUD_COLOR
+        canvas.drawCircle(cx, cy, r, line)
+        canvas.drawCircle(cx, cy, r / 2, line)
+        text.color = HUD_COLOR
+        canvas.drawText(String.format(Locale.US, "%d m", ringMetres.toInt()), cx, cy - r - text.textSize * 0.4f, text)
+
+        // north on the ring
+        val north = proj.project(GeoPoint(center.latitude + 1.0, center.longitude))
+        val nd = hypot(north.first, north.second)
+        canvas.drawText("N", cx + (north.first / nd * r).toFloat(),
+            cy + (north.second / nd * r).toFloat() + text.textSize / 3, text)
+
+        // trail
+        if (m.trail.size >= 2) {
+            path.reset()
+            m.trail.forEachIndexed { i, p ->
+                val (x, y) = proj.project(p)
+                if (i == 0) path.moveTo(cx + x.toFloat(), cy + y.toFloat())
+                else path.lineTo(cx + x.toFloat(), cy + y.toFloat())
+            }
+            canvas.drawPath(path, line)
+        }
+
+        // home, clamped to the ring
+        m.home?.let { home ->
+            var (x, y) = proj.project(home)
+            val d = hypot(x, y)
+            if (d > r) {
+                x = x / d * r
+                y = y / d * r
+            }
+            val hx = cx + x.toFloat()
+            val hy = cy + y.toFloat()
+            fill.color = HUD_COLOR
+            canvas.drawCircle(hx, hy, text.textSize * 0.7f, fill)
+            text.color = Color.BLACK
+            canvas.drawText("H", hx, hy + text.textSize / 3, text)
+        }
+
+        // the drone (or its last fix)
+        val s = text.textSize * 0.8f
+        if (lost) {
+            line.color = WARNING_COLOR
+            canvas.drawLine(cx - s, cy - s, cx + s, cy + s, line)
+            canvas.drawLine(cx - s, cy + s, cx + s, cy - s, line)
+            line.color = HUD_COLOR
+            text.color = WARNING_COLOR
+            val fix = m.lastFix
+            if (fix != null) {
+                canvas.drawText(HudAlerts.lastFix(fix, System.currentTimeMillis()), cx, cy + r + text.textSize * 1.2f, text)
+            }
+        } else {
+            path.reset()
+            path.moveTo(cx, cy - s * 1.4f)
+            path.lineTo(cx + s, cy + s)
+            path.lineTo(cx, cy + s * 0.4f)
+            path.lineTo(cx - s, cy + s)
+            path.close()
+            fill.color = HUD_COLOR
+            canvas.drawPath(path, fill)
+            text.color = HUD_COLOR
+            canvas.drawText(HudFormat.home(m.homeDistance), cx, cy + r + text.textSize * 1.2f, text)
+        }
+        // heading reference: up is the track
+        text.textAlign = Paint.Align.LEFT
+        text.color = HUD_COLOR
+        if (!lost && m.heading != null) {
+            canvas.drawText(HudTape.heading(m.heading), cx + r * cos(-Math.PI / 4).toFloat(),
+                cy - r * sin(Math.PI / 4).toFloat(), text)
+        }
+    }
+}

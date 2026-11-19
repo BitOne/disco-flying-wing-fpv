@@ -15,10 +15,25 @@
         <item name="android:shadowRadius">3</item>
     </style>
 
-    <!-- Headset HUD: one line per band around the video; size and gaps set
-         by HeadsetHudSizer. -->
+    <!-- Headset HUD: one line at the top and the bottom of the HUD area;
+         size and gaps set by HeadsetHudSizer. -->
     <style name="HudHeadset" parent="Hud">
         <item name="android:maxLines">1</item>
+    </style>
+
+    <!-- Warnings: centred lines in the warning colour. -->
+    <style name="HudAlert" parent="Hud">
+        <item name="android:text"></item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">#FF6040</item>
+    </style>
+
+    <!-- Settings screen rows. -->
+    <style name="SettingRow">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:textAllCaps">false</item>
     </style>
 
     <!-- Lens calibration panel (headset view). -->

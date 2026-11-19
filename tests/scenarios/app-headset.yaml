@@ -3,9 +3,10 @@ description: >
   Needs `make fake`, `make video` and `make emu`. Opens the side-by-side
   headset view (GsdkHmdView, lens-corrected) and checks live video in the
   left and right eye areas, that both eyes show the same picture (the
-  right eye is the left one shifted), and that the HUD text is present in
-  the bands above and below the video in each eye. The HUD is drawn inside
-  the GL view, so it is checked on the screenshot only. Regions are
+  right eye is the left one shifted), HUD included, and that nothing is
+  drawn in the black bands above and below the picture, which the lenses
+  don't show (the HUD stays in the middle of the video; it is drawn inside
+  the GL view, so its text is checked on the screenshot only). Regions are
   fractions of the 2400x1080 landscape screen.
 app:
   package: io.github.bitone.discofpv
@@ -28,12 +29,13 @@ steps:
       min_change: 0.002
     timeout: 15000
   - expect_stereo:
-      region: [0.10, 0.17, 0.47, 0.82] # left eye, video and HUD bands
+      region: [0.10, 0.17, 0.47, 0.82] # left eye, video and HUD
       max_diff: 8
       min_contrast: 30
-  # HUD lines: top band (flight data), bottom band (systems), each eye
-  - expect_image: { region: [0.16, 0.19, 0.41, 0.25], min_contrast: 15 }
-  - expect_image: { region: [0.12, 0.75, 0.45, 0.80], min_contrast: 15 }
-  - expect_image: { region: [0.59, 0.19, 0.84, 0.25], min_contrast: 15 }
-  - expect_image: { region: [0.55, 0.75, 0.88, 0.80], min_contrast: 15 }
+  # nothing in the black bands above and below the picture: they are not
+  # seen through the lenses, the HUD stays in the middle of the video
+  - expect_image: { region: [0.16, 0.19, 0.41, 0.25], max_contrast: 5 }
+  - expect_image: { region: [0.16, 0.77, 0.41, 0.80], max_contrast: 5 }
+  - expect_image: { region: [0.59, 0.19, 0.84, 0.25], max_contrast: 5 }
+  - expect_image: { region: [0.59, 0.77, 0.84, 0.80], max_contrast: 5 }
   - screenshot: headset-view

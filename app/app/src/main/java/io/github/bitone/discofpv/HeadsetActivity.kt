@@ -13,7 +13,8 @@ import com.parrot.drone.groundsdk.hmd.GsdkHmdView
  * Side-by-side headset (FPV) view: the live stream rendered once per eye
  * with lens distortion correction (GroundSdk's GsdkHmdView), and the HUD as
  * the HMD overlay, so it appears in both eyes. The headset HUD
- * (hud_headset.xml) sits in the bands above and below the video.
+ * (hud_headset.xml) stays in the middle of the video, the part seen through
+ * the lenses (its size is a setting).
  *
  * A tap shows the lens calibration panel (left and right lens offsets,
  * height), applied live and saved for the next sessions.
@@ -27,11 +28,11 @@ class HeadsetActivity : DroneScreenActivity() {
         setContentView(R.layout.activity_headset)
         val view: GsdkHmdView = findViewById(R.id.hmd)
         hmdView = view
-        val hud = layoutInflater.inflate(R.layout.hud_headset, null)
-        HeadsetHudSizer.attach(hud)
-        view.setOverlay(hud)
+        val hudView = layoutInflater.inflate(R.layout.hud_headset, null)
+        HeadsetHudSizer.attach(hudView, { hud }, settings.headsetHudPercent)
+        view.setOverlay(hudView)
         withLiveStream { view.setStream(it) }
-        setupHud(hud)
+        setupHud(hudView)
         lens = LensSettings.load(this)
         applyLens()
         bindLensPanel(view)

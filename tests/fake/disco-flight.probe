@@ -1,0 +1,92 @@
+# The Disco's flight: take-off to the circling altitude, piloting with the
+# controller's sticks, the loiter command, geofence, return home (asked, on
+# a lost link, on a critical battery), spiral landing, flight meter and
+# video auto-record, flight plan playing state.
+ctrl sim internal
+ctrl flying_state landed
+ctrl altitude 0
+ctrl battery 90
+ctrl sticks 0 0 0
+ctrl gps 21.2665 -157.8205 3
+ctrl home 21.2665 -157.8205 3
+send Common.Common.AllStates
+expect AllStatesChanged
+send Ardrone3.PilotingSettings.CirclingAltitude 60
+expect CirclingAltitudeChanged | Current=60
+send Ardrone3.PilotingSettings.MaxAltitude 70
+expect MaxAltitudeChanged | Current=70.000000
+
+# take-off: hand launch after the motor ramping, climb, circle at 60 m;
+# video auto-record from take-off
+mark
+send Ardrone3.Piloting.TakeOff
+expect FlyingStateChanged | State=MOTOR_RAMPING
+expect FlyingStateChanged | State=TAKINGOFF 4000
+expect VideoStateChangedV2 | State=STARTED
+expect FlyingStateChanged | State=HOVERING 20000
+ctrl_expect "hovering alt=60.0" state
+
+# sticks: the pilot takes over; full climb stops at the maximum altitude
+mark
+ctrl sticks 0 -100 0
+expect FlyingStateChanged | State=FLYING
+wait 4000
+ctrl_expect "flying alt=70.0" state
+# left bank: the heading turns
+ctrl sticks -100 0 0
+wait 1500
+ctrl sticks 0 0 0
+# loiter button: circling again, counter-clockwise, here
+mark
+send Ardrone3.Piloting.Circle CCW
+expect FlyingStateChanged | State=HOVERING
+ctrl_expect hovering state
+
+# return home: flying over home, then circling around it
+mark
+send Ardrone3.Piloting.NavigateHome 1
+expect NavigateHomeStateChanged | State=INPROGRESS | Reason=USERREQUEST
+expect FlyingStateChanged | State=FLYING
+expect NavigateHomeStateChanged | State=AVAILABLE | Reason=FINISHED 30000
+expect FlyingStateChanged | State=HOVERING
+ctrl_expect home=0 state
+
+# link to the controller lost: back home after return_home_delay
+send Ardrone3.GPSSettings.ReturnHomeDelay 1
+expect ReturnHomeDelayChanged | Delay=1
+mark
+ctrl drone_link lost
+expect NavigateHomeStateChanged | State=INPROGRESS | Reason=CONNECTIONLOST 4000
+ctrl drone_link ok
+send Ardrone3.Piloting.NavigateHome 0
+expect NavigateHomeStateChanged | State=AVAILABLE | Reason=STOPPED
+
+# critical battery: back home
+mark
+ctrl battery 10
+expect AlertStateChanged | State=CRITICAL_BATTERY
+expect NavigateHomeStateChanged | State=INPROGRESS | Reason=LOWBATTERY 2000
+ctrl battery 90
+
+# flight plan: playing, paused, stopped
+mark
+send Common.Mavlink.Start flightPlan.mavlink FLIGHTPLAN
+expect MavlinkFilePlayingStateChanged | State=PLAYING | Filepath='flightPlan.mavlink'
+expect NavigateHomeStateChanged | State=AVAILABLE | Reason=STOPPED
+ctrl_expect fp=1 state
+send Common.Mavlink.Pause
+expect MavlinkFilePlayingStateChanged | State=PAUSED
+expect FlyingStateChanged | State=HOVERING
+send Common.Mavlink.Stop
+expect MavlinkFilePlayingStateChanged | State=STOPPED
+
+# landing: a descending circle, then the flight is counted and the video
+# stops
+mark
+send Ardrone3.Piloting.Landing
+expect LandingStateChanged | State=SPIRAL
+expect FlyingStateChanged | State=LANDING
+expect FlyingStateChanged | State=LANDED 45000
+expect MotorFlightsStatusChanged | NbFlights=1
+expect VideoStateChangedV2 | State=STOPPED
+ctrl_expect flights=1 disco

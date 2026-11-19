@@ -23,6 +23,8 @@ test('parses every step kind', () => {
     scroll: true
     timeout: 500
   - expect_texts: c
+  - expect_gone: [MOTOR ERROR]
+    timeout: 3000
   - screenshot: shot-1
   - expect_fake: hovering
     timeout: 2000
@@ -48,6 +50,7 @@ test('parses every step kind', () => {
     { kind: 'tap_id', id: 'lens_left_minus', times: 3 },
     { kind: 'expect_texts', texts: ['a', 'b'], timeoutMs: 500, scroll: true },
     { kind: 'expect_texts', texts: ['c'], timeoutMs: 10000, scroll: false },
+    { kind: 'expect_gone', texts: ['MOTOR ERROR'], timeoutMs: 3000 },
     { kind: 'screenshot', name: 'shot-1' },
     { kind: 'expect_fake', query: 'state', contains: 'hovering', timeoutMs: 2000 },
     { kind: 'expect_fake', query: 'ping', contains: 'connected', timeoutMs: 10000 },

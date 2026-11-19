@@ -31,6 +31,10 @@
             android:screenOrientation="landscape"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
 
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+
         <!-- singleTop, not singleTask: the launcher icon must bring back the
              flight or headset view the pilot was on, not clear it. -->
         <activity

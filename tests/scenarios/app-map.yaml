@@ -1,0 +1,54 @@
+name: Disco FPV moving map, last GPS position and settings
+description: >
+  Needs `make fake`, `make video` and `make emu`. The controller's map
+  button (B by default) shows the moving map over the HUD and hides it
+  again; when the GPS fix is lost the map stays on the last fix, which the
+  HUD shows too and which is remembered: the settings screen shows it after
+  a restart. The settings change the map button, how the map shows, the
+  headset HUD size and whether the last position is kept.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml shared_prefs/settings.xml shared_prefs/last_fix.xml
+  - send: [drone_link ok, fail gps off, battery 64, home 45.1885 5.7245 300, gps 45.1890 5.7250 350,
+      satellites 12, circle]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flight view
+  - expect_texts: [CIRCLING]
+  - send: [button b]
+  - expect_texts: ["HUD MAP, HOME 3", "RING 100 m"]
+  - expect_image: { region: [0.35, 0.3, 0.65, 0.7], min_contrast: 30 }
+  - screenshot: map
+  - send: [button b]
+  - expect_gone: [HUD MAP]
+  - expect_texts: [CIRCLING]
+  # the fix is lost: the last one, on the HUD and the map
+  - send: [fail gps]
+  - expect_texts: [GPS LOST, "LAST FIX 45.18"]
+  - send: [button b]
+  - expect_texts: ["HUD MAP", "LAST FIX"]
+  - screenshot: map-last-fix
+  - send: [button b]
+  # remembered: shown in the settings, after a restart
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Settings
+  - expect_texts: ["LAST FIX 45.18", "Map button: B", "Headset HUD size: 60 %"]
+  - tap_text: "Map button: B"
+  - expect_texts: ["Map button: A"]
+  - tap_text: "Map shown: press to show, press to hide"
+  - expect_texts: ["Map shown: while held"]
+  - tap_text: "Headset HUD size: 60 %"
+  - expect_texts: ["Headset HUD size: 70 %"]
+  - screenshot: settings
+  - tap_text: Forget the last GPS position
+  - expect_texts: [No last GPS position]
+  - back
+  - tap_text: Flight view
+  - expect_fake: grabbed=0x11 # settings and A
+  - send: [fail gps off]
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/settings.xml shared_prefs/last_fix.xml

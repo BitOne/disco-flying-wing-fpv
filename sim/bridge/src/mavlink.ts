@@ -10,6 +10,7 @@ const MESSAGES: Record<number, { extra: number; length: number }> = {
   0: { extra: 50, length: 9 }, // HEARTBEAT
   1: { extra: 124, length: 31 }, // SYS_STATUS
   11: { extra: 89, length: 6 }, // SET_MODE
+  23: { extra: 168, length: 23 }, // PARAM_SET
   24: { extra: 24, length: 30 }, // GPS_RAW_INT (v1 part)
   30: { extra: 39, length: 28 }, // ATTITUDE
   40: { extra: 230, length: 4 }, // MISSION_REQUEST (v1 part)
@@ -19,6 +20,7 @@ const MESSAGES: Record<number, { extra: number; length: number }> = {
   73: { extra: 38, length: 37 }, // MISSION_ITEM_INT (v1 part)
   33: { extra: 104, length: 28 }, // GLOBAL_POSITION_INT
   66: { extra: 148, length: 6 }, // REQUEST_DATA_STREAM
+  70: { extra: 124, length: 18 }, // RC_CHANNELS_OVERRIDE (v1 part)
   74: { extra: 20, length: 20 }, // VFR_HUD
   76: { extra: 152, length: 33 }, // COMMAND_LONG
   77: { extra: 143, length: 3 }, // COMMAND_ACK (v1 part)
@@ -30,6 +32,7 @@ export const MSG = {
   HEARTBEAT: 0,
   SYS_STATUS: 1,
   SET_MODE: 11,
+  PARAM_SET: 23,
   GPS_RAW_INT: 24,
   ATTITUDE: 30,
   GLOBAL_POSITION_INT: 33,
@@ -39,6 +42,7 @@ export const MSG = {
   MISSION_REQUEST_INT: 51,
   MISSION_ITEM_INT: 73,
   REQUEST_DATA_STREAM: 66,
+  RC_CHANNELS_OVERRIDE: 70,
   VFR_HUD: 74,
   COMMAND_LONG: 76,
   COMMAND_ACK: 77,
@@ -145,6 +149,27 @@ export function requestStreams(rateHz: number, target = 1, targetComponent = 1):
   p[3] = targetComponent;
   p[4] = 0; // MAV_DATA_STREAM_ALL
   p[5] = 1; // start
+  return p;
+}
+
+/** PARAM_SET payload (value as a float, which ArduPilot converts). */
+export function paramSet(name: string, value: number, target = 1, targetComponent = 1): Buffer {
+  if (name.length > 16) throw new Error(`parameter name too long: ${name}`);
+  const p = Buffer.alloc(23);
+  p.writeFloatLE(value, 0);
+  p[4] = target;
+  p[5] = targetComponent;
+  p.write(name, 6, 'ascii');
+  p[22] = 9; // MAV_PARAM_TYPE_REAL32
+  return p;
+}
+
+/** RC_CHANNELS_OVERRIDE payload, channels 1 to 8 (0: back to the radio). */
+export function rcOverride(channels: readonly number[], target = 1, targetComponent = 1): Buffer {
+  const p = Buffer.alloc(18);
+  for (let i = 0; i < 8; i++) p.writeUInt16LE(channels[i] ?? 0, i * 2);
+  p[16] = target;
+  p[17] = targetComponent;
   return p;
 }
 

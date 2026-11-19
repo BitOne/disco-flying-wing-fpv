@@ -1,0 +1,26 @@
+# The simulated Disco (ArduPilot SITL through sim/bridge) follows the
+# Disco's settings and the pilot's sticks. Needs `make fake sim`, circling.
+wait 1
+send Ardrone3.PilotingSettings.CirclingAltitude 70
+expect CirclingAltitudeChanged | Current=70
+send Ardrone3.PilotingSettings.CirclingDirection CCW
+expect CirclingDirectionChanged | Value=CCW
+wait 3000
+# sticks: stick back climbs (FBWB), from the circle
+ctrl sticks 0 -100 0
+ctrl_expect flying state
+wait 8000
+ctrl sticks 0 0 0
+ctrl_expect flying state
+# loiter button: circling again where it is
+send Ardrone3.Piloting.Circle DEFAULT
+ctrl_expect hovering state
+# the controller's link lost: back home after return_home_delay
+send Ardrone3.GPSSettings.ReturnHomeDelay 2
+expect ReturnHomeDelayChanged | Delay=2
+ctrl drone_link lost
+ctrl_expect "flying alt" state
+ctrl_expect home=1 state
+ctrl drone_link ok
+send Ardrone3.Piloting.NavigateHome 0
+ctrl_expect hovering state

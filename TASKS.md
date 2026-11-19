@@ -495,6 +495,20 @@ M5 done (2026-11-18): `make check` green with the six app scenarios.
   previous dump in place and fool the runner: now an error); its buttons
   are tapped by position.
 
+- [x] **T6.3 The real Disco's features in the fake** (user request,
+  2026-11-19). From the Disco firmware 1.7.1 (commands its flight program
+  decodes and events it sends, default settings, flight controller
+  parameters) and FreeFlight Pro's use of them: settings, states, media,
+  calibrations, Wi-Fi, alerts, flight meter, flight plan states in
+  `fake-sc2/src/disco.c`; manual flight with the sticks, loiter button,
+  navigating return home (asked, link lost, critical battery), circular
+  landing, geofence, battery drain in the flight simulation; the same
+  through the simulator bridge (FBWB with RC overrides, circling settings
+  as ArduPlane parameters). `make fake-test` (in `make check`): protocol
+  tests with `disco-probe`. Fake mux socket without Nagle (AllStates
+  5.6 s to 63 ms). See `NOTES.md` section 22, including what is still
+  missing (flight plan files over FTP, media download, RC receiver).
+
 Known gap: on the ground before take-off, the simulator's camera can sit
 just below FlightGear's terrain (SITL home altitude 3 m vs the scenery's
 elevation there), so the near ground isn't drawn; fine once airborne.

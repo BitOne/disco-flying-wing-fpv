@@ -26,7 +26,8 @@ class HudTapeTest {
     @Test fun modesCycle() {
         assertEquals(HudMode.MINIMAL, HudMode.CLASSIC.next())
         assertEquals(HudMode.FIGHTER, HudMode.MINIMAL.next())
-        assertEquals(HudMode.CLASSIC, HudMode.FIGHTER.next())
+        assertEquals(HudMode.MAP, HudMode.FIGHTER.next())
+        assertEquals(HudMode.CLASSIC, HudMode.MAP.next())
         assertEquals(HudMode.CLASSIC, HudMode.parse("nonsense"))
         assertEquals(HudMode.FIGHTER, HudMode.parse("FIGHTER"))
     }

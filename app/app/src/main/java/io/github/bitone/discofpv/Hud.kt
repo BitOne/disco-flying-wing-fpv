@@ -3,49 +3,77 @@
  */
 package io.github.bitone.discofpv
 
+import android.graphics.RectF
 import android.view.View
 import android.widget.TextView
 
 /**
  * One HUD (hud.xml or hud_headset.xml under [root]): renders [HudModel]
- * in the current [HudMode] and switches modes, showing the new mode's name
- * for a moment.
+ * in the current [HudMode], switches modes (showing the new mode's name for
+ * a moment), shows the moving map over any mode on demand ([showMap]), and
+ * the warnings ([HudModel.alerts], last fix) in every mode.
  */
 class Hud(private val root: View, mode: HudMode) {
 
     private val classic: View = root.findViewById(R.id.hud_classic)
     private val minimal: MinimalHudView = root.findViewById(R.id.hud_minimal)
     private val fighter: FighterHudView = root.findViewById(R.id.hud_fighter)
+    private val map: MapHudView = root.findViewById(R.id.hud_map)
+    private val alerts: TextView = root.findViewById(R.id.hud_alerts)
     private val banner: TextView = root.findViewById(R.id.hud_mode_banner)
     private val hideBanner = Runnable { banner.visibility = View.GONE }
+    private var last = HudModel()
 
     var mode: HudMode = mode
         private set
 
+    /** The map is shown over the current mode (the controller's map button). */
+    var mapShown: Boolean = false
+        private set
+
     init {
-        show(mode)
+        show()
     }
 
     fun setMode(newMode: HudMode, announce: Boolean = true) {
         mode = newMode
-        show(newMode)
-        if (announce) {
-            banner.text = "HUD ${newMode.name}"
-            banner.visibility = View.VISIBLE
-            banner.removeCallbacks(hideBanner)
-            banner.postDelayed(hideBanner, BANNER_MS)
-        }
+        show()
+        if (announce) announce("HUD ${newMode.name}")
     }
 
-    private fun show(m: HudMode) {
+    fun showMap(shown: Boolean) {
+        if (shown == mapShown) return
+        mapShown = shown
+        show()
+    }
+
+    /** Drawing area of the drawn modes (null: the whole view). */
+    fun setArea(area: RectF?) {
+        minimal.area = area
+        fighter.area = area
+        map.area = area
+    }
+
+    private fun announce(text: String) {
+        banner.text = text
+        banner.visibility = View.VISIBLE
+        banner.removeCallbacks(hideBanner)
+        banner.postDelayed(hideBanner, BANNER_MS)
+    }
+
+    private fun show() {
+        val m = if (mapShown) HudMode.MAP else mode
         classic.visibility = if (m == HudMode.CLASSIC) View.VISIBLE else View.GONE
         minimal.visibility = if (m == HudMode.MINIMAL) View.VISIBLE else View.GONE
         fighter.visibility = if (m == HudMode.FIGHTER) View.VISIBLE else View.GONE
+        map.visibility = if (m == HudMode.MAP) View.VISIBLE else View.GONE
     }
 
     fun render(m: HudModel) {
+        last = m
         minimal.model = m
         fighter.model = m
+        map.model = m
         text(R.id.hud_state, HudFormat.stateLine(m.connected, m.flyingState), warning = !m.connected)
         text(R.id.hud_altitude, HudFormat.altitude(m.altitude))
         text(R.id.hud_air_speed, HudFormat.airSpeed(m.airSpeed))
@@ -53,6 +81,20 @@ class Hud(private val root: View, mode: HudMode) {
         text(R.id.hud_battery, HudFormat.battery("BAT", m.battery), HudFormat.isLowBattery(m.battery))
         text(R.id.hud_rc_battery, HudFormat.battery("RC", m.rcBattery), HudFormat.isLowBattery(m.rcBattery))
         text(R.id.hud_gps, HudFormat.gps(m.gpsFixed, m.satellites))
+        text(R.id.hud_camera, HudAlerts.camera(m.cameraTilt) ?: "")
+        renderAlerts(m)
+    }
+
+    private fun renderAlerts(m: HudModel) {
+        val lines = m.alerts.toMutableList()
+        val fix = m.lastFix
+        // where it was: in every mode but the map, which draws it
+        if (m.position == null && fix != null && m.connected && !(mapShown || mode == HudMode.MAP)) {
+            lines += HudAlerts.lastFix(fix, System.currentTimeMillis())
+        }
+        val value = lines.joinToString("\n")
+        if (alerts.text.toString() != value) alerts.text = value
+        alerts.visibility = if (value.isEmpty()) View.GONE else View.VISIBLE
     }
 
     private fun text(id: Int, value: String, warning: Boolean = false) {

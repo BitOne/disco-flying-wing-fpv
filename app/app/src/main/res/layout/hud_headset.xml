@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- HUD for the headset view, rendered as the HMD overlay in both eyes. The
-     overlay covers the lens render area (54 x 41 mm) and the 16:9 video is
-     letterboxed in it, leaving a band of about 5 mm above and below the
-     picture: flight data goes in the top band, systems in the bottom band,
-     centred where the lens distorts least, so the video stays clear.
-     Same view ids as hud.xml, so Hud serves both; the minimal mode also
-     keeps to the bands, the fighter mode draws over the video like a jet's
-     HUD. Text size and gaps of the classic lines are set from the
-     overlay's width by HeadsetHudSizer. -->
+     overlay covers the lens render area (54 x 41 mm) with the 16:9 video
+     letterboxed in it; through the lenses only the middle of the picture is
+     seen, so everything stays in a centred area of the video (HudArea,
+     size set in the settings): flight data on its top line, systems on its
+     bottom line, warnings below the centre, the drawn modes inside it.
+     Same view ids as hud.xml, so Hud serves both. HeadsetHudSizer sets the
+     area, text sizes and gaps from the overlay's size. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/hud"
     android:layout_width="match_parent"
@@ -43,6 +42,7 @@
             <TextView android:id="@+id/hud_rc_battery" style="@style/HudHeadset" />
             <TextView android:id="@+id/hud_gps" style="@style/HudHeadset" />
             <TextView android:id="@+id/hud_ground_speed" style="@style/HudHeadset" />
+            <TextView android:id="@+id/hud_camera" style="@style/HudHeadset" />
         </LinearLayout>
     </FrameLayout>
 
@@ -56,6 +56,18 @@
         android:id="@+id/hud_fighter"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <io.github.bitone.discofpv.MapHudView
+        android:id="@+id/hud_map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/hud_alerts"
+        style="@style/HudAlert"
+        android:layout_gravity="center"
         android:visibility="gone" />
 
     <TextView

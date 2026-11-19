@@ -1,0 +1,59 @@
+# Failures injected on the Disco ("fail <name> [on|off]"), as the app sees
+# them: the events GroundSdk turns into alarms and states.
+ctrl gps 21.2665 -157.8205 3
+send Common.Common.AllStates
+expect AllStatesChanged
+mark
+ctrl fail motor
+expect MotorErrorStateChanged | MotorIds=1 | MotorError=ERRORMOTORSTALLED
+ctrl fail motor off
+expect MotorErrorStateChanged | MotorIds=0 | MotorError=NOERROR
+mark
+ctrl fail magneto
+expect MagnetoCalibrationRequiredState | Required=1
+expect AvailabilityStateChanged | AvailabilityState=0
+send Common.Calibration.MagnetoCalibration 1
+expect MagnetoCalibrationRequiredState | Required=0 8000
+mark
+ctrl fail pitot
+expect PitotCalibrationStateChanged | State=REQUIRED
+ctrl fail pitot off
+expect PitotCalibrationStateChanged | State=DONE
+mark
+ctrl fail camera
+expect PictureStateChangedV2 | State=NOTAVAILABLE | Error=CAMERA_KO
+send Ardrone3.MediaRecord.PictureV2
+expect PictureEventChanged | Event=FAILED | Error=NOTAVAILABLE
+ctrl fail camera off
+expect PictureStateChangedV2 | State=READY | Error=OK
+mark
+ctrl fail storage
+expect MassStorageInfoStateListChanged
+expect Full=1
+send Ardrone3.MediaRecord.VideoV2 START
+expect VideoEventChanged | Event=FAILED | Error=MEMORYFULL
+ctrl fail storage off
+mark
+ctrl fail imu
+expect SensorsStatesListChanged | SensorName=IMU | SensorState=0
+ctrl fail imu off
+expect SensorsStatesListChanged | SensorName=IMU | SensorState=1
+mark
+ctrl fail link_weak
+expect WifiSignalChanged | Rssi=-88
+ctrl fail link_weak off
+expect WifiSignalChanged | Rssi=-45
+mark
+ctrl fail overheat
+expect Common.OverHeatState.OverHeatChanged
+mark
+ctrl fail gps
+expect GPSFixStateChanged | Fixed=0
+ctrl fail gps off
+expect GPSFixStateChanged | Fixed=1
+mark
+ctrl fail cut_out
+expect AlertStateChanged | State=CUT_OUT
+ctrl fail cut_out off
+expect AlertStateChanged | State=NONE
+ctrl_expect "error unknown failure" fail bogus

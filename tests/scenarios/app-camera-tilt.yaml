@@ -1,0 +1,34 @@
+name: Disco FPV follows the camera tilt from the controller's slider
+description: >
+  Needs `make fake`, `make video` and `make emu`. The SkyController 2's
+  left slider tilts the Disco's (digital) camera: the fake controller maps
+  it to the camera tilt and moves the Disco's camera at up to 20 deg/s, to
+  its 80 deg limit. The app shows the tilt, and the fighter HUD's horizon
+  follows the camera's view (attitude plus tilt).
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml shared_prefs/settings.xml
+  - send: [drone_link ok, fail cut_out off, axis left_slider 0, battery 64, home 45.1885 5.7245 300, gps 45.1890 5.7250 350,
+      satellites 12, circle]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flight view
+  - expect_texts: [CIRCLING]
+  - send: [axis left_slider -100]
+  - wait: 5000
+  - send: [axis left_slider 0]
+  - expect_fake: tilt=-80
+    query: disco
+  - expect_texts: ["CAM -80"]
+  - send: [button settings, button settings] # fighter
+  - expect_texts: ["HUD FIGHTER", "CAM -80"]
+  - screenshot: fighter-camera-down
+  # back up, to the other limit
+  - send: [axis left_slider 100]
+  - wait: 9000
+  - send: [axis left_slider 0]
+  - expect_texts: ["CAM 80"]
+  - screenshot: fighter-camera-up

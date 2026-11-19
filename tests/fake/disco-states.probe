@@ -1,0 +1,95 @@
+# The Disco's states on connection, and its non-flight commands: media,
+# calibrations, Wi-Fi, clock. Events and their order follow the firmware's
+# flight program (dragon-prog) and GroundSdk's Bebop-family controllers.
+ctrl flying_state landed
+ctrl battery 80
+ctrl gps 21.2665 -157.8205 3
+send Common.Common.AllStates
+expect Common.ARLibsVersionsState.DeviceLibARCommandsVersion
+expect Common.RunState.RunIdChanged
+expect Common.CommonState.SensorsStatesListChanged | SensorName=IMU | SensorState=1
+expect Common.CommonState.SensorsStatesListChanged | SensorName=GPS | SensorState=1
+expect Common.CommonState.MassStorageStateListChanged | Mass_storage_id=0 | Name='internal_000'
+expect Common.CommonState.MassStorageInfoStateListChanged | Mass_storage_id=0
+expect Ardrone3.MediaRecordState.PictureStateChangedV2 | State=READY
+expect Ardrone3.MediaRecordState.VideoStateChangedV2 | State=STOPPED
+expect Ardrone3.PilotingState.AlertStateChanged | State=NONE
+expect Common.CalibrationState.PitotCalibrationStateChanged | State=DONE
+expect Ardrone3.GPSState.HomeTypeAvailabilityChanged | Type=TAKEOFF | Available=1
+expect Ardrone3.GPSState.HomeTypeChosenChanged | Type=TAKEOFF
+expect Ardrone3.CameraState.VelocityRange | Max_tilt=20.000000
+expect Common.FlightPlanState.AvailabilityStateChanged | AvailabilityState=1
+expect Common.MavlinkState.MavlinkFilePlayingStateChanged | State=STOPPED
+expect Common.CommonState.AllStatesChanged
+
+# the app's clock, echoed
+mark
+send Common.Common.CurrentDate 2026-11-19
+expect Common.CommonState.CurrentDateChanged | Date='2026-11-19'
+send Common.Common.CurrentTime T101500+0100
+expect Common.CommonState.CurrentTimeChanged | Time='T101500+0100'
+
+# pictures and video recording
+mark
+send Ardrone3.MediaRecord.PictureV2
+expect PictureStateChangedV2 | State=BUSY
+expect PictureEventChanged | Event=TAKEN | Error=OK 2000
+expect PictureStateChangedV2 | State=READY
+expect MassStorageContent | Mass_storage_id=0 | NbPhotos=1
+send Ardrone3.MediaRecord.VideoV2 START
+expect VideoStateChangedV2 | State=STARTED
+expect VideoEventChanged | Event=START
+send Ardrone3.MediaRecord.VideoV2 STOP
+expect VideoStateChangedV2 | State=STOPPED
+expect VideoEventChanged | Event=STOP
+expect MassStorageContent | Mass_storage_id=0 | NbPhotos=1 | NbVideos=1
+
+# camera orientation (digital on the Disco), clamped
+mark
+send Ardrone3.Camera.OrientationV2 -30 10
+expect Ardrone3.CameraState.OrientationV2 | Tilt=-30.000000 | Pan=10.000000
+send Ardrone3.Camera.OrientationV2 -120 0
+expect Ardrone3.CameraState.OrientationV2 | Tilt=-80.000000
+
+# calibrations
+mark
+send Common.Calibration.MagnetoCalibration 1
+expect MagnetoCalibrationStartedChanged | Started=1
+expect MagnetoCalibrationAxisToCalibrateChanged | Axis=XAXIS
+expect MagnetoCalibrationAxisToCalibrateChanged | Axis=YAXIS 3000
+expect MagnetoCalibrationAxisToCalibrateChanged | Axis=ZAXIS 3000
+expect MagnetoCalibrationStateChanged | XAxisCalibration=1 | YAxisCalibration=1 | ZAxisCalibration=1 3000
+expect MagnetoCalibrationStartedChanged | Started=0
+expect MagnetoCalibrationRequiredState | Required=0
+send Common.Calibration.PitotCalibration 1
+expect PitotCalibrationStateChanged | State=IN_PROGRESS
+expect PitotCalibrationStateChanged | State=DONE 5000
+send Ardrone3.Piloting.FlatTrim
+expect Ardrone3.PilotingState.FlatTrimChanged
+
+# Wi-Fi: scan and the channels allowed in the country
+mark
+send Ardrone3.Network.WifiScan ALL
+expect Ardrone3.NetworkState.WifiScanListChanged
+expect Ardrone3.NetworkState.AllWifiScanChanged
+send Ardrone3.Network.WifiAuthChannel
+expect WifiAuthChannelListChanged | Band=2_4GHZ | Channel=1
+expect WifiAuthChannelListChanged | Band=5GHZ | Channel=149
+expect Ardrone3.NetworkState.AllWifiAuthChannelChanged
+
+# battery alerts
+mark
+ctrl battery 18
+expect AlertStateChanged | State=LOW_BATTERY
+ctrl battery 9
+expect AlertStateChanged | State=CRITICAL_BATTERY
+ctrl alert too_much_angle
+expect AlertStateChanged | State=TOO_MUCH_ANGLE
+ctrl alert auto
+ctrl battery 80
+expect AlertStateChanged | State=NONE
+
+# pilot position: the pilot home type becomes available
+mark
+send Ardrone3.GPSSettings.SendControllerGPS 21.2660 -157.8210 2 5 5
+expect HomeTypeAvailabilityChanged | Type=PILOT | Available=1

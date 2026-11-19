@@ -1,0 +1,72 @@
+# The Disco's settings, as the firmware's flight program (dragon-prog)
+# reports and changes them. Defaults: etc/default-dragon.conf.
+send Common.Settings.AllSettings
+expect Common.SettingsState.ProductNameChanged | Name='DISCO-FAKE01'
+expect Common.SettingsState.ProductSerialHighChanged
+expect Common.SettingsState.ProductSerialLowChanged
+expect Common.SettingsState.CountryChanged | Code='US'
+expect Common.SettingsState.AutoCountryChanged | Automatic=1
+expect Ardrone3.SettingsState.CPUID
+# four fields: GroundSdk's AnafiMotors reads major.minor.type.count
+expect Ardrone3.SettingsState.MotorSoftwareVersionChanged | Version='1.0.0.1'
+expect Ardrone3.SettingsState.MotorFlightsStatusChanged
+expect Ardrone3.PilotingSettingsState.MaxAltitudeChanged | Current=150.000000
+expect Ardrone3.PilotingSettingsState.MinAltitudeChanged | Current=5.000000
+expect Ardrone3.PilotingSettingsState.MaxDistanceChanged | Current=2000.000000
+expect Ardrone3.PilotingSettingsState.NoFlyOverMaxDistanceChanged | ShouldNotFlyOver=1
+expect Ardrone3.PilotingSettingsState.CirclingDirectionChanged | Value=CW
+expect Ardrone3.PilotingSettingsState.CirclingAltitudeChanged | Current=50
+expect Ardrone3.PilotingSettingsState.PitchModeChanged | Value=NORMAL
+expect Ardrone3.GPSSettingsState.HomeTypeChanged | Type=TAKEOFF
+expect Ardrone3.GPSSettingsState.ReturnHomeDelayChanged | Delay=10
+expect Ardrone3.PictureSettingsState.VideoAutorecordChanged | Enabled=1
+expect Ardrone3.NetworkSettingsState.WifiSelectionChanged | Type=AUTO_2_4GHZ
+expect Common.SettingsState.AllSettingsChanged
+
+# changes are echoed, clamped to the allowed range
+mark
+send Ardrone3.PilotingSettings.CirclingAltitude 80
+expect CirclingAltitudeChanged | Current=80
+send Ardrone3.PilotingSettings.CirclingAltitude 400
+expect CirclingAltitudeChanged | Current=150
+send Ardrone3.PilotingSettings.CirclingDirection CCW
+expect CirclingDirectionChanged | Value=CCW
+send Ardrone3.PilotingSettings.MaxAltitude 100
+expect MaxAltitudeChanged | Current=100.000000
+send Ardrone3.PilotingSettings.MaxDistance 5
+expect MaxDistanceChanged | Current=10.000000
+send Ardrone3.PilotingSettings.PitchMode INVERTED
+expect PitchModeChanged | Value=INVERTED
+send Ardrone3.GPSSettings.ReturnHomeDelay 30
+expect ReturnHomeDelayChanged | Delay=30
+send Ardrone3.GPSSettings.HomeType PILOT
+expect HomeTypeChanged | Type=PILOT
+send Ardrone3.PictureSettings.VideoResolutions REC720_STREAM720
+expect VideoResolutionsChanged | Type=REC720_STREAM720
+send Ardrone3.PictureSettings.ExpositionSelection 1.5
+expect ExpositionChanged | Value=1.500000
+send Common.Settings.ProductName MyDisco
+expect ProductNameChanged | Name='MyDisco'
+send Ardrone3.NetworkSettings.WifiSelection MANUAL 5GHZ 149
+expect WifiSelectionChanged | Type=MANUAL | Band=5GHZ | Channel=149
+send Ardrone3.NetworkSettings.WifiSecurity WPA2 secret123 PLAIN
+expect WifiSecurityChanged | Type=WPA2
+# kept for the next connection, like the drone's config file
+ctrl_expect circling=ccw,150 disco
+# commands the Disco firmware does not decode get no answer
+mark
+send Ardrone3.PilotingSettings.CirclingRadius 100
+send Ardrone3.PilotingSettings.MaxTilt 20
+absent CirclingRadiusChanged 1000
+absent MaxTiltChanged 10
+
+# reset: back to the defaults, name kept
+mark
+send Common.Settings.Reset
+expect CirclingDirectionChanged | Value=CW
+expect CirclingAltitudeChanged | Current=50
+expect PitchModeChanged | Value=NORMAL
+expect Common.SettingsState.ResetChanged
+ctrl_expect name=MyDisco disco
+send Common.Settings.ProductName DISCO-FAKE01
+expect ProductNameChanged | Name='DISCO-FAKE01'

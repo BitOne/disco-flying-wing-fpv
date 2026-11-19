@@ -39,6 +39,10 @@ class MainActivity : Activity() {
             connectedDroneUid?.let { startActivity(DroneScreenActivity.intent(this, HeadsetActivity::class.java, it)) }
         }
 
+        findViewById<Button>(R.id.settings_button).setOnClickListener {
+            startActivity(android.content.Intent(this, SettingsActivity::class.java))
+        }
+
         groundSdk = ManagedGroundSdk.obtainSession(this)
         groundSdk.getRemoteControlList({ true }) { list ->
             rcStatus.text = describe(list.orEmpty().map { Device(it.name, it.model.toString(), it.state) })

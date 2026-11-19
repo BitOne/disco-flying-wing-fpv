@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <stdint.h>
 #include <time.h>
@@ -42,6 +43,8 @@
 #include <libmux-arsdk.h>
 
 #include "arsdk/arsdk.h"
+#include "disco.h"
+#include "sc2.h"
 #define ULOG_TAG device
 #include "ulog.h"
 ULOG_DECLARE_TAG(device);
@@ -157,18 +160,47 @@ struct app {
 		int               active;    /* simulating */
 		unsigned          state_ms;  /* time in the current flying state */
 		int               home;      /* return home in progress */
+		int               over_home; /* return home: home overflown */
+		int               fp;        /* flight plan playing */
+		int               fp_circling; /* flight plan: circling home */
 		unsigned long     pcmd;      /* PCMD commands received */
-		double            circle;    /* angle on the circle, rad */
-		double            center_lat, center_lon; /* 500 = unset */
+		/* the app's last PCMD, percent */
+		uint8_t           pcmd_flag;
+		int8_t            pcmd_roll, pcmd_pitch, pcmd_gaz;
+		uint64_t          pcmd_ms;
+		/* the controller's sticks ("sticks"), percent */
+		int               stick_roll, stick_pitch, stick_gaz;
+		/* position, metres north/east of the origin (lat/lon) */
+		double            origin_lat, origin_lon; /* 500 = unset */
+		double            n, e;
+		double            heading;   /* rad */
+		/* circling: centre (m), angle of the plane on it, direction */
+		double            cn, ce, circle;
+		int               ccw;
+		unsigned          link_lost_ms;
+		int               low_battery_home; /* done for this flight */
+		double            battery_used; /* percent, fraction not sent yet */
+		struct pomp_timer *reboot_timer;
 	} flight;
+
+	/* fake-sc2: the Disco's settings and other states (disco.c) */
+	struct disco disco;
+
+	/* fake-sc2: failures of the link and sensors handled here ("fail") */
+	int video_failed;              /* camera stream lost */
+	int gps_failed;
+	double gps_saved[3];           /* position before the GPS failure */
+
+	/* fake-sc2: commands nothing handles, for finding gaps ("unhandled") */
+	char unhandled[4096];
 
 	/* fake-sc2: "sim external": flight dynamics come from an external
 	 * simulator (sim/bridge); piloting commands are queued as events */
 	int sim_external;
 	char events[256];
 
-	/* fake-sc2: controller buttons grabbed by the app (Mapper feature) */
-	uint32_t grabbed_buttons;
+	/* fake-sc2: the controller's mapper, inputs and settings (sc2.c) */
+	struct sc2 sc2;
 	struct pomp_timer *button_timer; /* release of the pressed button */
 	uint32_t pressed_button;
 	int button_pending;
@@ -222,8 +254,8 @@ static struct app s_app = {
 		.flying_state = ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDED,
 	},
 	.flight = {
-		.center_lat = 500.0,
-		.center_lon = 500.0,
+		.origin_lat = 500.0,
+		.origin_lon = 500.0,
 	},
 };
 
@@ -262,6 +294,7 @@ static void link_quality(struct arsdk_cmd_itf *itf,
 #define FAKE_SC2_HARDWARE   "1.0"
 #define FAKE_DRONE_SOFTWARE "1.7.1"
 #define FAKE_DRONE_HARDWARE "1.0"
+#define REBOOT_MS           15000
 
 #define SEND(_res, _call) do { \
 		(_res) = (_call); \
@@ -292,7 +325,7 @@ static void send_drone_link(struct app *app)
 			app->drone_link_lost ?
 			ARSDK_SKYCTRL_DEVICESTATE_CONNEXIONCHANGED_STATUS_NOTCONNECTED :
 			ARSDK_SKYCTRL_DEVICESTATE_CONNEXIONCHANGED_STATUS_CONNECTED,
-			FAKE_DRONE_NAME, FAKE_DRONE_PRODUCT));
+			app->disco.s.name, FAKE_DRONE_PRODUCT));
 }
 
 /* Release of a "button" press, sent a moment after the press like a real
@@ -302,12 +335,9 @@ static void button_release_cb(struct pomp_timer *timer, void *userdata)
 {
 	int res = 0;
 	struct app *app = userdata;
+	(void)res;
 	app->button_pending = 0;
-	if (app->cmd_itf == NULL)
-		return;
-	SEND(res, arsdk_cmd_send_Mapper_Grab_button_event(app->cmd_itf,
-			&send_status, app, app->pressed_button,
-			ARSDK_MAPPER_BUTTON_EVENT_RELEASE));
+	sc2_button(&app->sc2, app->pressed_button, 0);
 }
 
 static uint64_t now_ms(void)
@@ -326,6 +356,8 @@ static void send_telemetry(struct app *app)
 		return;
 	SEND(res, arsdk_cmd_send_Common_CommonState_BatteryStateChanged(
 			app->cmd_itf, &send_status, app, tm->battery));
+	disco_battery(&app->disco, tm->battery);
+	disco_gps_fix(&app->disco, tm->gps_fixed);
 	/* calibrated magnetometer: no "please calibrate" in FreeFlight */
 	SEND(res, arsdk_cmd_send_Common_CalibrationState_MagnetoCalibrationStateChanged(
 			app->cmd_itf, &send_status, app, 1, 1, 1, 0));
@@ -358,30 +390,53 @@ static void send_telemetry(struct app *app)
 }
 
 /*
- * fake-sc2: flight simulation, the Disco's own sequences:
+ * fake-sc2: flight simulation, the Disco's own sequences, with the values of
+ * its firmware (parameters.conf: take-off to 50 m, 12 m/s cruise, 30 m
+ * circles, circular landing):
  *   TakeOff: motor ramping, thrown (automatically after FLIGHT_THROW_MS, or
- *   "throw" on the control socket), taking off while climbing to
- *   FLIGHT_CIRCLE_ALT, then hovering, which for the Disco means circling.
+ *   "throw" on the control socket), taking off while climbing straight to
+ *   the circling altitude, then hovering, which for the Disco means circling.
  *   UserTakeOff(1): armed for a hand launch, waits for "throw".
- *   Landing: descends at FLIGHT_DESCENT m/s, then landed.
+ *   Piloting (the controller's sticks, "sticks" on the control socket, or
+ *   the app's PCMD): flying; roll banks and turns, pitch climbs or dives
+ *   (reversed in inverted pitch mode), throttle sets the airspeed. Sticks
+ *   centred: wings level, straight ahead. Circle(): back to circling, around
+ *   a point beside the plane, in the given or the configured direction.
+ *   NavigateHome(1): flies to the home position at the circling altitude,
+ *   over it, then circles around it; also after return_home_delay seconds
+ *   without the controller, and when the battery becomes critical.
+ *   Landing: a descending circle (spiral landing) at 10 m/s on a 10 deg
+ *   slope, then landed.
  *   Emergency: motor cut, on the ground after FLIGHT_EMERGENCY_MS.
- *   NavigateHome(1): flying home for FLIGHT_HOME_MS, then circling.
+ *   Geofence: altitude kept between the minimum and maximum altitudes; past
+ *   the maximum distance (no_fly_over_max_distance), it turns back home.
+ *   Flight plan (Mavlink.Start): takes off if needed, then flies to home and
+ *   circles it until stopped (the plan file itself is not simulated).
+ *   Battery: drains in flight (BATTERY_FLIGHT_S for a full one).
  */
 #define FLIGHT_TICK_MS       100
 #define FLIGHT_THROW_MS      2000
-#define FLIGHT_CIRCLE_ALT    50.0
 #define FLIGHT_CLIMB         5.0  /* m/s */
 #define FLIGHT_DESCENT       4.0  /* m/s */
-#define FLIGHT_AIRSPEED      12.0 /* m/s */
+#define FLIGHT_AIRSPEED      12.0 /* m/s, NAV_DEFAULT_AIRSPEED */
+#define FLIGHT_AIRSPEED_MIN  8.0
+#define FLIGHT_AIRSPEED_MAX  20.0 /* GLOBAL_MAX_INFLIGHT_AIRSPEED */
 #define FLIGHT_EMERGENCY_MS  1000
-#define FLIGHT_HOME_MS       5000
-#define FLIGHT_CIRCLE_RADIUS 80.0 /* m */
-#define FLIGHT_CLIMB_PITCH   0.25 /* rad, nose up while climbing */
-#define FLIGHT_DESCENT_PITCH -0.10
+#define FLIGHT_CIRCLE_RADIUS 30.0 /* m, NAV_DEFAULT_RADIUS */
+#define FLIGHT_MAX_BANK      0.61 /* rad, 35 deg */
+#define FLIGHT_MAX_CLIMB     5.0  /* m/s, full pitch stick */
+#define FLIGHT_LANDING_SPEED 10.0 /* m/s, CLDG_DEFAULT_LANDING_SPEED */
+#define FLIGHT_LANDING_SLOPE (10.0 * M_PI / 180) /* CLDG_DEFAULT_LANDING_SLOPE */
+#define FLIGHT_HOME_REACHED  15.0 /* m */
+#define STICK_DEADZONE       5    /* percent */
+#define STICK_TIMEOUT_MS     500  /* app PCMD older than this: centred */
+#define BATTERY_FLIGHT_S     (45 * 60)
+#define BATTERY_CRITICAL     10
 #define EARTH_M_PER_DEG      111320.0
 #define GRAVITY              9.81
 
 #define FS(_s) ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_##_s
+#define HOME_REASON(_r) ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_##_r
 
 static const struct { const char *name; int32_t value; } flying_states[] = {
 	{ "landed", FS(LANDED) },
@@ -435,6 +490,9 @@ static void flight_set_state(struct app *app, int32_t state)
 	if (app->cmd_itf != NULL)
 		SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_FlyingStateChanged(
 				app->cmd_itf, &send_status, app, state));
+	disco_flying_state(&app->disco, state);
+	if (state == FS(LANDED) || state == FS(EMERGENCY))
+		disco_flight_plan_stopped(&app->disco);
 }
 
 static void flight_set_motion(struct app *app, double altitude, float airspeed)
@@ -455,11 +513,65 @@ static void flight_set_motion(struct app *app, double altitude, float airspeed)
 	}
 }
 
-/** Sends attitude, speed and position from the telemetry. */
+/*
+ * Position in metres north and east of an origin: the home position, else
+ * the first GPS fix; the telemetry's latitude and longitude follow it when
+ * the GPS has a fix.
+ */
+static int flight_origin(struct app *app)
+{
+	struct telemetry *tm = &app->tm;
+	if (app->flight.origin_lat != 500.0)
+		return 1;
+	if (tm->home_latitude != 500.0) {
+		app->flight.origin_lat = tm->home_latitude;
+		app->flight.origin_lon = tm->home_longitude;
+	} else if (tm->gps_fixed) {
+		app->flight.origin_lat = tm->latitude;
+		app->flight.origin_lon = tm->longitude;
+	} else {
+		return 0;
+	}
+	app->flight.n = app->flight.e = 0;
+	if (tm->gps_fixed && tm->latitude != 500.0) {
+		app->flight.n = (tm->latitude - app->flight.origin_lat) * EARTH_M_PER_DEG;
+		app->flight.e = (tm->longitude - app->flight.origin_lon) * EARTH_M_PER_DEG
+			* cos(app->flight.origin_lat * M_PI / 180);
+	}
+	return 1;
+}
+
+/* Home in local metres (0, 0 without a home position). */
+static void flight_home(struct app *app, double *n, double *e)
+{
+	struct telemetry *tm = &app->tm;
+	*n = *e = 0;
+	if (tm->home_latitude == 500.0 || !flight_origin(app))
+		return;
+	*n = (tm->home_latitude - app->flight.origin_lat) * EARTH_M_PER_DEG;
+	*e = (tm->home_longitude - app->flight.origin_lon) * EARTH_M_PER_DEG
+		* cos(app->flight.origin_lat * M_PI / 180);
+}
+
+static double normalize_pi(double a)
+{
+	while (a > M_PI)
+		a -= 2 * M_PI;
+	while (a < -M_PI)
+		a += 2 * M_PI;
+	return a;
+}
+
+/** Sends attitude, speed and position from the simulated motion. */
 static void flight_send_motion(struct app *app)
 {
 	int res = 0;
 	struct telemetry *tm = &app->tm;
+	if (tm->gps_fixed && flight_origin(app)) {
+		tm->latitude = app->flight.origin_lat + app->flight.n / EARTH_M_PER_DEG;
+		tm->longitude = app->flight.origin_lon + app->flight.e
+			/ (EARTH_M_PER_DEG * cos(app->flight.origin_lat * M_PI / 180));
+	}
 	if (app->cmd_itf == NULL)
 		return;
 	SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_AttitudeChanged(
@@ -473,56 +585,105 @@ static void flight_send_motion(struct app *app)
 				tm->latitude, tm->longitude, tm->gps_altitude));
 }
 
+/** Altitude towards a target at most at the given rates; returns it. */
+static double flight_toward(double alt, double target, double up, double down,
+		double dt)
+{
+	if (alt < target)
+		return alt + up * dt > target ? target : alt + up * dt;
+	if (alt > target)
+		return alt - down * dt < target ? target : alt - down * dt;
+	return alt;
+}
+
 /**
- * Circling (the Disco's "hovering"), clockwise seen from above, around the
- * home position (or where the circle started without one): heading turns,
- * banked into the turn, position moves along the circle when the GPS has a
- * fix.
+ * Straight flight on the current heading at the current airspeed, with a
+ * given bank (turning) and vertical speed (m/s, up positive).
  */
-static void flight_circle(struct app *app, double dt)
+static void flight_move(struct app *app, double bank, double climb, double dt)
 {
 	struct telemetry *tm = &app->tm;
-	const double v = FLIGHT_AIRSPEED, r = FLIGHT_CIRCLE_RADIUS;
-	double yaw;
-
-	if (app->flight.center_lat == 500.0) {
-		if (tm->home_latitude != 500.0) {
-			app->flight.center_lat = tm->home_latitude;
-			app->flight.center_lon = tm->home_longitude;
-		} else if (tm->gps_fixed) {
-			app->flight.center_lat = tm->latitude;
-			app->flight.center_lon = tm->longitude;
-		}
-	}
-	app->flight.circle = fmod(app->flight.circle + v / r * dt, 2 * M_PI);
-	/* north r.cos(a), east r.sin(a): heading a + 90 deg */
-	yaw = app->flight.circle + M_PI / 2;
-	if (yaw > M_PI)
-		yaw -= 2 * M_PI;
-	tm->yaw = (float)yaw;
-	tm->roll = (float)atan(v * v / (GRAVITY * r));
-	tm->pitch = 0;
-	tm->speed_x = (float)(-v * sin(app->flight.circle));
-	tm->speed_y = (float)(v * cos(app->flight.circle));
-	tm->speed_z = 0;
-	if (tm->gps_fixed && app->flight.center_lat != 500.0) {
-		tm->latitude = app->flight.center_lat
-			+ r * cos(app->flight.circle) / EARTH_M_PER_DEG;
-		tm->longitude = app->flight.center_lon
-			+ r * sin(app->flight.circle) / (EARTH_M_PER_DEG
-				* cos(app->flight.center_lat * M_PI / 180));
-	}
+	double v = tm->airspeed > 0 ? tm->airspeed : FLIGHT_AIRSPEED;
+	double alt;
+	app->flight.heading = normalize_pi(app->flight.heading
+			+ GRAVITY * tan(bank) / v * dt);
+	alt = tm->altitude + climb * dt;
+	flight_origin(app);
+	app->flight.n += v * cos(app->flight.heading) * dt;
+	app->flight.e += v * sin(app->flight.heading) * dt;
+	tm->yaw = (float)app->flight.heading;
+	tm->roll = (float)bank;
+	tm->pitch = (float)asin(fmax(-1, fmin(1, climb / v)));
+	tm->speed_x = (float)(v * cos(app->flight.heading));
+	tm->speed_y = (float)(v * sin(app->flight.heading));
+	tm->speed_z = (float)-climb;
+	flight_set_motion(app, alt, (float)v);
 	flight_send_motion(app);
 }
 
-/** Wings level, given pitch, no turn (climb, descent, ground). */
-static void flight_straight(struct app *app, float pitch, float vz)
+/** Bank to turn towards a heading (rad), proportional and limited. */
+static double flight_bank_to(struct app *app, double heading)
+{
+	double err = normalize_pi(heading - app->flight.heading);
+	double bank = err * 1.5;
+	return fmax(-FLIGHT_MAX_BANK, fmin(FLIGHT_MAX_BANK, bank));
+}
+
+/**
+ * Starts circling around a point beside the plane (right for clockwise),
+ * so the circle continues the current path.
+ */
+static void flight_loiter_here(struct app *app, int ccw)
+{
+	double side = app->flight.heading + (ccw ? -M_PI / 2 : M_PI / 2);
+	flight_origin(app);
+	app->flight.ccw = ccw;
+	app->flight.cn = app->flight.n + FLIGHT_CIRCLE_RADIUS * cos(side);
+	app->flight.ce = app->flight.e + FLIGHT_CIRCLE_RADIUS * sin(side);
+	app->flight.circle = atan2(app->flight.e - app->flight.ce,
+			app->flight.n - app->flight.cn);
+}
+
+/** Starts circling around a centre, from where the plane is. */
+static void flight_loiter_around(struct app *app, double cn, double ce, int ccw)
+{
+	app->flight.ccw = ccw;
+	app->flight.cn = cn;
+	app->flight.ce = ce;
+	app->flight.circle = atan2(app->flight.e - ce, app->flight.n - cn);
+}
+
+/**
+ * Circling, banked into the turn, around (cn, ce): clockwise seen from above
+ * unless ccw. Converges to the target altitude.
+ */
+static void flight_circle_at(struct app *app, double target_alt, double v,
+		double dt)
 {
 	struct telemetry *tm = &app->tm;
-	tm->roll = 0;
-	tm->pitch = pitch;
-	tm->speed_z = vz;
+	const double r = FLIGHT_CIRCLE_RADIUS;
+	double dir = app->flight.ccw ? -1 : 1, alt;
+
+	flight_origin(app);
+	app->flight.circle = normalize_pi(app->flight.circle + dir * v / r * dt);
+	/* north r.cos(a), east r.sin(a): heading a + 90 deg (cw), a - 90 (ccw) */
+	app->flight.heading = normalize_pi(app->flight.circle + dir * M_PI / 2);
+	app->flight.n = app->flight.cn + r * cos(app->flight.circle);
+	app->flight.e = app->flight.ce + r * sin(app->flight.circle);
+	alt = flight_toward(tm->altitude, target_alt, FLIGHT_CLIMB, FLIGHT_DESCENT, dt);
+	tm->yaw = (float)app->flight.heading;
+	tm->roll = (float)(dir * atan(v * v / (GRAVITY * r)));
+	tm->pitch = (float)asin((alt - tm->altitude) / dt / v);
+	tm->speed_x = (float)(v * cos(app->flight.heading));
+	tm->speed_y = (float)(v * sin(app->flight.heading));
+	tm->speed_z = (float)-((alt - tm->altitude) / dt);
+	flight_set_motion(app, alt, (float)v);
 	flight_send_motion(app);
+}
+
+static void flight_circle(struct app *app, double target_alt, double dt)
+{
+	flight_circle_at(app, target_alt, FLIGHT_AIRSPEED, dt);
 }
 
 static void flight_stop_home(struct app *app, int32_t reason)
@@ -531,6 +692,19 @@ static void flight_stop_home(struct app *app, int32_t reason)
 		return;
 	app->flight.home = 0;
 	send_home_state(app, reason);
+}
+
+static void flight_start_home(struct app *app, int32_t reason)
+{
+	if (app->flight.home)
+		return;
+	app->flight.active = 1;
+	app->flight.home = 1;
+	app->flight.over_home = 0;
+	LOGI("return home (reason %d)", reason);
+	send_home_state(app, reason);
+	if (app->tm.flying_state != FS(FLYING))
+		flight_set_state(app, FS(FLYING));
 }
 
 /** Hand launch: from motor ramping or armed user take-off to taking off. */
@@ -544,53 +718,236 @@ static int flight_throw(struct app *app)
 	return 0;
 }
 
+/** The pilot's sticks: the controller's, else the app's recent PCMD. */
+static int flight_sticks(struct app *app, double *roll, double *pitch,
+		double *gaz)
+{
+	int r = app->flight.stick_roll, p = app->flight.stick_pitch;
+	int g = app->flight.stick_gaz;
+	if (r == 0 && p == 0 && g == 0 && app->flight.pcmd_flag
+			&& now_ms() - app->flight.pcmd_ms < STICK_TIMEOUT_MS) {
+		r = app->flight.pcmd_roll;
+		p = app->flight.pcmd_pitch;
+		g = app->flight.pcmd_gaz;
+	}
+	if (abs(r) < STICK_DEADZONE) r = 0;
+	if (abs(p) < STICK_DEADZONE) p = 0;
+	if (abs(g) < STICK_DEADZONE) g = 0;
+	/* inverted pitch mode: stick back to dive */
+	if (app->disco.s.pitch_mode)
+		p = -p;
+	*roll = r / 100.0;
+	*pitch = p / 100.0;
+	*gaz = g / 100.0;
+	return r != 0 || p != 0 || g != 0;
+}
+
+/** Return home navigation: to home, over it, then circling around it. */
+static void flight_go_home(struct app *app, double target_alt, double dt,
+		int finish)
+{
+	double hn, he, dn, de, dist, next_alt;
+	flight_home(app, &hn, &he);
+	dn = hn - app->flight.n;
+	de = he - app->flight.e;
+	dist = sqrt(dn * dn + de * de);
+	if (!app->flight.over_home && dist < FLIGHT_HOME_REACHED)
+		app->flight.over_home = 1;
+	if (app->flight.over_home && dist >= FLIGHT_CIRCLE_RADIUS) {
+		/* past home by a circle radius: circle around it */
+		flight_loiter_around(app, hn, he,
+				app->disco.s.circling_direction != 0);
+		if (finish) {
+			flight_stop_home(app, HOME_REASON(FINISHED));
+			flight_set_state(app, FS(HOVERING));
+		} else {
+			app->flight.fp_circling = 1;
+		}
+		return;
+	}
+	next_alt = flight_toward(app->tm.altitude, target_alt, FLIGHT_CLIMB,
+			FLIGHT_DESCENT, dt);
+	flight_move(app, app->flight.over_home ? 0 :
+			flight_bank_to(app, atan2(de, dn)),
+			(next_alt - app->tm.altitude) / dt, dt);
+}
+
+static void flight_battery(struct app *app, double dt)
+{
+	struct telemetry *tm = &app->tm;
+	int res = 0;
+	uint8_t level;
+	app->flight.battery_used += 100.0 * dt / BATTERY_FLIGHT_S;
+	if (app->flight.battery_used < 1.0 || tm->battery == 0)
+		return;
+	app->flight.battery_used -= 1.0;
+	level = tm->battery - 1;
+	tm->battery = level;
+	if (app->cmd_itf != NULL)
+		SEND(res, arsdk_cmd_send_Common_CommonState_BatteryStateChanged(
+				app->cmd_itf, &send_status, app, level));
+	disco_battery(&app->disco, level);
+}
+
+/** The controller is out of reach: in mux mode the Disco-controller radio
+ * link, in Disco mode the app itself. */
+static int flight_link_lost(struct app *app)
+{
+	if (app->backend_type == ARSDK_BACKEND_TYPE_MUX)
+		return app->drone_link_lost;
+	return app->disco_mode && app->peer == NULL;
+}
+
+static void flight_manual(struct app *app, double dt)
+{
+	struct telemetry *tm = &app->tm;
+	const struct disco_settings *s = &app->disco.s;
+	double roll, pitch, gaz, climb, dist, hn, he;
+	double v;
+
+	flight_sticks(app, &roll, &pitch, &gaz);
+	v = gaz >= 0 ? FLIGHT_AIRSPEED + gaz * (FLIGHT_AIRSPEED_MAX - FLIGHT_AIRSPEED)
+		: FLIGHT_AIRSPEED + gaz * (FLIGHT_AIRSPEED - FLIGHT_AIRSPEED_MIN);
+	tm->airspeed = (float)v;
+	/* stick forward (positive pitch) dives */
+	climb = -pitch * FLIGHT_MAX_CLIMB;
+	/* geofence: between the minimum and maximum altitudes */
+	if (climb > 0 && tm->altitude + climb * dt > s->max_altitude)
+		climb = fmax(0, (s->max_altitude - tm->altitude) / dt);
+	if (climb < 0 && tm->altitude + climb * dt < s->min_altitude)
+		climb = fmin(0, (s->min_altitude - tm->altitude) / dt);
+	/* geofence: past the maximum distance, it turns back */
+	flight_home(app, &hn, &he);
+	dist = hypot(app->flight.n - hn, app->flight.e - he);
+	if (s->no_fly_over_max_distance && dist > s->max_distance) {
+		flight_move(app, flight_bank_to(app,
+				atan2(he - app->flight.e, hn - app->flight.n)),
+				climb, dt);
+		return;
+	}
+	flight_move(app, roll * FLIGHT_MAX_BANK, climb, dt);
+}
+
+static void flight_plan_cancel(struct app *app);
+static void sim_event(struct app *app, const char *name);
+
+/**
+ * External simulation: the Disco's own safety returns still come from here,
+ * as "home_start" events for the simulator (sim/bridge): after
+ * return_home_delay without the controller, and on a critical battery.
+ */
+static void flight_watch_external(struct app *app)
+{
+	struct telemetry *tm = &app->tm;
+	int airborne = is_airborne(tm->flying_state);
+	if (!airborne) {
+		app->flight.low_battery_home = 0;
+		app->flight.link_lost_ms = 0;
+		return;
+	}
+	if (flight_link_lost(app) && !app->flight.home) {
+		app->flight.link_lost_ms += FLIGHT_TICK_MS;
+		if (app->flight.link_lost_ms == app->disco.s.return_home_delay * 1000u) {
+			LOGI("connection lost: return home");
+			sim_event(app, "home_start");
+		}
+	} else if (!flight_link_lost(app)) {
+		app->flight.link_lost_ms = 0;
+	}
+	if (tm->battery <= BATTERY_CRITICAL && !app->flight.home
+			&& !app->flight.low_battery_home) {
+		app->flight.low_battery_home = 1;
+		LOGI("critical battery: return home");
+		sim_event(app, "home_start");
+	}
+}
+
 static void flight_tick(struct pomp_timer *timer, void *userdata)
 {
 	struct app *app = userdata;
 	struct telemetry *tm = &app->tm;
+	const struct disco_settings *s = &app->disco.s;
 	const double dt = FLIGHT_TICK_MS / 1000.0;
+	double roll, pitch, gaz;
+	int sticks;
 
+	if (app->sim_external) {
+		flight_watch_external(app);
+		return;
+	}
 	if (!app->flight.active)
 		return;
 	app->flight.state_ms += FLIGHT_TICK_MS;
+	sticks = flight_sticks(app, &roll, &pitch, &gaz);
+
+	if (is_airborne(tm->flying_state) || tm->flying_state == FS(LANDING))
+		flight_battery(app, dt);
+	/* critical battery: back home, once per flight */
+	if (tm->battery <= BATTERY_CRITICAL && is_airborne(tm->flying_state)
+			&& !app->flight.home && !app->flight.low_battery_home) {
+		app->flight.low_battery_home = 1;
+		flight_plan_cancel(app);
+		flight_start_home(app, HOME_REASON(LOWBATTERY));
+	}
+
+	/* connection lost: back home after return_home_delay */
+	if (flight_link_lost(app) && is_airborne(tm->flying_state)
+			&& !app->flight.home) {
+		app->flight.link_lost_ms += FLIGHT_TICK_MS;
+		if (app->flight.link_lost_ms >= s->return_home_delay * 1000u)
+			flight_start_home(app, HOME_REASON(CONNECTIONLOST));
+	} else if (!flight_link_lost(app)) {
+		app->flight.link_lost_ms = 0;
+	}
 
 	switch (tm->flying_state) {
 	case FS(MOTOR_RAMPING):
 		if (app->flight.state_ms >= FLIGHT_THROW_MS)
 			flight_throw(app);
 		break;
-	case FS(HOVERING):
-		flight_circle(app, dt);
-		break;
-	case FS(TAKINGOFF): {
-		double alt = tm->altitude + FLIGHT_CLIMB * dt;
-		flight_straight(app, FLIGHT_CLIMB_PITCH, -FLIGHT_CLIMB);
-		if (alt >= FLIGHT_CIRCLE_ALT) {
-			flight_set_motion(app, FLIGHT_CIRCLE_ALT, FLIGHT_AIRSPEED);
-			flight_set_state(app, FS(HOVERING));
-		} else {
-			flight_set_motion(app, alt, FLIGHT_AIRSPEED);
+	case FS(TAKINGOFF):
+		flight_move(app, 0, FLIGHT_CLIMB, dt);
+		if (tm->altitude >= s->circling_altitude) {
+			flight_set_motion(app, s->circling_altitude, FLIGHT_AIRSPEED);
+			flight_loiter_here(app, s->circling_direction != 0);
+			flight_set_state(app, app->flight.fp ? FS(FLYING) : FS(HOVERING));
 		}
 		break;
-	}
+	case FS(HOVERING):
+		if (sticks) {
+			/* the pilot takes over: flying from the current path */
+			flight_set_state(app, FS(FLYING));
+			flight_manual(app, dt);
+			break;
+		}
+		flight_circle(app, s->circling_altitude, dt);
+		break;
 	case FS(FLYING):
-		flight_circle(app, dt);
-		if (app->flight.home && app->flight.state_ms >= FLIGHT_HOME_MS) {
-			flight_stop_home(app,
-				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_FINISHED);
-			flight_set_state(app, FS(HOVERING));
+		if (app->flight.home) {
+			flight_go_home(app, s->circling_altitude, dt, 1);
+		} else if (app->flight.fp) {
+			if (app->flight.fp_circling)
+				flight_circle(app, s->circling_altitude, dt);
+			else
+				flight_go_home(app, s->circling_altitude, dt, 0);
+		} else {
+			flight_manual(app, dt);
 		}
 		break;
 	case FS(LANDING): {
-		double alt = tm->altitude - FLIGHT_DESCENT * dt;
-		flight_straight(app, FLIGHT_DESCENT_PITCH, FLIGHT_DESCENT);
+		/* circular landing: a descending circle at the landing speed
+		 * and slope */
+		double alt = tm->altitude - FLIGHT_LANDING_SPEED
+			* sin(FLIGHT_LANDING_SLOPE) * dt;
 		if (alt <= 0) {
 			flight_set_motion(app, 0, 0);
-			flight_straight(app, 0, 0);
+			tm->roll = tm->pitch = 0;
+			tm->speed_x = tm->speed_y = tm->speed_z = 0;
+			flight_send_motion(app);
 			flight_set_state(app, FS(LANDED));
 			app->flight.active = 0;
 		} else {
-			flight_set_motion(app, alt, FLIGHT_AIRSPEED);
+			flight_circle_at(app, alt, FLIGHT_LANDING_SPEED, dt);
 		}
 		break;
 	}
@@ -616,13 +973,31 @@ static void sim_event(struct app *app, const char *name)
 				len ? " " : "", name);
 }
 
+/** Decodes the app's piloting stream (sticks). */
+static void flight_pcmd(struct app *app, const struct arsdk_cmd *cmd)
+{
+	uint8_t flag = 0;
+	int8_t roll = 0, pitch = 0, yaw = 0, gaz = 0;
+	uint32_t ts = 0;
+	app->flight.pcmd++;
+	if (arsdk_cmd_dec_Ardrone3_Piloting_PCMD(cmd, &flag, &roll, &pitch,
+			&yaw, &gaz, &ts) < 0)
+		return;
+	app->flight.pcmd_flag = flag;
+	app->flight.pcmd_roll = roll;
+	app->flight.pcmd_pitch = pitch;
+	app->flight.pcmd_gaz = gaz;
+	app->flight.pcmd_ms = now_ms();
+}
+
 /** Piloting commands in external simulation mode: queued, not simulated. */
 static int sim_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
 {
 	uint8_t arg = 0;
+	int32_t dir = 0;
 	switch (cmd->id) {
 	case ARSDK_ID_ARDRONE3_PILOTING_PCMD:
-		app->flight.pcmd++;
+		flight_pcmd(app, cmd);
 		return 1;
 	case ARSDK_ID_ARDRONE3_PILOTING_TAKEOFF:
 		sim_event(app, "takeoff");
@@ -641,9 +1016,68 @@ static int sim_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
 		if (arsdk_cmd_dec_Ardrone3_Piloting_NavigateHome(cmd, &arg) >= 0)
 			sim_event(app, arg ? "home_start" : "home_stop");
 		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_CIRCLE:
+		if (arsdk_cmd_dec_Ardrone3_Piloting_Circle(cmd, &dir) >= 0)
+			sim_event(app, "circle");
+		return 1;
 	default:
 		return 0;
 	}
+}
+
+/** Starts the take-off sequence when landed; returns 1 if it did. */
+static int flight_takeoff(struct app *app)
+{
+	if (app->tm.flying_state != FS(LANDED))
+		return 0;
+	app->flight.active = 1;
+	app->flight.home = 0;
+	app->flight.low_battery_home = 0;
+	app->flight.origin_lat = 500.0; /* from the take-off position */
+	app->flight.heading = app->tm.yaw;
+	flight_set_state(app, FS(MOTOR_RAMPING));
+	return 1;
+}
+
+/** Flight plan requests from disco.c (Mavlink feature). */
+static void flight_plan(struct app *app)
+{
+	int32_t st = app->tm.flying_state;
+	int req = app->disco.fp_request;
+	app->disco.fp_request = DISCO_FP_NONE;
+	switch (req) {
+	case DISCO_FP_START:
+		app->flight.fp = 1;
+		app->flight.fp_circling = 0;
+		app->flight.over_home = 0;
+		flight_stop_home(app, HOME_REASON(STOPPED));
+		if (!flight_takeoff(app) && (st == FS(HOVERING) || st == FS(FLYING))) {
+			app->flight.active = 1;
+			flight_set_state(app, FS(FLYING));
+		}
+		break;
+	case DISCO_FP_PAUSE:
+	case DISCO_FP_STOP:
+		if (!app->flight.fp)
+			break;
+		app->flight.fp = 0;
+		if (st == FS(FLYING)) {
+			flight_loiter_here(app, app->disco.s.circling_direction != 0);
+			flight_set_state(app, FS(HOVERING));
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+/** Ends a flight plan when another piloting command takes over. */
+static void flight_plan_cancel(struct app *app)
+{
+	if (!app->flight.fp)
+		return;
+	app->flight.fp = 0;
+	disco_flight_plan_stopped(&app->disco);
 }
 
 /** Piloting commands from the app; returns 1 if the command was one. */
@@ -651,6 +1085,7 @@ static int flight_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
 {
 	int res = 0;
 	uint8_t arg = 0;
+	int32_t dir = 0;
 	int32_t st = app->tm.flying_state;
 
 	if (app->sim_external)
@@ -658,13 +1093,10 @@ static int flight_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
 
 	switch (cmd->id) {
 	case ARSDK_ID_ARDRONE3_PILOTING_PCMD:
-		app->flight.pcmd++;
+		flight_pcmd(app, cmd);
 		return 1;
 	case ARSDK_ID_ARDRONE3_PILOTING_TAKEOFF:
-		if (st == FS(LANDED)) {
-			app->flight.active = 1;
-			flight_set_state(app, FS(MOTOR_RAMPING));
-		}
+		flight_takeoff(app);
 		return 1;
 	case ARSDK_ID_ARDRONE3_PILOTING_USERTAKEOFF:
 		res = arsdk_cmd_dec_Ardrone3_Piloting_UserTakeOff(cmd, &arg);
@@ -672,6 +1104,8 @@ static int flight_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
 			return 1;
 		if (arg && st == FS(LANDED)) {
 			app->flight.active = 1;
+			app->flight.origin_lat = 500.0;
+			app->flight.heading = app->tm.yaw;
 			flight_set_state(app, FS(USERTAKEOFF));
 		} else if (!arg && (st == FS(USERTAKEOFF)
 				|| st == FS(MOTOR_RAMPING))) {
@@ -681,9 +1115,17 @@ static int flight_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
 		return 1;
 	case ARSDK_ID_ARDRONE3_PILOTING_LANDING:
 		if (is_airborne(st)) {
+			int res2 = 0;
 			app->flight.active = 1;
-			flight_stop_home(app,
-				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_STOPPED);
+			flight_plan_cancel(app);
+			flight_stop_home(app, HOME_REASON(STOPPED));
+			/* the descending circle starts beside the plane */
+			if (st != FS(HOVERING))
+				flight_loiter_here(app, app->disco.s.circling_direction != 0);
+			if (app->cmd_itf != NULL)
+				SEND(res2, arsdk_cmd_send_Ardrone3_PilotingState_LandingStateChanged(
+						app->cmd_itf, &send_status, app,
+						ARSDK_ARDRONE3_PILOTINGSTATE_LANDINGSTATECHANGED_STATE_SPIRAL));
 			flight_set_state(app, FS(LANDING));
 		} else if (st == FS(MOTOR_RAMPING) || st == FS(USERTAKEOFF)) {
 			flight_set_state(app, FS(LANDED));
@@ -693,8 +1135,8 @@ static int flight_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
 	case ARSDK_ID_ARDRONE3_PILOTING_EMERGENCY:
 		if (st != FS(LANDED)) {
 			app->flight.active = 1;
-			flight_stop_home(app,
-				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_STOPPED);
+			flight_plan_cancel(app);
+			flight_stop_home(app, HOME_REASON(STOPPED));
 			flight_set_motion(app, app->tm.altitude, 0);
 			flight_set_state(app, FS(EMERGENCY));
 		}
@@ -705,18 +1147,30 @@ static int flight_recv_cmd(struct app *app, const struct arsdk_cmd *cmd)
 			return 1;
 		if (arg && !app->flight.home
 				&& (st == FS(HOVERING) || st == FS(FLYING))) {
-			app->flight.active = 1;
-			app->flight.home = 1;
-			send_home_state(app,
-				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_USERREQUEST);
-			flight_set_state(app, FS(FLYING));
+			flight_plan_cancel(app);
+			flight_start_home(app, HOME_REASON(USERREQUEST));
 		} else if (!arg && app->flight.home) {
-			flight_stop_home(app,
-				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_STOPPED);
+			flight_stop_home(app, HOME_REASON(STOPPED));
+			flight_loiter_here(app, app->disco.s.circling_direction != 0);
 			flight_set_state(app, FS(HOVERING));
 		} else {
-			send_home_state(app,
-				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_USERREQUEST);
+			send_home_state(app, HOME_REASON(USERREQUEST));
+		}
+		return 1;
+	case ARSDK_ID_ARDRONE3_PILOTING_CIRCLE:
+		/* the loiter button: circle here, in the given direction */
+		if (arsdk_cmd_dec_Ardrone3_Piloting_Circle(cmd, &dir) < 0)
+			return 1;
+		if (st == FS(FLYING) || st == FS(HOVERING)) {
+			int ccw = dir == ARSDK_ARDRONE3_PILOTING_CIRCLE_DIRECTION_DEFAULT ?
+				app->disco.s.circling_direction != 0 :
+				dir == ARSDK_ARDRONE3_PILOTING_CIRCLE_DIRECTION_CCW;
+			flight_plan_cancel(app);
+			flight_stop_home(app, HOME_REASON(STOPPED));
+			app->flight.active = 1;
+			flight_loiter_here(app, ccw);
+			if (st != FS(HOVERING))
+				flight_set_state(app, FS(HOVERING));
 		}
 		return 1;
 	default:
@@ -751,6 +1205,32 @@ static int drone_button(struct app *app, uint32_t code)
 	return res < 0 ? res : 0;
 }
 
+/** Records a command nothing in the fake handles (once per name). */
+static void note_unhandled(struct app *app, const struct arsdk_cmd *cmd)
+{
+	const struct arsdk_cmd_desc *desc = arsdk_cmd_find_desc(cmd);
+	char name[96];
+	size_t len = strlen(app->unhandled);
+	if (desc != NULL)
+		snprintf(name, sizeof(name), "%s", desc->name);
+	else
+		snprintf(name, sizeof(name), "%u.%u.%u", cmd->prj_id, cmd->cls_id, cmd->cmd_id);
+	/* whole-word search in the space-separated list */
+	{
+		const char *p = app->unhandled;
+		size_t n = strlen(name);
+		while ((p = strstr(p, name)) != NULL) {
+			if ((p == app->unhandled || p[-1] == ' ') && (p[n] == ' ' || p[n] == '\0'))
+				return;
+			p += n;
+		}
+	}
+	LOGW("unhandled %s", name);
+	if (len + strlen(name) + 2 < sizeof(app->unhandled))
+		snprintf(app->unhandled + len, sizeof(app->unhandled) - len, "%s%s",
+				len ? " " : "", name);
+}
+
 /**
  * fake-sc2: answer the GroundSDK connection sequences.
  * Controller (Skyctrl feature): AllSettings -> AllSettingsChanged, then
@@ -772,6 +1252,13 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 	}
 	if (flight_recv_cmd(app, cmd))
 		return;
+	if (sc2_recv_cmd(&app->sc2, cmd))
+		return;
+	if (disco_recv_cmd(&app->disco, cmd)) {
+		if (app->disco.fp_request != DISCO_FP_NONE && !app->sim_external)
+			flight_plan(app);
+		return;
+	}
 
 	switch (cmd->id) {
 	/* SkyController */
@@ -795,6 +1282,7 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 				ARSDK_SKYCTRL_CALIBRATIONSTATE_MAGNETOCALIBRATIONSTATE_STATUS_CALIBRATED,
 				100, 100, 100));
 		send_rc_state(app);
+		sc2_send_states(&app->sc2);
 		SEND(res, arsdk_cmd_send_Skyctrl_CommonState_AllStatesChanged(
 				app->cmd_itf, &send_status, app));
 		break;
@@ -804,6 +1292,7 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 		SEND(res, arsdk_cmd_send_Common_SettingsState_ProductVersionChanged(
 				app->cmd_itf, &send_status, app,
 				FAKE_DRONE_SOFTWARE, FAKE_DRONE_HARDWARE));
+		disco_send_settings(&app->disco);
 		SEND(res, arsdk_cmd_send_Common_SettingsState_AllSettingsChanged(
 				app->cmd_itf, &send_status, app));
 		break;
@@ -823,24 +1312,43 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 				ARSDK_ARDRONE3_MEDIASTREAMINGSTATE_VIDEOENABLECHANGED_ENABLED_DISABLED));
 		break;
 	}
-	/* Controller buttons: the app grabs some to receive their events */
-	case ARSDK_ID_MAPPER_GRAB: {
-		uint32_t buttons = 0, axes = 0;
-		if (arsdk_cmd_dec_Mapper_Grab(cmd, &buttons, &axes) < 0)
-			break;
-		app->grabbed_buttons = buttons;
-		LOGI("mapper: grabbed buttons 0x%x axes 0x%x", buttons, axes);
-		SEND(res, arsdk_cmd_send_Mapper_Grab_state(app->cmd_itf,
-				&send_status, app, buttons, axes, 0));
-		break;
-	}
 	case ARSDK_ID_COMMON_COMMON_ALLSTATES:
 		send_telemetry(app);
+		disco_send_states(&app->disco);
 		SEND(res, arsdk_cmd_send_Common_CommonState_AllStatesChanged(
 				app->cmd_itf, &send_status, app));
 		break;
-	default:
+	case ARSDK_ID_COMMON_COMMON_REBOOT:
+		/* the Disco restarts: gone for REBOOT_MS, settings kept */
+		if (app->tm.flying_state != FS(LANDED))
+			break;
+		LOGI("reboot");
+		if (app->backend_type == ARSDK_BACKEND_TYPE_MUX) {
+			app->drone_link_lost = 1;
+			send_drone_link(app);
+		} else if (app->peer != NULL) {
+			arsdk_peer_disconnect(app->peer);
+		}
+		if (app->flight.reboot_timer != NULL)
+			pomp_timer_set(app->flight.reboot_timer, REBOOT_MS);
 		break;
+	/* the app's clock for the controller, its own position: no answer */
+	case ARSDK_ID_SKYCTRL_COMMON_CURRENTDATETIME:
+		break;
+	default:
+		note_unhandled(app, cmd);
+		break;
+	}
+}
+
+/** End of a reboot: the Disco is back (mux mode). */
+static void reboot_done_cb(struct pomp_timer *timer, void *userdata)
+{
+	struct app *app = userdata;
+	LOGI("reboot done");
+	if (app->backend_type == ARSDK_BACKEND_TYPE_MUX && app->drone_link_lost) {
+		app->drone_link_lost = 0;
+		send_drone_link(app);
 	}
 }
 
@@ -864,6 +1372,8 @@ static void connected(struct arsdk_peer *peer,
 	res = arsdk_peer_create_cmd_itf(peer, &cmd_cbs, &app->cmd_itf);
 	if (res < 0)
 		LOG_ERRNO("arsdk_peer_create_cmd_itf", -res);
+	app->disco.itf = app->cmd_itf;
+	app->sc2.itf = app->cmd_itf;
 }
 
 /**
@@ -876,13 +1386,15 @@ static void disconnected(struct arsdk_peer *peer,
 	LOGI("%s", __func__);
 
 	app->cmd_itf = NULL;
+	app->disco.itf = NULL;
 	app->peer = NULL;
 	/* the SkyController 2 streams the Disco's video by itself (GroundSdk
 	 * notes it; its VideoEnable is a no-op there): only a direct Wi-Fi
 	 * controller (Disco mode) has to ask again */
 	if (app->disco_mode)
 		app->video.enabled = 0;
-	app->grabbed_buttons = 0;
+	app->sc2.grabbed_buttons = app->sc2.grabbed_axes = 0;
+	app->sc2.itf = NULL;
 	app->video.client_valid = 0;
 }
 
@@ -956,6 +1468,8 @@ static void conn_req(struct arsdk_peer *peer,
 		if (res < 0)
 			LOG_ERRNO("arsdk_peer_disconnect", -res);
 		app->cmd_itf = NULL;
+		app->disco.itf = NULL;
+		app->sc2.itf = NULL;
 		app->peer = NULL;
 	}
 
@@ -1023,7 +1537,7 @@ static void backend_create(struct app *app)
 		.id = "PI040443FAKESC2",
 	};
 	if (app->disco_mode) {
-		publisher_cfg.name = FAKE_DRONE_NAME;
+		publisher_cfg.name = app->disco.s.name;
 		publisher_cfg.type = ARSDK_DEVICE_TYPE_EVINRUDE;
 		publisher_cfg.id = "PI040409FAKEDISCO";
 	}
@@ -1228,6 +1742,7 @@ static void video_udp_cb(int fd, uint32_t revents, void *userdata)
 			const struct sockaddr_in *to = rtcp ?
 				&app->video.client_ctrl : &app->video.client_stream;
 			if (!app->video.client_valid || !app->video.enabled ||
+					app->video_failed ||
 					app->cmd_itf == NULL || app->video.out_fd < 0) {
 				app->video.dropped++;
 				continue;
@@ -1249,7 +1764,7 @@ static void video_udp_cb(int fd, uint32_t revents, void *userdata)
 		}
 		if (app->mux.ctx == NULL || !app->video.channels ||
 				!app->video.enabled || app->cmd_itf == NULL ||
-				app->drone_link_lost) {
+				app->drone_link_lost || app->video_failed) {
 			app->video.dropped++;
 			continue;
 		}
@@ -1373,6 +1888,15 @@ static void mux_server_fd_event_cb(int fd, uint32_t revents, void *userdata)
 		mux_server_fdeof(app->mux.ctx, app);
 	}
 
+	/* fake-sc2: ARSDK acknowledged commands go one at a time, each waiting
+	 * for its small ACK frame: with Nagle's algorithm and delayed ACKs,
+	 * every one waited ~80 ms over TCP (a USB link has no such delay) */
+	{
+		int one = 1;
+		if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) < 0)
+			LOG_FD_ERRNO("setsockopt.TCP_NODELAY", sockfd, errno);
+	}
+
 	/* For testing purposes, set the not pollable flag for fd */
 	memset(&ops, 0, sizeof(ops));
 	ops.userdata = app;
@@ -1454,6 +1978,127 @@ static void sig_handler(int signum)
 		pomp_loop_wakeup(s_app.loop);
 }
 
+/** The controller's mapped button actions on the Disco (sc2.c). */
+static void sc2_button_action(void *userdata, int32_t action)
+{
+	struct app *app = userdata;
+	struct arsdk_cmd cmd;
+	switch (action) {
+	case ARSDK_MAPPER_BUTTON_ACTION_RETURN_HOME:
+		drone_button(app, 1);
+		break;
+	case ARSDK_MAPPER_BUTTON_ACTION_TAKEOFF_LAND:
+		drone_button(app, 2);
+		break;
+	case ARSDK_MAPPER_BUTTON_ACTION_VIDEO_RECORD:
+		disco_video_toggle(&app->disco);
+		break;
+	case ARSDK_MAPPER_BUTTON_ACTION_TAKE_PICTURE:
+		disco_take_picture(&app->disco);
+		break;
+	case ARSDK_MAPPER_BUTTON_ACTION_CAMERA_EXPOSITION_INC:
+		disco_exposure_step(&app->disco, 1);
+		break;
+	case ARSDK_MAPPER_BUTTON_ACTION_CAMERA_EXPOSITION_DEC:
+		disco_exposure_step(&app->disco, -1);
+		break;
+	case ARSDK_MAPPER_BUTTON_ACTION_CENTER_CAMERA:
+		disco_center_camera(&app->disco);
+		break;
+	case ARSDK_MAPPER_BUTTON_ACTION_EMERGENCY:
+		arsdk_cmd_init(&cmd);
+		if (arsdk_cmd_enc_Ardrone3_Piloting_Emergency(&cmd) >= 0)
+			flight_recv_cmd(app, &cmd);
+		arsdk_cmd_clear(&cmd);
+		break;
+	default:
+		LOGI("controller action %d: nothing on a Disco", action);
+		break;
+	}
+}
+
+/** The controller's mapped axes: sticks and the camera slider (sc2.c). */
+static void sc2_axis_action(void *userdata, int32_t action, int value)
+{
+	struct app *app = userdata;
+	switch (action) {
+	case ARSDK_MAPPER_AXIS_ACTION_ROLL:
+		app->flight.stick_roll = value;
+		break;
+	case ARSDK_MAPPER_AXIS_ACTION_PITCH:
+		app->flight.stick_pitch = value;
+		break;
+	case ARSDK_MAPPER_AXIS_ACTION_GAZ:
+		app->flight.stick_gaz = value;
+		break;
+	case ARSDK_MAPPER_AXIS_ACTION_CAMERA_TILT:
+		/* the slider moves the camera at up to its velocity range */
+		disco_camera_velocity(&app->disco, (float)value / 100.0f * 20.0f,
+				app->disco.cam_vel_pan);
+		break;
+	case ARSDK_MAPPER_AXIS_ACTION_CAMERA_PAN:
+		disco_camera_velocity(&app->disco, app->disco.cam_vel_tilt,
+				(float)value / 100.0f * 20.0f);
+		break;
+	default:
+		/* yaw: a flying wing has no rudder */
+		break;
+	}
+}
+
+/**
+ * Failures for robustness tests ("fail <name> [on|off]"): the GPS fix, the
+ * camera stream, a motor cut-out (alert, then a gliding descent), and the
+ * Disco's own (disco_fail).
+ */
+static int fail(struct app *app, const char *name, int on)
+{
+	struct telemetry *tm = &app->tm;
+	int res = 0;
+	if (strcmp(name, "gps") == 0) {
+		if (on && !app->gps_failed) {
+			app->gps_failed = 1;
+			app->gps_saved[0] = tm->latitude;
+			app->gps_saved[1] = tm->longitude;
+			app->gps_saved[2] = tm->gps_altitude;
+			tm->latitude = tm->longitude = tm->gps_altitude = 500.0;
+			tm->gps_fixed = 0;
+			tm->satellites = 0;
+		} else if (!on && app->gps_failed) {
+			app->gps_failed = 0;
+			tm->latitude = app->gps_saved[0];
+			tm->longitude = app->gps_saved[1];
+			tm->gps_altitude = app->gps_saved[2];
+			tm->gps_fixed = tm->latitude != 500.0;
+			tm->satellites = tm->gps_fixed ? 10 : 0;
+		}
+		send_telemetry(app);
+		return 0;
+	}
+	if (strcmp(name, "video") == 0) {
+		app->video_failed = on;
+		LOGI("video %s", on ? "lost" : "back");
+		return 0;
+	}
+	if (strcmp(name, "cut_out") == 0) {
+		disco_set_alert(&app->disco, on ? "cut_out" : "auto");
+		if (!on)
+			disco_battery(&app->disco, tm->battery);
+		if (on && is_airborne(tm->flying_state) && !app->sim_external) {
+			struct arsdk_cmd cmd;
+			arsdk_cmd_init(&cmd);
+			if (arsdk_cmd_enc_Ardrone3_Piloting_Landing(&cmd) >= 0)
+				flight_recv_cmd(app, &cmd);
+			arsdk_cmd_clear(&cmd);
+		} else if (on && app->sim_external) {
+			sim_event(app, "landing");
+		}
+		return 0;
+	}
+	res = disco_fail(&app->disco, name, on);
+	return res;
+}
+
 /*
  * fake-sc2 control socket: up to CTRL_MAX_CLIENTS TCP clients on 127.0.0.1:<ctrl port>,
  * one command per line, answered "ok" or "error <reason>":
@@ -1480,15 +2125,36 @@ static void sig_handler(int signum)
  *                                home_start home_stop
  *   position <lat> <lon> <alt>   GPS position only (fix kept)
  *   rth <0|1>                    return home in progress or not
- *   circle                       straight to circling at the circle altitude
- *                                with the flight simulation running (demos)
- *   button <name>                press and release a controller button
- *                                (settings, rth, takeoff, b, a, rear_left,
- *                                rear_right): to the app if it grabbed it,
- *                                else the controller's own drone action
- *                                (takeoff: take-off/land, rth: return home
- *                                on/off); error otherwise
- *   state                        "ok <flying state> alt=<m> home=<0|1> pcmd=<n>"
+ *   circle                       straight to circling at the circling altitude
+ *                                (around home if set), with the flight
+ *                                simulation running (demos)
+ *   sticks <roll> <pitch> <gaz>  the controller's sticks, percent (-100..100;
+ *                                0 0 0 centred): pilot the simulated Disco
+ *   pcmd                         "ok <on> <roll> <pitch> <gaz>": the sticks in
+ *                                use (controller's, else the app's), as
+ *                                flown (pitch reversed in inverted mode)
+ *   alert <name|auto>            Disco alert: none user cut_out
+ *                                low_battery critical_battery
+ *                                almost_empty_battery too_much_angle; auto =
+ *                                from the battery level
+ *   disco                        "ok <settings and states>" (disco.c)
+ *   button <name>                press and release a controller button:
+ *                                to the app if grabbed, else its mapped
+ *                                action (sc2.c: rth, takeoff, record,
+ *                                picture, exposure, app buttons)
+ *   axis <name> <-100..100>      move a stick or slider (left_h left_v
+ *                                right_h right_v left_slider right_slider):
+ *                                to the app if grabbed, else its mapped
+ *                                action (left_slider: camera tilt)
+ *   sc2                          "ok <grab, mapping, axes, access point>"
+ *   fail <name> [on|off]         inject or clear a failure: gps video
+ *                                cut_out motor magneto pitot overheat
+ *                                camera storage imu barometer ultrasound
+ *                                vertical_camera link_weak
+ *   unhandled [clear]            "ok <commands nothing handled>"
+ *   state                        "ok <flying state> alt=<m> home=<0|1> pcmd=<n>
+ *                                grabbed=<buttons> fp=<0|1> battery=<%>
+ *                                dist=<m from home> heading=<deg>"
  *   drone_link <lost|ok>         Disco out of / back in the controller's
  *                                range (mux mode): drone disconnected for
  *                                the app, no video
@@ -1516,18 +2182,56 @@ static int ctrl_handle_line(struct app *app, char *line,
 				app->cmd_itf != NULL ? "connected" : "idle");
 	} else if (strcmp(word, "battery") == 0 && n == 2) {
 		tm->battery = (uint8_t)a;
+		app->flight.battery_used = 0;
 		if (app->cmd_itf)
 			SEND(res, arsdk_cmd_send_Common_CommonState_BatteryStateChanged(
 				app->cmd_itf, &send_status, app, tm->battery));
+		disco_battery(&app->disco, tm->battery);
 	} else if (strcmp(word, "rc_battery") == 0 && n == 2) {
 		tm->rc_battery = (uint8_t)a;
 		send_rc_state(app);
 	} else if (strcmp(word, "state") == 0 && n == 1) {
+		/* distance to home from the telemetry (internal or external
+		 * simulation), else from the internal one's local position */
+		double hn, he, dist;
+		if (tm->gps_fixed && tm->home_latitude != 500.0) {
+			hn = (tm->latitude - tm->home_latitude) * EARTH_M_PER_DEG;
+			he = (tm->longitude - tm->home_longitude) * EARTH_M_PER_DEG
+				* cos(tm->home_latitude * M_PI / 180);
+			dist = hypot(hn, he);
+		} else {
+			flight_home(app, &hn, &he);
+			dist = hypot(app->flight.n - hn, app->flight.e - he);
+		}
 		return snprintf(reply, reply_size,
-				"ok %s alt=%.1f home=%d pcmd=%lu grabbed=0x%x\n",
+				"ok %s alt=%.1f home=%d pcmd=%lu grabbed=0x%x fp=%d "
+				"battery=%u dist=%.0f heading=%.0f\n",
 				flying_state_name(tm->flying_state), tm->altitude,
 				app->flight.home, app->flight.pcmd,
-				app->grabbed_buttons);
+				app->sc2.grabbed_buttons, app->flight.fp, tm->battery,
+				dist, tm->yaw * 180 / M_PI);
+	} else if (strcmp(word, "disco") == 0 && n == 1) {
+		char buf[512];
+		disco_status(&app->disco, buf, sizeof(buf));
+		return snprintf(reply, reply_size, "ok %s\n", buf);
+	} else if (strcmp(word, "alert") == 0) {
+		char name[32] = "";
+		if (sscanf(line, "%*s %31s", name) != 1
+				|| disco_set_alert(&app->disco, name) < 0)
+			return snprintf(reply, reply_size, "error alert <name|auto>\n");
+		if (strcmp(name, "auto") == 0)
+			disco_battery(&app->disco, tm->battery);
+	} else if (strcmp(word, "sticks") == 0 && n == 4) {
+		app->flight.stick_roll = (int)fmax(-100, fmin(100, a));
+		app->flight.stick_pitch = (int)fmax(-100, fmin(100, b));
+		app->flight.stick_gaz = (int)fmax(-100, fmin(100, c));
+	} else if (strcmp(word, "pcmd") == 0 && n == 1) {
+		double r, p, g;
+		/* as flown: inverted pitch mode applied */
+		int on = flight_sticks(app, &r, &p, &g);
+		return snprintf(reply, reply_size, "ok %d %d %d %d\n", on,
+				(int)lround(r * 100), (int)lround(p * 100),
+				(int)lround(g * 100));
 	} else if (strcmp(word, "drone_link") == 0) {
 		char what[16] = "";
 		if (app->backend_type != ARSDK_BACKEND_TYPE_MUX)
@@ -1548,35 +2252,65 @@ static int ctrl_handle_line(struct app *app, char *line,
 			mux_server_fdeof(app->mux.ctx, app);
 		}
 	} else if (strcmp(word, "button") == 0) {
-		static const char *const names[] = { "settings", "rth", "takeoff",
-			"b", "a", "rear_left", "rear_right" };
-		char name[16] = "";
-		uint32_t code;
-		if (sscanf(line, "%*s %15s", name) != 1)
+		char name[32] = "";
+		int bit, grabbed;
+		if (sscanf(line, "%*s %31s", name) != 1)
 			return snprintf(reply, reply_size, "error button <name>\n");
-		for (code = 0; code < sizeof(names) / sizeof(names[0]); code++) {
-			if (strcmp(name, names[code]) == 0)
-				break;
-		}
-		if (code == sizeof(names) / sizeof(names[0]))
+		bit = sc2_button_bit(name);
+		if (bit < 0)
 			return snprintf(reply, reply_size, "error unknown button\n");
-		if (app->cmd_itf == NULL || !(app->grabbed_buttons & (1u << code))) {
-			/* not grabbed: the controller's own action, if any */
-			if (drone_button(app, code) == 0)
-				return snprintf(reply, reply_size, "ok drone action\n");
-			return snprintf(reply, reply_size, "error button %s not grabbed\n", name);
-		}
 		/* a press still waiting for its release: release it first */
 		if (app->button_timer != NULL && app->button_pending) {
 			pomp_timer_clear(app->button_timer);
 			button_release_cb(app->button_timer, app);
 		}
-		SEND(res, arsdk_cmd_send_Mapper_Grab_button_event(app->cmd_itf,
-				&send_status, app, code, ARSDK_MAPPER_BUTTON_EVENT_PRESS));
-		app->pressed_button = code;
+		grabbed = app->cmd_itf != NULL && (app->sc2.grabbed_buttons & (1u << bit));
+		if (sc2_button(&app->sc2, (uint32_t)bit, 1) < 0) {
+			sc2_button(&app->sc2, (uint32_t)bit, 0);
+			return snprintf(reply, reply_size,
+					"error button %s not grabbed nor mapped\n", name);
+		}
+		app->pressed_button = (uint32_t)bit;
 		app->button_pending = 1;
 		if (app->button_timer != NULL)
 			pomp_timer_set(app->button_timer, 150);
+		if (!grabbed)
+			return snprintf(reply, reply_size, "ok mapped action\n");
+	} else if (strcmp(word, "axis") == 0) {
+		char name[32] = "";
+		int value = 0, idx;
+		if (sscanf(line, "%*s %31s %d", name, &value) != 2)
+			return snprintf(reply, reply_size, "error axis <name> <-100..100>\n");
+		idx = sc2_axis_index(name);
+		if (idx < 0)
+			return snprintf(reply, reply_size, "error unknown axis\n");
+		if (sc2_axis(&app->sc2, idx, value) < 0)
+			return snprintf(reply, reply_size, "error axis %s not grabbed nor mapped\n", name);
+	} else if (strcmp(word, "sc2") == 0 && n == 1) {
+		char buf[900];
+		sc2_status(&app->sc2, buf, sizeof(buf));
+		return snprintf(reply, reply_size, "ok %s\n", buf);
+	} else if (strcmp(word, "unhandled") == 0) {
+		char what[16] = "";
+		int len;
+		if (sscanf(line, "%*s %15s", what) == 1 && strcmp(what, "clear") == 0) {
+			app->unhandled[0] = '\0';
+			return snprintf(reply, reply_size, "ok\n");
+		}
+		len = snprintf(reply, reply_size, "ok %s\n", app->unhandled);
+		return len;
+	} else if (strcmp(word, "fail") == 0) {
+		char name[32] = "", what[8] = "on";
+		int on;
+		if (sscanf(line, "%*s %31s %7s", name, what) < 1)
+			return snprintf(reply, reply_size, "error fail <name> [on|off]\n");
+		on = strcmp(what, "off") != 0;
+		res = fail(app, name, on);
+		if (res < 0)
+			return snprintf(reply, reply_size,
+					"error unknown failure (gps video cut_out %s)\n",
+					disco_fail_names());
+		res = 0;
 	} else if (strcmp(word, "sim") == 0) {
 		char what[16] = "";
 		if (sscanf(line, "%*s %15s", what) != 1
@@ -1594,6 +2328,7 @@ static int ctrl_handle_line(struct app *app, char *line,
 	} else if (strcmp(word, "position") == 0 && n == 4) {
 		tm->latitude = a; tm->longitude = b; tm->gps_altitude = c;
 		tm->gps_fixed = 1;
+		disco_gps_fix(&app->disco, 1);
 		if (app->cmd_itf) {
 			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_PositionChanged(
 				app->cmd_itf, &send_status, app,
@@ -1610,8 +2345,18 @@ static int ctrl_handle_line(struct app *app, char *line,
 				ARSDK_ARDRONE3_PILOTINGSTATE_NAVIGATEHOMESTATECHANGED_REASON_FINISHED);
 		}
 	} else if (strcmp(word, "circle") == 0 && n == 1) {
+		double hn, he;
 		app->flight.active = 1;
-		flight_set_motion(app, FLIGHT_CIRCLE_ALT, FLIGHT_AIRSPEED);
+		flight_set_motion(app, app->disco.s.circling_altitude, FLIGHT_AIRSPEED);
+		if (flight_origin(app) && tm->home_latitude != 500.0) {
+			flight_home(app, &hn, &he);
+			app->flight.n = hn + FLIGHT_CIRCLE_RADIUS;
+			app->flight.e = he;
+			flight_loiter_around(app, hn, he,
+					app->disco.s.circling_direction != 0);
+		} else {
+			flight_loiter_here(app, app->disco.s.circling_direction != 0);
+		}
 		flight_set_state(app, FS(HOVERING));
 	} else if (strcmp(word, "throw") == 0 && n == 1) {
 		if (flight_throw(app) < 0)
@@ -1654,7 +2399,12 @@ static int ctrl_handle_line(struct app *app, char *line,
 		send_telemetry(app);
 	} else if (strcmp(word, "home") == 0 && n == 4) {
 		tm->home_latitude = a; tm->home_longitude = b; tm->home_altitude = c;
-		app->flight.center_lat = 500.0; /* circle around the new home */
+		if (tm->flying_state == FS(HOVERING) && !app->flight.fp) {
+			/* circle around the new home */
+			double hn, he;
+			flight_home(app, &hn, &he);
+			flight_loiter_around(app, hn, he, app->flight.ccw);
+		}
 		send_telemetry(app);
 	} else if (strcmp(word, "gps_lost") == 0 && n == 1) {
 		tm->latitude = tm->longitude = tm->gps_altitude = 500.0;
@@ -1717,7 +2467,7 @@ static void ctrl_client_cb(int fd, uint32_t revents, void *userdata)
 {
 	struct app *app = userdata;
 	struct ctrl_client *c = ctrl_client_of(app, fd);
-	char reply[512];
+	char reply[4608];
 	char *nl = NULL;
 	ssize_t r;
 	if (c == NULL)
@@ -1921,6 +2671,16 @@ int main(int argc, char *argv[])
 	ctrl_server_create(&s_app);
 	video_udp_create(&s_app);
 	s_app.button_timer = pomp_timer_new(s_app.loop, &button_release_cb, &s_app);
+	disco_init(&s_app.disco, s_app.loop, FAKE_DRONE_NAME);
+	{
+		struct sc2_ops ops = {
+			.button_action = &sc2_button_action,
+			.axis_action = &sc2_axis_action,
+			.userdata = &s_app,
+		};
+		sc2_init(&s_app.sc2, FAKE_DRONE_PRODUCT, "SkyController_fake", &ops);
+	}
+	s_app.flight.reboot_timer = pomp_timer_new(s_app.loop, &reboot_done_cb, &s_app);
 	s_app.flight.timer = pomp_timer_new(s_app.loop, &flight_tick, &s_app);
 	if (s_app.flight.timer != NULL)
 		pomp_timer_set_periodic(s_app.flight.timer,
@@ -1957,6 +2717,12 @@ out:
 		pomp_timer_destroy(s_app.flight.timer);
 		s_app.flight.timer = NULL;
 	}
+	if (s_app.flight.reboot_timer != NULL) {
+		pomp_timer_clear(s_app.flight.reboot_timer);
+		pomp_timer_destroy(s_app.flight.reboot_timer);
+		s_app.flight.reboot_timer = NULL;
+	}
+	disco_clear(&s_app.disco);
 
 	if (s_app.loop != NULL) {
 		res = pomp_loop_destroy(s_app.loop);

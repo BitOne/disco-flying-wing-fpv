@@ -1,7 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as mav from '../src/mavlink.ts';
-import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState } from '../src/model.ts';
+import {
+  actionFor,
+  approachPoint,
+  batteryPercent,
+  circlingParams,
+  flyingState,
+  Mode,
+  parseCircling,
+  parseSticks,
+  returningHome,
+  sticksToRc,
+  type PlaneState,
+} from '../src/model.ts';
 
 test('crc16 matches the MAVLink reference value', () => {
   // X.25 of "123456789" is 0x6F91
@@ -79,4 +91,47 @@ test('approach point is on the plane side of home, at the distance asked', () =>
   assert.ok(Math.abs(metres - 250) < 0.01);
   const above = approachPoint(home, home, 250);
   assert.ok(above.lat > home.lat);
+});
+
+test('the loiter button circles where the plane is', () => {
+  const flying: PlaneState = { armed: true, mode: Mode.FBWB, relativeAlt: 60, groundspeed: 12, landing: false };
+  assert.deepEqual(actionFor('circle', flying), { kind: 'mode', mode: Mode.LOITER });
+  assert.equal(actionFor('circle', { ...flying, armed: false }), null);
+  assert.equal(flyingState(flying), 'flying');
+});
+
+test('sticks from fake-sc2 map to FBWB radio overrides', () => {
+  const s = parseSticks('ok 1 -100 50 0');
+  assert.deepEqual(s, { on: true, roll: -100, pitch: 50, gaz: 0 });
+  // full left, stick half forward (descend: low elevator), throttle centred
+  assert.deepEqual(sticksToRc(s!), [1000, 1250, 1500, 1500]);
+  assert.deepEqual(sticksToRc({ on: false, roll: 0, pitch: 0, gaz: 0 }), [1500, 1500, 1500, 1500]);
+  assert.deepEqual(sticksToRc({ on: true, roll: 300, pitch: -300, gaz: 100 }), [2000, 2000, 2000, 1500]);
+  assert.equal(parseSticks('error unknown command'), null);
+});
+
+test('the circling settings become ArduPlane parameters', () => {
+  const c = parseCircling('ok name=DISCO-FAKE01 max_alt=150 circling=ccw,80 pitch_mode=normal');
+  assert.deepEqual(c, { ccw: true, altitude: 80 });
+  assert.deepEqual(circlingParams(c!, 80), { TKOFF_ALT: 80, ALT_HOLD_RTL: 8000, WP_LOITER_RAD: -80, RTL_RADIUS: -80 });
+  assert.equal(circlingParams({ ccw: false, altitude: 50 }, -80).WP_LOITER_RAD, 80);
+  assert.equal(parseCircling('ok'), null);
+});
+
+test('PARAM_SET and RC_CHANNELS_OVERRIDE encode as MAVLink frames', () => {
+  const p = mav.paramSet('TKOFF_ALT', 80);
+  assert.equal(p.length, 23);
+  assert.equal(p.readFloatLE(0), 80);
+  assert.equal(p.toString('ascii', 6, 15), 'TKOFF_ALT');
+  assert.equal(p[15], 0);
+  const r = mav.rcOverride([1000, 2000]);
+  assert.equal(r.readUInt16LE(0), 1000);
+  assert.equal(r.readUInt16LE(2), 2000);
+  assert.equal(r.readUInt16LE(4), 0);
+  for (const [id, payload] of [[mav.MSG.PARAM_SET, p], [mav.MSG.RC_CHANNELS_OVERRIDE, r]] as const) {
+    const msgs = new mav.Parser().push(mav.encode(id, payload, 1));
+    assert.equal(msgs.length, 1);
+    assert.equal(msgs[0]!.id, id);
+  }
+  assert.throws(() => mav.paramSet('A_VERY_LONG_PARAMETER', 1));
 });

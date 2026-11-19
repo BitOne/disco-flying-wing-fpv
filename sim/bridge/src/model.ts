@@ -9,6 +9,7 @@ export const Mode = {
   MANUAL: 0,
   CIRCLE: 1,
   FBWA: 5,
+  FBWB: 6,
   AUTO: 10,
   RTL: 11,
   LOITER: 12,
@@ -58,6 +59,8 @@ export function actionFor(event: string, s: PlaneState): Action | null {
       return s.armed ? { kind: 'mode', mode: Mode.RTL } : null;
     case 'home_stop':
       return s.armed ? { kind: 'mode', mode: Mode.LOITER } : null;
+    case 'circle': // the loiter button: circle where it is
+      return s.armed ? { kind: 'mode', mode: Mode.LOITER } : null;
     default:
       return null;
   }
@@ -93,4 +96,56 @@ export function approachPoint(
     east /= d;
   }
   return { lat: home.lat + (north * distance) / mPerDegLat, lon: home.lon + (east * distance) / mPerDegLon };
+}
+
+/** The pilot's sticks as fake-sc2 reports them (`pcmd`): percent. */
+export interface Sticks {
+  on: boolean;
+  roll: number;
+  pitch: number; // positive: stick forward, nose down (ARSDK)
+  gaz: number;
+}
+
+export function parseSticks(reply: string): Sticks | null {
+  const m = /^ok (\d) (-?\d+) (-?\d+) (-?\d+)/.exec(reply.trim());
+  if (!m) return null;
+  return { on: m[1] === '1', roll: Number(m[2]), pitch: Number(m[3]), gaz: Number(m[4]) };
+}
+
+/**
+ * RC_CHANNELS_OVERRIDE values (PWM, channels 1 to 4) for the sticks in
+ * ArduPlane's FBWB mode, which flies like the Disco: roll banks, the pitch
+ * stick climbs or descends (centred: altitude held), throttle sets the speed.
+ * Pitch stick back (negative ARSDK pitch) is a high RC2, as on a plane radio.
+ */
+export function sticksToRc(s: Sticks): [number, number, number, number] {
+  const pwm = (v: number) => Math.round(1500 + Math.max(-100, Math.min(100, v)) * 5);
+  return [pwm(s.roll), pwm(-s.pitch), pwm(s.gaz), 1500];
+}
+
+/** The Disco's circling settings, from fake-sc2's `disco` status. */
+export interface Circling {
+  ccw: boolean;
+  altitude: number; // m
+}
+
+export function parseCircling(reply: string): Circling | null {
+  const m = /circling=(cw|ccw),(\d+)/.exec(reply);
+  if (!m) return null;
+  return { ccw: m[1] === 'ccw', altitude: Number(m[2]) };
+}
+
+/**
+ * ArduPlane parameters for the Disco's circling settings: take-off and
+ * return altitudes, and the loiter direction (a negative radius circles
+ * counter-clockwise).
+ */
+export function circlingParams(c: Circling, radius: number): Record<string, number> {
+  const r = Math.abs(radius) * (c.ccw ? -1 : 1);
+  return {
+    TKOFF_ALT: c.altitude,
+    ALT_HOLD_RTL: c.altitude * 100,
+    WP_LOITER_RAD: r,
+    RTL_RADIUS: r,
+  };
 }

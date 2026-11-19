@@ -897,8 +897,144 @@ Chosen stack (all in Docker, `make sim`):
   camera video, fighter HUD, headset with the same picture in both eyes),
   green over the emulated USB accessory as well.
 
+## 22. Disco firmware and FreeFlight vs the fake (2026-11-19)
+
+Question: which features of the real Disco the fake lacked, and adding
+them.
+
+### Sources examined (static analysis only)
+
+- **Disco firmware 1.7.1**, `https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf`
+  (41,222,212 bytes, SHA-256 `f52f226d04c986b69e4962247d09b95ac634116a5eae7d183523ce9e7f70a056`;
+  1.7.0 is at the same path). The PLF's entries are gzip streams, each
+  starting with its file path: `usr/bin/dragon-prog` (the flight program),
+  `etc/default-dragon.conf` (default settings), `etc/parameters.conf`
+  (flight controller tuning), `usr/lib/libarsdk.so`, `libarcommands.so`.
+- `dragon-prog` keeps the ARSDK3 generator and decoder symbol names:
+  `ARCOMMANDS_Decoder_Set<Command>Cb` lists the **79 commands it handles**,
+  `ARCOMMANDS_Generator_Generate<Event>` the **104 events it sends**. The
+  flight program is shared with the Bebop line, so animations, headlights
+  and Sequoia appear too; the Disco-specific ones include
+  `PilotingSettings.CirclingDirection/CirclingAltitude/PitchMode`,
+  `Piloting.Circle`, `Calibration.PitotCalibration`, `Mavlink.Start/Pause/Stop`,
+  `PilotingState.LandingStateChanged`, the `Rc` feature (RC receiver).
+  Not decoded, so never answered: `PilotingSettings.CirclingRadius`,
+  `MaxTilt`, `BankedTurn`, `Antiflickering.SetMode`.
+- `default-dragon.conf`: max altitude 150, min altitude 5, max distance
+  2000 with no-fly-over on, circling clockwise at 50 m, pitch mode normal,
+  return home delay 10 s, home type take-off, video auto-record on,
+  stabilisation off, 30 fps, picture format snapshot, Wi-Fi auto 2.4 GHz
+  channel 1, outdoor, country US with auto-country.
+- `parameters.conf` (flight controller): take-off transition at 50 m, cruise
+  `NAV_DEFAULT_AIRSPEED` 12 m/s (2 to 20 m/s in flight), default circle
+  radius 30 m (home and landing too), max turn rate 35 deg/s, circular
+  landing by default (radius 30 m, 10 m/s, 10 deg slope), battery
+  percentage table for the 3S pack, pre-flight checks (battery 10 %).
+- Setting **ranges** are computed at run time (only "cannot be set to %f.
+  Max value is %f." strings): not in any file. The fake uses plausible
+  ones (max altitude 25 to 150, min altitude 5 to 50, max distance 10 to
+  2000, circling altitude 25 to 150, camera tilt and pan +-80): to check on
+  the bench.
+- **FreeFlight Pro 5.2.7** (the community re-signed APK, section 19): its
+  dex has `$SwitchMap` tables only where its own code switches on an ARSDK
+  enum, which shows what it really uses for a Disco: circling direction,
+  pitch mode, landing state, alert state, home type chosen, picture and
+  video record states and events, video settings, Wi-Fi selection,
+  security and authorised channels, pitot and magnetometer calibration
+  states, sensors list, Mavlink playing state, RC receiver states, motor
+  errors. Its classes `FixedWingSettingsBuilder`, `CirclingDirectionState`,
+  `PitchModeState`, `LoiterSwitchButtonValueChangedListener` (the loiter
+  button: `Piloting.Circle`) match. Earlier fake logs showed FreeFlight
+  pushing its stored settings (max altitude, circling, home type, return
+  home delay 3 s, picture format) since the fake never reported any.
+- GroundSdk builds for a Disco (`BebopFamilyDroneController`): geofence,
+  `DiscoFlightTuning` (circling), `DiscoPitot`, return home, flight meter,
+  system info, magnetometer, motors, sensors state, media store, removable
+  storage, Wi-Fi access point, camera, gimbal, alarms: all fed by the
+  events above.
+- Decompiling FreeFlight with jadx was not done (running the downloaded
+  decompiler was refused by the session's permission check); the string
+  analysis was enough.
+
+### What the fake now does (`fake-sc2/src/disco.c`, flight in `fake_sc2.c`)
+
+- Answers AllSettings and AllStates like the Disco: identity (serial
+  high/low, CPU id, motor and GPS versions, ARCommands version, run id),
+  all piloting, return home, camera, Wi-Fi and flight plan settings, motor
+  error states, flight meter, sensors, internal storage (32 GB, photo and
+  video counters), picture and video states, alert, calibrations, home type
+  availability, camera orientation and velocity range, flight plan
+  availability and components, Mavlink state.
+- Every setting the firmware decodes is stored (kept across connections),
+  clamped to its range and echoed; `Common.Settings.Reset` restores the
+  defaults.
+- Media: `PictureV2` (busy, taken, ready, counters), `VideoV2` start/stop
+  with events and timestamps; video auto-record from take-off to landing.
+- Calibrations: magnetometer axis by axis, pitot in progress then done;
+  flat trim.
+- Wi-Fi: scan results, authorised channels (US), manual or automatic
+  channel, WPA2 key.
+- Alerts from the battery level (low 20 %, critical 10 %, almost empty 5 %:
+  assumed thresholds), or forced (`alert`).
+- Flight: the controller's sticks (`sticks`) or the app's PCMD fly it
+  manually (bank to turn, pitch to climb, throttle for speed, inverted
+  pitch mode), `Piloting.Circle` circles where it is, return home flies
+  over home then circles it (asked, after `return_home_delay` without the
+  controller, on a critical battery), circular landing at the firmware's
+  speed and slope with `LandingStateChanged SPIRAL`, geofence, battery
+  drain (45 min), flight plan playing/paused/stopped (takes off if needed,
+  then circles home), `Common.Reboot` (the Disco gone for 15 s).
+- With the simulator (`sim external`): `Piloting.Circle` = LOITER, the
+  sticks = ArduPlane FBWB with RC overrides (checked: stick back climbs,
+  centred holds altitude and heading), the circling settings become
+  `TKOFF_ALT`, `ALT_HOLD_RTL` and the sign of `WP_LOITER_RAD`/`RTL_RADIUS`,
+  and the link-loss and critical-battery returns are sent as `home_start`.
+
+### Still missing
+
+- Flight plan files: GroundSdk and FreeFlight upload the Mavlink file by
+  FTP before `Mavlink.Start`; the fake has no FTP server, so a plan's
+  waypoints are not flown (only its playing state).
+- Media download (FTP or HTTP listing), the RC receiver feature (`Rc.*`,
+  for a hobby radio on the Disco), over-heat events,
+  `Common.Network.Disconnect`: not modelled.
+- Real ranges and alert thresholds: assumed values, see above.
+
+### GroundSdk crash on a malformed value
+
+The first `make check` with the new states failed every app scenario: the
+app crashed on connection (`ArrayIndexOutOfBoundsException` in GroundSdk's
+`AnafiMotors`), which parses `MotorSoftwareVersionChanged` as
+`major.minor.type.count` and indexes the fourth field when there are at
+least three. The fake sent "1.0.0"; it now sends "1.0.0.1" (one motor),
+and the settings probe checks the format. The protocol tests can't see
+such crashes: values GroundSdk parses need the app scenarios too. Also seen
+since the Disco reports its internal storage: GroundSdk's media store tries
+an FTP session through the controller, which times out (no FTP in the
+fake; a warning, not a failure).
+
+### Test rig finding: TCP_NODELAY
+
+A fresh fake took 5.6 s to answer AllStates when telemetry had just been
+sent: ARSDK sends acknowledged commands one at a time, each waiting for a
+small ACK frame, and with Nagle's algorithm plus delayed ACKs on the mux
+TCP socket each waited about 80 ms (a USB link has no such delay). The
+fake's mux socket and the probe now set `TCP_NODELAY` (aoa-host already
+did): 63 ms. GroundSdk's own debug bridge socket still uses Nagle on the
+app's side.
+
+### Protocol tests
+
+`make fake-test` (part of `make check`, no emulator): `disco-probe`
+(`fake-sc2/src/probe.c`), a scripted ARSDK controller connecting over mux
+like the phone, runs `tests/fake/disco-settings.probe`,
+`disco-states.probe` and `disco-flight.probe` against a fresh fake each
+(about 90 s). `tests/sim/sim-disco.probe` checks the same piloting through
+the simulator (`make fake sim`, then run it with disco-probe by hand).
+
 ## Sources
 
+- Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
 - FPV_VR_OS: https://github.com/Consti10/FPV_VR_OS
 - ArduPilot Parrot Disco setup guide: https://ardupilot.org/plane/docs/airframe-disco.html
 - Controlling Parrot Disco video (ArduPilot forum): https://discuss.ardupilot.org/t/controlling-parrot-disco-video/39828

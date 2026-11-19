@@ -30,7 +30,23 @@ data class HudModel(
     val heading: Double? = null,       // degrees, 0 north, clockwise
     val position: GeoPoint? = null,
     val home: GeoPoint? = null,
+    /** Warnings to show, most severe first (see HudAlerts). */
+    val alerts: List<String> = emptyList(),
+    /** Camera tilt, degrees, positive up (the Disco's digital tilt). */
+    val cameraTilt: Double? = null,
+    /** Last known GPS position, kept when the fix or the link is lost. */
+    val lastFix: LastFix? = null,
+    /** Recent positions, oldest first, for the moving map. */
+    val trail: List<GeoPoint> = emptyList(),
 ) {
+    /** Where the drone is or was last seen: the position, else the last fix. */
+    val mapPosition: GeoPoint?
+        get() = position ?: lastFix?.point
+
+    /** Pitch of the camera's view, for the horizon: attitude plus tilt. */
+    val viewPitch: Double?
+        get() = pitch?.let { it + (cameraTilt ?: 0.0) }
+
     /** Distance to home in metres, when both positions are known. */
     val homeDistance: Double?
         get() = if (position != null && home != null) Geo.distance(position, home) else null
@@ -47,6 +63,9 @@ data class HudModel(
 }
 
 data class GeoPoint(val latitude: Double, val longitude: Double)
+
+/** A GPS position and when it was received (epoch milliseconds). */
+data class LastFix(val point: GeoPoint, val altitude: Double?, val timeMs: Long)
 
 /** Spherical earth geometry, good enough at model aircraft distances. */
 object Geo {

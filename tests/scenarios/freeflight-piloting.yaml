@@ -27,11 +27,12 @@ steps:
       min_change: 0.002
     timeout: 30000
   - screenshot: freeflight-hovering
-  # return home, finished by the fake after 5 s
+  # return home: the fake flies over home, then circles it
   - tap: [0.205, 0.071]
   - expect_fake: "flying alt=50.0 home=1"
   - screenshot: freeflight-rth
   - expect_fake: "hovering alt=50.0 home=0"
+    timeout: 30000 # flies over home, then circles it
   # return home again, stopped from the app (STOP RTH)
   - tap: [0.205, 0.071]
   - expect_fake: "home=1"
@@ -41,5 +42,5 @@ steps:
   - tap: [0.525, 0.955]
   - expect_fake: landing
   - expect_fake: "landed alt=0.0"
-    timeout: 25000
+    timeout: 45000 # circular landing, 10 deg slope
   - screenshot: freeflight-landed

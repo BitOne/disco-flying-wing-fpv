@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings: one button per setting, showing its value; a tap changes it. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings"
+            android:textSize="28sp" />
+
+        <Button android:id="@+id/setting_map_button" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_map_hold" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_hud_size" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_last_fix" style="@style/SettingRow" />
+
+        <TextView
+            android:id="@+id/setting_last_fix_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/setting_forget_fix"
+            style="@style/SettingRow"
+            android:text="@string/forget_last_fix" />
+    </LinearLayout>
+</ScrollView>

@@ -11,9 +11,9 @@ import android.util.AttributeSet
 
 /**
  * Minimal HUD: an arrow pointing home (relative to the nose) with the
- * distance at the top, the drone battery at the bottom. Both stay in the
- * top and bottom 13 % of the view, the bands around the video in the
- * headset. LINK LOST replaces the arrow while the drone is away.
+ * distance at the top, the drone battery at the bottom, each in 13 % of the
+ * HUD area. LINK LOST replaces the arrow while the drone is away; the last
+ * GPS fix shows above the battery when the position is lost.
  */
 class MinimalHudView @JvmOverloads constructor(
     context: Context,
@@ -23,14 +23,14 @@ class MinimalHudView @JvmOverloads constructor(
     private val arrow = Path()
 
     override fun describe(model: HudModel): String =
-        "HUD MINIMAL, ${HudFormat.battery("BAT", model.battery)}, ${HudFormat.home(model.homeDistance)}"
+        "HUD MINIMAL, ${HudFormat.battery("BAT", model.battery)}, ${HudFormat.home(model.homeDistance)}" +
+            (model.lastFix?.takeIf { model.position == null }?.let { ", LAST FIX" } ?: "")
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
+    override fun drawHud(canvas: Canvas) {
         scalePaints(0.055f)
         val m = model
-        val band = height * 0.13f
-        val cx = width / 2f
+        val band = h * 0.13f
+        val cx = w / 2f
 
         // top: home arrow and distance, or LINK LOST
         val cy = band / 2
@@ -59,9 +59,21 @@ class MinimalHudView @JvmOverloads constructor(
             canvas.drawText(HudFormat.home(m.homeDistance), cx - size * 0.3f, cy + text.textSize / 3, text)
         }
 
+        // without a position: where the Disco was last seen
+        val fix = m.lastFix
+        if (m.position == null && fix != null) {
+            val small = text.textSize
+            text.textSize = small * 0.7f
+            text.textAlign = Paint.Align.CENTER
+            text.color = WARNING_COLOR
+            canvas.drawText(HudAlerts.lastFix(fix, System.currentTimeMillis()), cx,
+                h - band * 1.3f, text)
+            text.textSize = small
+        }
+
         // bottom: battery
         text.textAlign = Paint.Align.CENTER
         text.color = colorFor(HudFormat.isLowBattery(m.battery))
-        canvas.drawText(HudFormat.battery("BAT", m.battery), cx, height - band / 2 + text.textSize / 3, text)
+        canvas.drawText(HudFormat.battery("BAT", m.battery), cx, h - band / 2 + text.textSize / 3, text)
     }
 }

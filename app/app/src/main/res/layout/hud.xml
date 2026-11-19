@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- HUD of the flight view, over the video. Modes (HudMode): classic text
      readouts (left: flight data; right: systems), minimal (battery and home
-     arrow), fighter (horizon and tapes); a banner names the mode when it
-     changes. -->
+     arrow), fighter (horizon and tapes), map (moving map, also shown over
+     any mode with the controller's map button); warnings below the centre in
+     every mode; a banner names the mode when it changes. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/hud"
     android:layout_width="match_parent"
@@ -37,6 +38,7 @@
             <TextView android:id="@+id/hud_battery" style="@style/Hud" />
             <TextView android:id="@+id/hud_rc_battery" style="@style/Hud" />
             <TextView android:id="@+id/hud_gps" style="@style/Hud" />
+            <TextView android:id="@+id/hud_camera" style="@style/Hud" />
         </LinearLayout>
     </FrameLayout>
 
@@ -50,6 +52,20 @@
         android:id="@+id/hud_fighter"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <io.github.bitone.discofpv.MapHudView
+        android:id="@+id/hud_map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <!-- warnings (alarms, GPS lost, last fix), in every mode -->
+    <TextView
+        android:id="@+id/hud_alerts"
+        style="@style/HudAlert"
+        android:layout_gravity="center"
+        android:layout_marginTop="120dp"
         android:visibility="gone" />
 
     <TextView

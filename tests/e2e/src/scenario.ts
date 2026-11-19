@@ -15,6 +15,7 @@ export type Step =
   | { kind: 'tap_id'; id: string; times: number }
   | { kind: 'back' }
   | { kind: 'expect_texts'; texts: string[]; timeoutMs: number; scroll: boolean }
+  | { kind: 'expect_gone'; texts: string[]; timeoutMs: number }
   | { kind: 'screenshot'; name: string }
   | { kind: 'expect_fake'; query: string; contains: string; timeoutMs: number }
   | {
@@ -119,6 +120,12 @@ function parseStep(raw: unknown, index: number): Step {
         timeoutMs: timeout,
         scroll: raw['scroll'] === true,
       };
+    }
+    case 'expect_gone': {
+      // none of the texts on screen any more (within the timeout)
+      const timeout = raw['timeout'] ?? 10_000;
+      if (typeof timeout !== 'number') throw new Error(`${where}: timeout must be milliseconds`);
+      return { kind: 'expect_gone', texts: stringList(value, where), timeoutMs: timeout };
     }
     case 'expect_video':
     case 'expect_image':

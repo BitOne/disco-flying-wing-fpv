@@ -24,10 +24,11 @@ steps:
   - tap_id: return_home_btn
   - expect_fake: "flying alt=50.0 home=1"
   - expect_fake: "hovering alt=50.0 home=0"
+    timeout: 30000 # flies over home, then circles it
   - tap_id: take_off_land_btn
   - expect_fake: landing
   - expect_fake: "landed alt=0.0"
-    timeout: 25000
+    timeout: 45000 # circular landing, 10 deg slope
   - tap_id: take_off_land_btn
   - expect_fake: "takingoff"
     timeout: 5000

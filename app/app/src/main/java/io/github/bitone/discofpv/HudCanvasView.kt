@@ -4,8 +4,10 @@
 package io.github.bitone.discofpv
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
@@ -34,6 +36,36 @@ abstract class HudCanvasView @JvmOverloads constructor(
     /** What the view shows, as text. */
     protected abstract fun describe(model: HudModel): String
 
+    /**
+     * The part of the view the HUD draws in (pixels): all of it full
+     * screen; in the headset, the middle of the video, the part seen
+     * through the lenses (HudArea).
+     */
+    var area: RectF? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    private val drawArea = RectF()
+
+    /** Width and height of the drawing area. */
+    protected val w: Float get() = drawArea.width()
+    protected val h: Float get() = drawArea.height()
+
+    /** Draws the HUD in a [w] x [h] area at the origin. */
+    protected abstract fun drawHud(canvas: Canvas)
+
+    final override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        drawArea.set(area ?: RectF(0f, 0f, width.toFloat(), height.toFloat()))
+        if (drawArea.isEmpty) return
+        canvas.save()
+        canvas.translate(drawArea.left, drawArea.top)
+        drawHud(canvas)
+        canvas.restore()
+    }
+
     protected val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
@@ -53,15 +85,17 @@ abstract class HudCanvasView @JvmOverloads constructor(
         setShadowLayer(3f, 1f, 1f, SHADOW_COLOR)
     }
 
-    /** Sets paint sizes from the view height (call at the start of onDraw). */
+    /** Sets paint sizes from the area height (call at the start of drawHud). */
     protected fun scalePaints(textFraction: Float) {
-        text.textSize = height * textFraction
-        line.strokeWidth = maxOf(2f, height / 300f)
+        text.textSize = maxOf(MIN_TEXT_PX, h * textFraction)
+        line.strokeWidth = maxOf(2f, h / 300f)
     }
 
     protected fun colorFor(warning: Boolean) = if (warning) WARNING_COLOR else HUD_COLOR
 
     companion object {
+        /** Smallest readable text, pixels. */
+        const val MIN_TEXT_PX = 12f
         val HUD_COLOR: Int = Color.parseColor("#B8FFB0")
         val WARNING_COLOR: Int = Color.parseColor("#FF6040")
         val SHADOW_COLOR: Int = Color.parseColor("#E0000000")

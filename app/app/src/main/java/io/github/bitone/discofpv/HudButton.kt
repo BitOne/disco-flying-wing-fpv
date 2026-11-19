@@ -14,21 +14,31 @@ import com.parrot.drone.groundsdk.device.peripheral.gamepad.skycontroller2.Butto
 import java.util.EnumSet
 
 /**
- * Takes one SkyController 2 button for the app while a drone screen is
- * shown ([start]/[stop]): grabbed, the controller sends its presses to the
- * app instead of using it for its own action. [BUTTON] has no flight action
- * on the Disco.
+ * Takes the app's SkyController 2 buttons while a drone screen is shown
+ * ([start]/[stop]): grabbed, the controller sends their presses to the app
+ * instead of using them for its own action. [CYCLE_BUTTON] cycles the HUD
+ * modes; the map button ([AppSettings.mapButton], none by choice) shows the
+ * moving map, [onMap] with true on press and false on release.
  */
-class HudButton(private val groundSdk: GroundSdk, private val onPress: () -> Unit) {
+class HudButton(
+    private val groundSdk: GroundSdk,
+    private val mapButton: AppSettings.MapButton,
+    private val onCycle: () -> Unit,
+    private val onMap: (pressed: Boolean) -> Unit,
+) {
 
     private var rcList: Ref<MutableList<RemoteControlListEntry>>? = null
     private var gamepadRef: Ref<SkyController2Gamepad>? = null
     private var gamepad: SkyController2Gamepad? = null
     private var watchedUid: String? = null
+    private val map: Pair<SkyController2Gamepad.Button, ButtonEvent>? = buttonOf(mapButton)
 
     private val listener = ButtonEvent.Listener { event, state ->
         Log.d(TAG, "button $event $state")
-        if (event == BUTTON_EVENT && state == ButtonEvent.State.PRESSED) onPress()
+        when {
+            event == CYCLE_EVENT && state == ButtonEvent.State.PRESSED -> onCycle()
+            event == map?.second -> onMap(state == ButtonEvent.State.PRESSED)
+        }
     }
 
     fun start() {
@@ -43,7 +53,9 @@ class HudButton(private val groundSdk: GroundSdk, private val onPress: () -> Uni
                 if (pad == null || pad === gamepad) return@getPeripheral
                 gamepad = pad
                 pad.setButtonEventListener(listener)
-                pad.grabInputs(EnumSet.of(BUTTON), EnumSet.noneOf(SkyController2Gamepad.Axis::class.java))
+                val buttons = EnumSet.of(CYCLE_BUTTON)
+                map?.let { m -> buttons.add(m.first) }
+                pad.grabInputs(buttons, EnumSet.noneOf(SkyController2Gamepad.Axis::class.java))
             }
         }
     }
@@ -70,7 +82,17 @@ class HudButton(private val groundSdk: GroundSdk, private val onPress: () -> Uni
         private const val TAG = "HudButton"
 
         /** The button that cycles the HUD modes. */
-        val BUTTON = SkyController2Gamepad.Button.SETTINGS
-        private val BUTTON_EVENT = ButtonEvent.SETTINGS
+        val CYCLE_BUTTON = SkyController2Gamepad.Button.SETTINGS
+        private val CYCLE_EVENT = ButtonEvent.SETTINGS
+
+        fun buttonOf(b: AppSettings.MapButton): Pair<SkyController2Gamepad.Button, ButtonEvent>? = when (b) {
+            AppSettings.MapButton.NONE -> null
+            AppSettings.MapButton.B -> SkyController2Gamepad.Button.BUTTON_B to ButtonEvent.BUTTON_B
+            AppSettings.MapButton.A -> SkyController2Gamepad.Button.BUTTON_A to ButtonEvent.BUTTON_A
+            AppSettings.MapButton.REAR_LEFT ->
+                SkyController2Gamepad.Button.REAR_LEFT_BUTTON to ButtonEvent.REAR_LEFT_BUTTON
+            AppSettings.MapButton.REAR_RIGHT ->
+                SkyController2Gamepad.Button.REAR_RIGHT_BUTTON to ButtonEvent.REAR_RIGHT_BUTTON
+        }
     }
 }

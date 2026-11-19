@@ -45,6 +45,7 @@ function label(step: Step): string {
     case 'tap': return `tap at (${step.x}, ${step.y})`;
     case 'tap_id': return `tap #${step.id}${step.times > 1 ? ` x${step.times}` : ''}`;
     case 'expect_texts': return `expect ${step.texts.map((t) => `"${t}"`).join(', ')}${step.scroll ? ' (scroll)' : ''}`;
+    case 'expect_gone': return `expect gone ${step.texts.map((t) => `"${t}"`).join(', ')}`;
     case 'screenshot': return `screenshot ${step.name}`;
     case 'expect_fake': return `expect fake "${step.query}" to report "${step.contains}"`;
     case 'expect_image':
@@ -131,6 +132,16 @@ async function runStep(
         await sleep(1000);
       }
       return undefined;
+    }
+    case 'expect_gone': {
+      const deadline = Date.now() + step.timeoutMs;
+      for (;;) {
+        const shown = await emu.collectTexts(false);
+        const still = step.texts.filter((t) => missingTexts(shown, [t]).length === 0);
+        if (still.length === 0) return undefined;
+        if (Date.now() > deadline) throw new Error(`still shown: ${still.map((m) => `"${m}"`).join(', ')}`);
+        await sleep(1000);
+      }
     }
     case 'expect_fake': {
       const deadline = Date.now() + step.timeoutMs;
