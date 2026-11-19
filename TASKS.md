@@ -535,6 +535,11 @@ M5 done (2026-11-18): `make check` green with the six app scenarios.
   and trees, the nose camera streamed to fake-sc2, a hand launch; `make
   sim-view`: line-of-sight (or chase) view on the PC's screen. CesiumJS
   probe in `sim/cesium` (real place, not wired to the bridge).
+- [ ] **T6.8 Offline OpenStreetMap map** (`NOTES.md` section 26): a
+  Mapsforge TileSource rendering the moving map's tiles from a local
+  region .map file (download.mapsforge.org, ODbL), so the map works with no
+  network at the field; OSM's tile server forbids prefetching, the data
+  does not.
 - [ ] **T6.7 Gazebo follow-ups**: the camera tilt and pan (FlightGear's
   view offsets have no Gazebo equivalent yet: a gimbal joint driven by
   gz-helper); a world generated from a real place (OSM buildings and IGN

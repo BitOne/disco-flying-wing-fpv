@@ -1349,6 +1349,62 @@ https://ardupilot.org/dev/docs/sitl-with-gazebo.html ,
 https://cesium.com/learn/cesiumjs/ref-doc/WebMapTileServiceImageryProvider.html ,
 https://wiki.openstreetmap.org/wiki/Overpass_API
 
+## 26. Offline OpenStreetMap maps for the app (2026-11-20)
+
+Question: the app's moving map may not prefetch OpenStreetMap's tiles,
+yet OsmAnd downloads whole countries. Both are true: the restriction is on
+one server, not on the data.
+
+- **tile.openstreetmap.org** (the OSMF's servers, run on donations):
+  "Offline use is not permitted", no "bulk download (scrape) tiles or
+  offer prefetch features", and "Download city/country for offline use"
+  is named as prohibited. Viewed tiles must be cached (HTTP headers, else
+  7 days), which the app does. The policy itself points elsewhere: "If you
+  require offline maps, use self-hosted tiles or a provider that
+  explicitly allows offline/prefetching."
+- **The data** is ODbL: anyone may copy it, convert it and ship it, with
+  attribution ("© OpenStreetMap contributors"). OsmAnd does that: it
+  builds its own OBF files from OSM extracts and serves them from its own
+  servers (free plan limited to a few maps, an installation id sent with
+  downloads); its format and servers are OsmAnd's (GPLv3 code), not meant
+  for other apps.
+- **Mapsforge**: prebuilt offline vector maps from OSM (ODbL) per country
+  and per region at download.mapsforge.org/maps/v5 (france.map 3.3 GB, or
+  per former region: rhone-alpes.map 343 MB, ile-de-france.map 201 MB,
+  corse.map 26 MB; "not suitable for mass downloads", a fast mirror at
+  ftp-stud.hs-esslingen.de), hillshading data at /maps/dem. The Android
+  library renders them offline (XML render themes, hillshading); LGPL v3
+  with §4(d) and §4(e) waived, so a BSD app can use it. Used by OruxMaps,
+  Locus, c:geo.
+- **Protomaps / PMTiles**: daily OSM vector basemap builds (planet about
+  120 GB, ODbL produced work); `pmtiles extract --bbox=... --maxzoom=...`
+  cuts a region into one file (Berlin about 84 MB). Hotlinking their builds
+  is discouraged: extract and host or copy the file. MapLibre Native
+  Android 11.7.0+ reads a local file (`pmtiles://file://<absolute path>`),
+  but it is a full GL map view with no offline packs for PMTiles.
+- **Geofabrik** .osm.pbf extracts: raw data for building any of the above.
+
+Fit with the app: the moving map draws 256 px raster tiles into a rotating
+disc on a Canvas (twice in the headset). Mapsforge renders tiles to
+bitmaps from a local .map file, so it can be one more TileSource next to
+OSM, IGN photos and custom URLs: the user downloads a region once (or the
+app fetches it from the mirror on request, one file, not a scrape), then
+the map works with no network at the flying field. MapLibre would mean a
+second map view (or snapshots) for the same disc: heavier for this use.
+IGN's photos (France) already allow prefetching (section 23).
+
+Recommendation: a Mapsforge TileSource (T4.x): pick a .map file (or
+download a region), render tiles on the tile threads, keep the disk cache;
+attribution on the map.
+
+Sources: https://operations.osmfoundation.org/policies/tiles/ ,
+https://wiki.openstreetmap.org/wiki/OsmAndMapCreator ,
+https://f-droid.org/en/packages/net.osmand.plus/ ,
+https://download.mapsforge.org/ , https://download.mapsforge.org/maps/v5/europe/france/ ,
+https://github.com/mapsforge/mapsforge ,
+https://docs.protomaps.com/basemaps/downloads ,
+https://maplibre.org/maplibre-native/android/examples/data/PMTiles/
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
