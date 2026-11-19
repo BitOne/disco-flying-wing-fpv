@@ -35,6 +35,7 @@ abstract class DroneScreenActivity : Activity() {
     protected var hud: Hud? = null
         private set
     private var hudButton: HudButton? = null
+    private var tileLayer: TileLayer? = null
 
     /** The user's settings, read when the screen opens. */
     protected val settings: AppSettings by lazy { AppSettings.load(this) }
@@ -48,11 +49,27 @@ abstract class DroneScreenActivity : Activity() {
     protected fun setupHud(root: View) {
         val h = Hud(root, HudMode.load(this))
         hud = h
+        settings.tileSource()?.let { src ->
+            val layer = TileLayer(this, src) { root.findViewById<View>(R.id.hud_map)?.invalidate() }
+            tileLayer = layer
+            h.setTiles(layer)
+        }
         val store = if (settings.rememberLastFix) LastFixStore(this) else null
         HudBinder(groundSdk, drone, store) { h.render(it) }.bind()
-        hudButton = HudButton(groundSdk, settings.mapButton, onCycle = { cycleHud() }) { pressed ->
-            if (settings.mapHold) h.showMap(pressed) else if (pressed) h.showMap(!h.mapShown)
-        }
+        hudButton = HudButton(
+            groundSdk, settings.mapButton, onCycle = { cycleHud() },
+            onMap = { pressed ->
+                if (settings.mapHold) h.showMap(pressed) else if (pressed) h.showMap(!h.mapShown)
+            },
+            recenterButton = settings.recenterButton,
+            onRecenter = { recenterView() },
+        )
+    }
+
+    /** The recentre button: the camera back along the nose (see HeadsetActivity). */
+    protected open fun recenterView() {
+        drone.getPeripheral(com.parrot.drone.groundsdk.device.peripheral.Gimbal::class.java)
+            ?.control(com.parrot.drone.groundsdk.device.peripheral.Gimbal.ControlMode.POSITION, 0.0, 0.0, null)
     }
 
     /** Next HUD mode, saved for the next sessions. */
@@ -84,6 +101,11 @@ abstract class DroneScreenActivity : Activity() {
         }
         drone = found
         onDroneReady(found)
+    }
+
+    override fun onDestroy() {
+        tileLayer?.close()
+        super.onDestroy()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

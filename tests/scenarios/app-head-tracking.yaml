@@ -1,0 +1,43 @@
+name: Disco FPV head tracking moves the Disco's camera in the headset
+description: >
+  Needs `make fake`, `make video` and `make emu`. In the headset view the
+  phone's orientation (game rotation vector) points the Disco's digital
+  camera; here the emulator's virtual accelerometer tilts the phone 30
+  degrees down, the fake Disco's camera follows (about -25: the fusion
+  converges), the recentre button (A) makes that pose the centred view and
+  centres the camera, and looking back up tilts it up. The emulator ignores
+  gyroscope overrides in its fusion, so turning (pan) is covered by the
+  unit tests and the fake's protocol tests. The centre indicator is drawn
+  in the GL view: checked on the screenshots.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml shared_prefs/settings.xml
+  - emu: sensor set acceleration 0:9.81:0
+  - send: [drone_link ok, battery 64, home 45.1885 5.7245 300, gps 45.1890 5.7250 350, satellites 12, circle]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Headset view
+  - expect_video: { region: [0.12, 0.3, 0.45, 0.65], min_contrast: 30 }
+    timeout: 30000
+  - expect_fake: "tilt=0 pan=0"
+    query: disco
+  # looking 30 degrees down
+  - emu: sensor set acceleration 0:8.50:4.90
+  - expect_fake: "tilt=-2"
+    query: disco
+  - wait: 1000
+  - screenshot: looking-down
+  # the recentre button: this pose is the centred view now
+  - send: [button a]
+  - expect_fake: "tilt=0 pan=0"
+    query: disco
+  - screenshot: recentred
+  # looking back up: the camera tilts up from the new centre
+  - emu: sensor set acceleration 0:9.81:0
+  - expect_fake: "tilt=2"
+    query: disco
+  - send: [button a]
+  - emu: sensor set acceleration 0:9.776:0.812

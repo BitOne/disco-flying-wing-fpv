@@ -19,6 +19,7 @@ class Hud(private val root: View, mode: HudMode) {
     private val minimal: MinimalHudView = root.findViewById(R.id.hud_minimal)
     private val fighter: FighterHudView = root.findViewById(R.id.hud_fighter)
     private val map: MapHudView = root.findViewById(R.id.hud_map)
+    private val center: CenterIndicatorView = root.findViewById(R.id.hud_center)
     private val alerts: TextView = root.findViewById(R.id.hud_alerts)
     private val banner: TextView = root.findViewById(R.id.hud_mode_banner)
     private val hideBanner = Runnable { banner.visibility = View.GONE }
@@ -47,11 +48,17 @@ class Hud(private val root: View, mode: HudMode) {
         show()
     }
 
+    /** Map tiles for the moving map (null: none). */
+    fun setTiles(tiles: TileLayer?) {
+        map.tiles = tiles
+    }
+
     /** Drawing area of the drawn modes (null: the whole view). */
     fun setArea(area: RectF?) {
         minimal.area = area
         fighter.area = area
         map.area = area
+        center.area = area
     }
 
     private fun announce(text: String) {
@@ -74,6 +81,7 @@ class Hud(private val root: View, mode: HudMode) {
         minimal.model = m
         fighter.model = m
         map.model = m
+        center.model = m
         text(R.id.hud_state, HudFormat.stateLine(m.connected, m.flyingState), warning = !m.connected)
         text(R.id.hud_altitude, HudFormat.altitude(m.altitude))
         text(R.id.hud_air_speed, HudFormat.airSpeed(m.airSpeed))
@@ -81,7 +89,7 @@ class Hud(private val root: View, mode: HudMode) {
         text(R.id.hud_battery, HudFormat.battery("BAT", m.battery), HudFormat.isLowBattery(m.battery))
         text(R.id.hud_rc_battery, HudFormat.battery("RC", m.rcBattery), HudFormat.isLowBattery(m.rcBattery))
         text(R.id.hud_gps, HudFormat.gps(m.gpsFixed, m.satellites))
-        text(R.id.hud_camera, HudAlerts.camera(m.cameraTilt) ?: "")
+        text(R.id.hud_camera, HudAlerts.camera(m.cameraTilt, m.cameraPan) ?: "")
         renderAlerts(m)
     }
 

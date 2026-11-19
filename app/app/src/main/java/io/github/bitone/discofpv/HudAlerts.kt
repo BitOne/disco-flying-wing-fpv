@@ -72,7 +72,12 @@ object HudAlerts {
         return String.format(Locale.US, "LAST FIX %.5f %.5f, %s ago", fix.point.latitude, fix.point.longitude, ago)
     }
 
-    /** Camera tilt as shown when not level: "CAM -20". */
-    fun camera(tilt: Double?): String? =
-        tilt?.takeIf { kotlin.math.abs(it) >= 1.0 }?.let { "CAM ${Math.round(it)}" }
+    /** Camera tilt (and pan) as shown when not centred: "CAM -20", "CAM R30 -20". */
+    fun camera(tilt: Double?, pan: Double? = null): String? {
+        val t = tilt?.takeIf { kotlin.math.abs(it) >= 1.0 }
+        val p = pan?.takeIf { kotlin.math.abs(it) >= 1.0 }
+        if (t == null && p == null) return null
+        val side = p?.let { (if (it > 0) "R" else "L") + Math.round(kotlin.math.abs(it)) + " " } ?: ""
+        return "CAM $side${Math.round(t ?: 0.0)}"
+    }
 }

@@ -20,6 +20,20 @@
         <Button android:id="@+id/setting_map_button" style="@style/SettingRow" />
         <Button android:id="@+id/setting_map_hold" style="@style/SettingRow" />
         <Button android:id="@+id/setting_hud_size" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_head_tracking" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_recenter_button" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_map_tiles" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_tile_url" style="@style/SettingRow" />
+        <Button
+            android:id="@+id/setting_download_tiles"
+            style="@style/SettingRow"
+            android:text="@string/download_tiles" />
+
+        <TextView
+            android:id="@+id/setting_download_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="16sp" />
         <Button android:id="@+id/setting_last_fix" style="@style/SettingRow" />
 
         <TextView

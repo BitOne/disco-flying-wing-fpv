@@ -32,6 +32,15 @@ class MapHudView @JvmOverloads constructor(
         color = Color.parseColor("#90000000")
     }
     private val path = Path()
+    private val clip = Path()
+    private val tilePaint = Paint(Paint.FILTER_BITMAP_FLAG)
+
+    /** Map tiles under the trail (null: none). */
+    var tiles: TileLayer? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     override fun describe(model: HudModel): String {
         val ring = MapProjection.ringFor(rangeOf(model))
@@ -44,6 +53,47 @@ class MapHudView @JvmOverloads constructor(
         val c = m.mapPosition ?: return null
         val home = m.home ?: return null
         return Geo.distance(c, home)
+    }
+
+    /**
+     * Tiles in the disc, rotated with the map (track up): the zoom whose
+     * pixels are just finer than the screen's, scaled down to it.
+     */
+    private fun drawTiles(
+        canvas: Canvas, layer: TileLayer, center: GeoPoint, heading: Double,
+        metresPerPx: Double, cx: Float, cy: Float, r: Float,
+    ) {
+        val z = TileMath.zoomFor(center.latitude, metresPerPx, maxZoom = layer.source.maxZoom)
+        val scale = (TileMath.metresPerPixel(center.latitude, z) / metresPerPx).toFloat()
+        val (gx, gy) = TileMath.pixel(center, z)
+        val reach = r / scale // disc radius in tile pixels
+        val (x0, y0) = TileMath.tileOf(gx - reach, gy - reach)
+        val (x1, y1) = TileMath.tileOf(gx + reach, gy + reach)
+        canvas.save()
+        clip.reset()
+        clip.addCircle(cx, cy, r * 1.08f, Path.Direction.CW)
+        canvas.clipPath(clip)
+        canvas.translate(cx, cy)
+        canvas.rotate(-heading.toFloat())
+        canvas.scale(scale, scale)
+        val size = TileMath.TILE_PX.toFloat()
+        for (x in x0..x1) {
+            for (y in y0..y1) {
+                val bmp = layer.get(z, x, y) ?: continue
+                val left = (x * size - gx).toFloat()
+                val top = (y * size - gy).toFloat()
+                canvas.drawBitmap(bmp, null, android.graphics.RectF(left, top, left + size, top + size), tilePaint)
+            }
+        }
+        canvas.restore()
+        if (layer.source.attribution.isNotEmpty()) {
+            val small = text.textSize
+            text.textSize = small * 0.55f
+            text.color = HUD_COLOR
+            text.textAlign = Paint.Align.CENTER
+            canvas.drawText(layer.source.attribution, cx, cy + r * 0.95f, text)
+            text.textSize = small
+        }
     }
 
     override fun drawHud(canvas: Canvas) {
@@ -64,6 +114,8 @@ class MapHudView @JvmOverloads constructor(
         val heading = if (lost) 0.0 else m.heading ?: 0.0
         val ringMetres = MapProjection.ringFor(rangeOf(m))
         val proj = MapProjection(center, heading, r / ringMetres)
+
+        tiles?.let { drawTiles(canvas, it, center, heading, ringMetres / r, cx, cy, r) }
 
         // range ring and its half
         line.color = HUD_COLOR

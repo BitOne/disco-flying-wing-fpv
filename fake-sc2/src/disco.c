@@ -1234,7 +1234,7 @@ int disco_status(const struct disco *d, char *buf, size_t len)
 			"name=%s max_alt=%.0f min_alt=%.0f max_dist=%.0f no_fly_over=%u "
 			"circling=%s,%u pitch_mode=%s home_type=%s rth_delay=%u "
 			"recording=%d photos=%u videos=%u flights=%u alert=%s "
-			"magneto=%d pitot=%d tilt=%.0f wifi=%d,%u fp=%s failures=0x%x",
+			"magneto=%d pitot=%d tilt=%.0f pan=%.0f wifi=%d,%u fp=%s failures=0x%x",
 			s->name, s->max_altitude, s->min_altitude, s->max_distance,
 			s->no_fly_over_max_distance,
 			s->circling_direction ? "ccw" : "cw", s->circling_altitude,
@@ -1242,7 +1242,7 @@ int disco_status(const struct disco *d, char *buf, size_t len)
 			s->home_type ? "pilot" : "takeoff", s->return_home_delay,
 			d->recording, d->photos, d->videos, d->flights,
 			alert_name(d->alert), d->magneto_step, d->pitot_calibrating,
-			s->camera_tilt, s->wifi_type, s->wifi_channel,
+			s->camera_tilt, s->camera_pan, s->wifi_type, s->wifi_channel,
 			d->mavlink_state == ARSDK_COMMON_MAVLINKSTATE_MAVLINKFILEPLAYINGSTATECHANGED_STATE_PLAYING ?
 			"playing" : d->mavlink_state ==
 			ARSDK_COMMON_MAVLINKSTATE_MAVLINKFILEPLAYINGSTATECHANGED_STATE_PAUSED ?

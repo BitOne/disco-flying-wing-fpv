@@ -137,7 +137,8 @@ class HudBinder(
         }
         drone.getPeripheral(Gimbal::class.java) { g ->
             val tilt = g?.takeIf { Gimbal.Axis.PITCH in it.supportedAxes }?.getAttitude(Gimbal.Axis.PITCH)
-            update { it.copy(cameraTilt = tilt) }
+            val pan = g?.takeIf { Gimbal.Axis.YAW in it.supportedAxes }?.getAttitude(Gimbal.Axis.YAW)
+            update { it.copy(cameraTilt = tilt, cameraPan = pan) }
         }
         bindRemoteControlBattery()
     }

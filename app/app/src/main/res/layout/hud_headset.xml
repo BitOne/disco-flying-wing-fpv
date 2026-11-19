@@ -28,6 +28,7 @@
             <TextView android:id="@+id/hud_state" style="@style/HudHeadset" />
             <TextView android:id="@+id/hud_altitude" style="@style/HudHeadset" />
             <TextView android:id="@+id/hud_air_speed" style="@style/HudHeadset" />
+            <TextView android:id="@+id/hud_camera" style="@style/HudHeadset" />
         </LinearLayout>
 
         <LinearLayout
@@ -42,7 +43,6 @@
             <TextView android:id="@+id/hud_rc_battery" style="@style/HudHeadset" />
             <TextView android:id="@+id/hud_gps" style="@style/HudHeadset" />
             <TextView android:id="@+id/hud_ground_speed" style="@style/HudHeadset" />
-            <TextView android:id="@+id/hud_camera" style="@style/HudHeadset" />
         </LinearLayout>
     </FrameLayout>
 
@@ -63,6 +63,12 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone" />
+
+    <!-- where the centred view is when the camera looks elsewhere -->
+    <io.github.bitone.discofpv.CenterIndicatorView
+        android:id="@+id/hud_center"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
     <TextView
         android:id="@+id/hud_alerts"

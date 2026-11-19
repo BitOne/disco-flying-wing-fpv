@@ -9,6 +9,7 @@ export type Step =
   | { kind: 'resume_app' }
   | { kind: 'home' }
   | { kind: 'shell'; command: string }
+  | { kind: 'emu'; command: string }
   | { kind: 'rotate'; to: 'portrait' | 'landscape' }
   | { kind: 'tap_text'; text: string }
   | { kind: 'tap'; x: number; y: number }
@@ -16,6 +17,7 @@ export type Step =
   | { kind: 'back' }
   | { kind: 'expect_texts'; texts: string[]; timeoutMs: number; scroll: boolean }
   | { kind: 'expect_gone'; texts: string[]; timeoutMs: number }
+  | { kind: 'expect_http'; url: string; matches: string; timeoutMs: number }
   | { kind: 'screenshot'; name: string }
   | { kind: 'expect_fake'; query: string; contains: string; timeoutMs: number }
   | {
@@ -88,6 +90,10 @@ function parseStep(raw: unknown, index: number): Step {
       // an adb shell command on the emulator, e.g. to reset app state
       if (typeof value !== 'string' || value.trim() === '') throw new Error(`${where}: shell expects a command`);
       return { kind: 'shell', command: value };
+    case 'emu':
+      // an emulator console command (adb emu), e.g. a virtual sensor's value
+      if (typeof value !== 'string' || value.trim() === '') throw new Error(`${where}: emu expects a command`);
+      return { kind: 'emu', command: value };
     case 'rotate':
       if (value !== 'portrait' && value !== 'landscape') throw new Error(`${where}: rotate expects portrait or landscape`);
       return { kind: 'rotate', to: value };
@@ -126,6 +132,15 @@ function parseStep(raw: unknown, index: number): Step {
       const timeout = raw['timeout'] ?? 10_000;
       if (typeof timeout !== 'number') throw new Error(`${where}: timeout must be milliseconds`);
       return { kind: 'expect_gone', texts: stringList(value, where), timeoutMs: timeout };
+    }
+    case 'expect_http': {
+      // a local URL (the runner's tile server) answering a regular expression
+      if (!isRecord(value) || typeof value['url'] !== 'string' || typeof value['matches'] !== 'string') {
+        throw new Error(`${where}: expect_http expects { url, matches }`);
+      }
+      const timeout = raw['timeout'] ?? 10_000;
+      if (typeof timeout !== 'number') throw new Error(`${where}: timeout must be milliseconds`);
+      return { kind: 'expect_http', url: value['url'], matches: value['matches'], timeoutMs: timeout };
     }
     case 'expect_video':
     case 'expect_image':

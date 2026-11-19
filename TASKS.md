@@ -509,6 +509,31 @@ M5 done (2026-11-18): `make check` green with the six app scenarios.
   5.6 s to 63 ms). See `NOTES.md` section 22, including what is still
   missing (flight plan files over FTP, media download, RC receiver).
 
+- [x] **T6.4 FreeFlight, the controller's mapper, failures, map** (user
+  request, 2026-11-19). FreeFlight decompiled and driven through all its
+  screens over the emulated USB link: 34 commands, all handled but two the
+  real Disco ignores too. Fake SkyController 2 mapper (`sc2.c`: mappings,
+  grab, axes, sliders, access point, co-piloting), `fail` for the Disco's
+  failures, `unhandled`. App: warnings, moving map (mode and map button),
+  map tiles (OpenStreetMap, IGN photos, custom XYZ; offline cache and
+  download ahead), last GPS position kept, camera tilt (fake, simulator
+  view, HUD horizon), settings screen, headset HUD in the middle of the
+  video. Scenarios `app-failures`, `app-map`, `app-map-tiles`,
+  `app-camera-tilt`; probes `sc2-mapper`, `disco-failures`. See
+  `NOTES.md` section 23 (including the USB link's latency with
+  FreeFlight).
+
+- [x] **T6.5 Head tracking** (user request, 2026-11-19): in the headset,
+  the phone's orientation points the Disco's digital camera (tilt and
+  pan); centre indicator in the HUD; recentre button (A by default);
+  simulator view follows (FlightGear pitch and heading offsets).
+  `app-head-tracking` (tilt through the emulator's virtual accelerometer;
+  its fusion ignores gyroscope overrides, so pan is unit-tested).
+- [ ] **T6.6 Simulator view** (research done, `NOTES.md` section 24):
+  CesiumJS in Chromium with IGN photos, LiDAR terrain and buildings,
+  moved by the bridge, instead of FlightGear. First check WebGL on the GPU
+  in the container.
+
 Known gap: on the ground before take-off, the simulator's camera can sit
 just below FlightGear's terrain (SITL home altitude 3 m vs the scenery's
 elevation there), so the near ground isn't drawn; fine once airborne.

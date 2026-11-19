@@ -18,13 +18,16 @@ import java.util.EnumSet
  * ([start]/[stop]): grabbed, the controller sends their presses to the app
  * instead of using them for its own action. [CYCLE_BUTTON] cycles the HUD
  * modes; the map button ([AppSettings.mapButton], none by choice) shows the
- * moving map, [onMap] with true on press and false on release.
+ * moving map, [onMap] with true on press and false on release; the
+ * recentre button ([AppSettings.recenterButton]) calls [onRecenter].
  */
 class HudButton(
     private val groundSdk: GroundSdk,
     private val mapButton: AppSettings.MapButton,
     private val onCycle: () -> Unit,
     private val onMap: (pressed: Boolean) -> Unit,
+    private val recenterButton: AppSettings.MapButton = AppSettings.MapButton.NONE,
+    private val onRecenter: () -> Unit = {},
 ) {
 
     private var rcList: Ref<MutableList<RemoteControlListEntry>>? = null
@@ -32,12 +35,15 @@ class HudButton(
     private var gamepad: SkyController2Gamepad? = null
     private var watchedUid: String? = null
     private val map: Pair<SkyController2Gamepad.Button, ButtonEvent>? = buttonOf(mapButton)
+    private val recenter: Pair<SkyController2Gamepad.Button, ButtonEvent>? =
+        buttonOf(recenterButton).takeIf { recenterButton != mapButton }
 
     private val listener = ButtonEvent.Listener { event, state ->
         Log.d(TAG, "button $event $state")
         when {
             event == CYCLE_EVENT && state == ButtonEvent.State.PRESSED -> onCycle()
             event == map?.second -> onMap(state == ButtonEvent.State.PRESSED)
+            event == recenter?.second && state == ButtonEvent.State.PRESSED -> onRecenter()
         }
     }
 
@@ -55,6 +61,7 @@ class HudButton(
                 pad.setButtonEventListener(listener)
                 val buttons = EnumSet.of(CYCLE_BUTTON)
                 map?.let { m -> buttons.add(m.first) }
+                recenter?.let { r -> buttons.add(r.first) }
                 pad.grabInputs(buttons, EnumSet.noneOf(SkyController2Gamepad.Axis::class.java))
             }
         }

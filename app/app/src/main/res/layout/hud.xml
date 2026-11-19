@@ -61,6 +61,12 @@
         android:visibility="gone" />
 
     <!-- warnings (alarms, GPS lost, last fix), in every mode -->
+    <!-- where the centred view is when the camera looks elsewhere -->
+    <io.github.bitone.discofpv.CenterIndicatorView
+        android:id="@+id/hud_center"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     <TextView
         android:id="@+id/hud_alerts"
         style="@style/HudAlert"

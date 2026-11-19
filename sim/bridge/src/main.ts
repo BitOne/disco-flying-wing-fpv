@@ -20,7 +20,7 @@ import { createSocket } from 'node:dgram';
 import { Socket } from 'node:net';
 import { Control } from './control.ts';
 import * as mav from './mavlink.ts';
-import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState, parseSticks, sticksToRc, parseCircling, circlingParams, type Circling } from './model.ts';
+import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState, parseSticks, sticksToRc, parseCircling, circlingParams, parseCameraTilt, parseCameraPan, type Circling } from './model.ts';
 
 const args = process.argv.slice(2);
 const opt = (name: string, def: string): string => {
@@ -33,6 +33,7 @@ const autoTakeoff = args.includes('--auto-takeoff');
 const fgIn = Number(opt('--fg-in', '5503'));
 const fgOut = Number(opt('--fg-out', '5504'));
 const fgRate = Number(opt('--fg-rate', '15'));
+const fgProps = Number(opt('--fg-props', '5401'));
 
 /** Latest FlightGear packet from SITL, forwarded at the camera frame rate. */
 function relayFlightGear(): void {
@@ -146,6 +147,15 @@ const MAV_CMD = { DO_SET_MODE: 176, COMPONENT_ARM_DISARM: 400, NAV_LAND: 21, NAV
 // the mode the bridge last asked for (the heartbeat confirms it later)
 let requestedMode: number = Mode.MANUAL;
 
+/** Sets a FlightGear property through its telnet property server. */
+function setFlightGearProperty(path: string, value: number): void {
+  const s = new Socket();
+  s.on('error', () => {}); // FlightGear not up yet: next change
+  s.connect(fgProps, '127.0.0.1', () => {
+    s.end(`set ${path} ${value}\r\nquit\r\n`);
+  });
+}
+
 function setMode(mode: number): void {
   requestedMode = mode;
   sendMav(mav.MSG.COMMAND_LONG, mav.commandLong(MAV_CMD.DO_SET_MODE, [1, mode]));
@@ -239,6 +249,8 @@ async function main(): Promise<void> {
   let takeoffAlt = TAKEOFF_ALT;
   let circling: Circling | null = null;
   let piloting = false; // the pilot's sticks fly it (FBWB)
+  let cameraTilt = 0;
+  let cameraPan = 0;
   for (;;) {
     await sleep(100);
     tick++;
@@ -315,7 +327,22 @@ async function main(): Promise<void> {
         piloting = false;
         sendMav(mav.MSG.RC_CHANNELS_OVERRIDE, mav.rcOverride([0, 0, 0, 0]));
       }
-      // the Disco's circling settings: altitude and direction
+      // the Disco's circling settings: altitude and direction; its camera
+      // tilt (the controller's slider) tilts FlightGear's view
+      if (tick % 5 === 0) {
+        const status = await ctrl.send('disco');
+        const tilt = parseCameraTilt(status);
+        if (tilt !== null && tilt !== cameraTilt) {
+          cameraTilt = tilt;
+          setFlightGearProperty('/sim/current-view/pitch-offset-deg', tilt);
+        }
+        // pan right; FlightGear's heading offset turns the view left
+        const pan = parseCameraPan(status);
+        if (pan !== null && pan !== cameraPan) {
+          cameraPan = pan;
+          setFlightGearProperty('/sim/current-view/heading-offset-deg', -pan);
+        }
+      }
       if (tick % 20 === 0) {
         const c = parseCircling(await ctrl.send('disco'));
         if (c && (circling === null || c.ccw !== circling.ccw || c.altitude !== circling.altitude)) {

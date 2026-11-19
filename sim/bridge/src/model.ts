@@ -149,3 +149,15 @@ export function circlingParams(c: Circling, radius: number): Record<string, numb
     RTL_RADIUS: r,
   };
 }
+
+/** The Disco's camera tilt in degrees (positive up), from `disco`. */
+export function parseCameraTilt(reply: string): number | null {
+  const m = /\btilt=(-?\d+)/.exec(reply);
+  return m ? Number(m[1]) : null;
+}
+
+/** The Disco's camera pan in degrees (positive right), from `disco`. */
+export function parseCameraPan(reply: string): number | null {
+  const m = /\bpan=(-?\d+)/.exec(reply);
+  return m ? Number(m[1]) : null;
+}

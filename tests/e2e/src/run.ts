@@ -14,6 +14,7 @@ import { changedFraction, lumaStats, stereoMatch } from './imagecheck.ts';
 import { decodePng } from './png.ts';
 import { loadScenario, type Scenario, type Step } from './scenario.ts';
 import { missingTexts, textsOf } from './uidump.ts';
+import { startTileServer } from './tileserver.ts';
 
 interface StepResult {
   index: number;
@@ -40,12 +41,14 @@ function label(step: Step): string {
     case 'home': return 'home (app to background)';
     case 'rotate': return `rotate to ${step.to}`;
     case 'shell': return `shell ${step.command}`;
+    case 'emu': return `emulator console: ${step.command}`;
     case 'tap_text': return `tap "${step.text}"`;
     case 'back': return 'back';
     case 'tap': return `tap at (${step.x}, ${step.y})`;
     case 'tap_id': return `tap #${step.id}${step.times > 1 ? ` x${step.times}` : ''}`;
     case 'expect_texts': return `expect ${step.texts.map((t) => `"${t}"`).join(', ')}${step.scroll ? ' (scroll)' : ''}`;
     case 'expect_gone': return `expect gone ${step.texts.map((t) => `"${t}"`).join(', ')}`;
+    case 'expect_http': return `expect ${step.url} to match /${step.matches}/`;
     case 'screenshot': return `screenshot ${step.name}`;
     case 'expect_fake': return `expect fake "${step.query}" to report "${step.contains}"`;
     case 'expect_image':
@@ -83,6 +86,8 @@ async function runStep(
       return undefined;
     case 'shell':
       return (await emu.shell(step.command)).trim() || undefined;
+    case 'emu':
+      return (await emu.adb(['emu', ...step.command.split(/\s+/)])).toString('utf8').trim() || undefined;
     case 'rotate':
       await emu.rotate(step.to === 'portrait' ? 0 : 1);
       await sleep(1500);
@@ -141,6 +146,20 @@ async function runStep(
         if (still.length === 0) return undefined;
         if (Date.now() > deadline) throw new Error(`still shown: ${still.map((m) => `"${m}"`).join(', ')}`);
         await sleep(1000);
+      }
+    }
+    case 'expect_http': {
+      const deadline = Date.now() + step.timeoutMs;
+      for (;;) {
+        let body = '';
+        try {
+          body = await (await fetch(step.url)).text();
+        } catch (error) {
+          body = `fetch failed: ${(error as Error).message}`;
+        }
+        if (new RegExp(step.matches).test(body)) return undefined;
+        if (Date.now() > deadline) throw new Error(`${step.url} answered "${body}"`);
+        await sleep(500);
       }
     }
     case 'expect_fake': {
@@ -269,6 +288,8 @@ function summary(results: readonly ScenarioResult[], outDir: string): string {
   return lines.join('\n');
 }
 
+const TILE_PORT = 8091;
+
 async function main(): Promise<number> {
   const args = process.argv.slice(2);
   let outDir = resolve('out', `e2e-${new Date().toISOString().replace(/[:.]/g, '-')}`);
@@ -300,6 +321,8 @@ async function main(): Promise<number> {
   }
 
   await mkdir(outDir, { recursive: true });
+  // map tiles for the app's moving map (custom URL http://10.0.2.2:8091/...)
+  const tiles = startTileServer(TILE_PORT);
   const results: ScenarioResult[] = [];
   try {
     for (const file of files) {
@@ -312,6 +335,7 @@ async function main(): Promise<number> {
     }
   } finally {
     fake.close();
+    tiles.server.close();
   }
 
   const text = summary(results, outDir);

@@ -34,6 +34,8 @@ data class HudModel(
     val alerts: List<String> = emptyList(),
     /** Camera tilt, degrees, positive up (the Disco's digital tilt). */
     val cameraTilt: Double? = null,
+    /** Camera pan, degrees, positive right (digital, in the fisheye picture). */
+    val cameraPan: Double? = null,
     /** Last known GPS position, kept when the fix or the link is lost. */
     val lastFix: LastFix? = null,
     /** Recent positions, oldest first, for the moving map. */
@@ -43,9 +45,13 @@ data class HudModel(
     val mapPosition: GeoPoint?
         get() = position ?: lastFix?.point
 
-    /** Pitch of the camera's view, for the horizon: attitude plus tilt. */
+    /** Pitch of the camera's view, for the horizon (HeadMath.viewAttitude). */
     val viewPitch: Double?
-        get() = pitch?.let { it + (cameraTilt ?: 0.0) }
+        get() = pitch?.let { HeadMath.viewAttitude(roll ?: 0.0, it, cameraPan ?: 0.0, cameraTilt ?: 0.0).second }
+
+    /** Roll of the horizon as the camera sees it. */
+    val viewRoll: Double?
+        get() = roll?.let { HeadMath.viewAttitude(it, pitch ?: 0.0, cameraPan ?: 0.0, cameraTilt ?: 0.0).first }
 
     /** Distance to home in metres, when both positions are known. */
     val homeDistance: Double?

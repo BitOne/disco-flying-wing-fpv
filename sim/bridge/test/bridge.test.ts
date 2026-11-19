@@ -8,6 +8,8 @@ import {
   circlingParams,
   flyingState,
   Mode,
+  parseCameraPan,
+  parseCameraTilt,
   parseCircling,
   parseSticks,
   returningHome,
@@ -134,4 +136,10 @@ test('PARAM_SET and RC_CHANNELS_OVERRIDE encode as MAVLink frames', () => {
     assert.equal(msgs[0]!.id, id);
   }
   assert.throws(() => mav.paramSet('A_VERY_LONG_PARAMETER', 1));
+});
+
+test('the camera tilt reaches FlightGear', () => {
+  assert.equal(parseCameraTilt('ok name=X tilt=-35 wifi=1,1'), -35);
+  assert.equal(parseCameraTilt('ok name=X'), null);
+  assert.equal(parseCameraPan('ok tilt=-35 pan=20 wifi=1,1'), 20);
 });

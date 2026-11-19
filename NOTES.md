@@ -1013,7 +1013,7 @@ since the Disco reports its internal storage: GroundSdk's media store tries
 an FTP session through the controller, which times out (no FTP in the
 fake; a warning, not a failure).
 
-### Test rig finding: TCP_NODELAY
+### Test rig finding: TCP_NODELAY (see below for the USB link)
 
 A fresh fake took 5.6 s to answer AllStates when telemetry had just been
 sent: ARSDK sends acknowledged commands one at a time, each waiting for a
@@ -1032,9 +1032,204 @@ like the phone, runs `tests/fake/disco-settings.probe`,
 (about 90 s). `tests/sim/sim-disco.probe` checks the same piloting through
 the simulator (`make fake sim`, then run it with disco-probe by hand).
 
+## 23. FreeFlight against the fakes, controller mapper, failures, map (2026-11-19)
+
+### FreeFlight Pro decompiled (jadx 1.5.1) and exercised
+
+- Its device controllers (`com.parrot.controller.devicecontrollers`) map
+  each user action (`userRequested*`, 98 of them) to an ARSDK command: the
+  static list of everything FreeFlight can send. For the SkyController 2 it
+  includes the Mapper (`MapButtonAction`, `MapAxisAction`, `SetExpo`,
+  `ResetMapping`, `Grab`), `Skyctrl` access point, Wi-Fi, calibration and
+  co-piloting commands; for the Disco, the settings, media, calibrations,
+  Mavlink, `Rc.*` (an RC receiver) and `Piloting.Circle`.
+- The SkyController 2 firmware's daemon (`mppd`, firmware 1.0.9) uses 85
+  ARSDK commands: the Mapper feature, access point settings, co-piloting,
+  its own GPS and battery, Wi-Fi country, drone manager; it also sends
+  `Camera.Velocity` and `Orientation` to the drone itself (its sliders).
+- In flight FreeFlight grabs nothing and relies on the controller's own
+  mapping (Mapper lists); on its control mapping screen it grabs buttons
+  0xF018 and the sticks, then all inputs while waiting for one.
+- Driven over the emulated USB link (all screens: piloting, recording,
+  photo mode, settings Interface, Piloting, Safety, Video, Network, the
+  controller's page, buttons mapping and reset, calibration), FreeFlight
+  sent 34 distinct commands; the fake handles all of them but
+  `Ardrone3.Antiflickering.SetMode` and `PilotingSettings.MaxTilt`, which
+  the real Disco's flight program doesn't decode either (no answer is the
+  right answer). Its mapping screen shows the fake controller's mapping
+  (throttle and loiter on J1, pitch and roll on J2, camera tilt on L1,
+  take-off/land), and its pictures show the exposure on R1: the assumed
+  default mapping matches. Its calibration page reads the fake controller
+  as calibrated. FreeFlight pushes its own stored settings on each
+  connection (return home delay 3 s, picture format...).
+- `unhandled` on the fake's control socket lists the commands nothing
+  handles, for finding gaps with any app.
+
+### Known issue: latency of the emulated USB link
+
+FreeFlight's network layer (ARSDK3 libARNetwork) waits 150 ms for an
+acknowledgement and retries 5 times. Over the emulated USB accessory the
+round trip often exceeds a second (aoa-host's bulk writes to the phone
+average 34 ms and reached 6.5 s, `AOA_TRACE=1` logs them), so FreeFlight
+logs every acknowledged command as cancelled and the fake logs late
+acknowledgements ("ACK: Bad seq"). Every command still arrives once
+(retries are deduplicated), so the logging above holds, but FreeFlight's
+UI can lag (a recording it thinks did not start). GroundSdk tolerates it.
+Not yet understood: the phone side reading slowly (dummy_hcd and the
+accessory gadget) is the lead; video was ruled out (same with it stopped).
+
+### SkyController 2 mapper in the fake (`fake-sc2/src/sc2.c`)
+
+Mapping lists (button, axis, expo, inverted, active product) on
+connection, `Map_button_action`, `Map_axis_action`, `Reset_mapping`,
+`Set_expo`, `Set_inverted`, grabbed inputs (`Grab_button_event`,
+`Grab_axis_event`), mapped actions (return home, take-off/land, record,
+picture, exposure, emergency, centre camera, `APP_n` to the app), access
+point SSID and channel, co-piloting source. Physical inputs on the control
+socket: `button <name>`, `axis <name> <value>`. The Disco's default
+mapping is assumed (sticks in mode 2, left slider = camera tilt, right
+slider ends = exposure, front buttons = picture and record, settings, B, A
+for the app): FreeFlight shows the same.
+
+### The fisheye and the camera tilt
+
+The Disco's 1080p camera has a fisheye lens; the stream is a crop that the
+camera tilt moves (digital, no gimbal). The controller's left slider sends
+`Camera.Velocity`; the fake Disco moves the tilt at up to 20 deg/s
+(`max_camera_velocity_tilt`) within +-80 deg (assumed) and reports
+`OrientationV2`. With the simulator, the bridge sets FlightGear's view
+pitch offset (`--telnet` property server), so the picture follows. The
+app shows the tilt ("CAM -20") and the fighter HUD's horizon uses the
+camera's view pitch (attitude plus tilt). The test pattern (video-src)
+does not move.
+
+### Failures (`fail <name> [on|off]`)
+
+Fake Disco: motor error, magnetometer needing calibration, pitot needing
+calibration, overheat, camera KO, storage full, IMU, barometer,
+ultrasound and vertical camera sensors, weak Wi-Fi signal; plus the GPS fix
+lost, the video stream lost and a motor cut-out (alert, then a gliding
+descent). The app shows warnings from GroundSdk's Alarms instrument
+(motor cut-out, motor error, emergency, battery...), its Magnetometer,
+Pitot, Radio (RSSI below -80 dBm) and GPS, with the last GPS position.
+Not shown by the app yet: overheat, camera KO, storage full (no
+GroundSdk component exposes them for this drone), a frozen video.
+
+### HUD in the headset
+
+FreeFlight's Cockpitglasses view keeps its HUD in the middle of the
+picture (about 40 % of the width and 25 % of the height of each eye): the
+lenses only show the middle, and the bands outside the video are not seen.
+The app's headset HUD now stays in a centred area of the video (60 % by
+default, a setting from 40 to 100 %), and `app-headset` checks the bands
+stay black.
+
+### Moving map
+
+Track-up moving map (HUD mode, or over any mode with the controller's map
+button, B by default, while held or until pressed again): the trail, home,
+north, range ring. The last GPS position is kept (saved every 2 s, a
+setting) and shown with its age when the fix or the link is lost, also in
+the settings screen after a restart. Map backgrounds (XYZ Web Mercator
+tiles, drawn by the app, rotated with the map, cached on disk for offline
+use):
+- OpenStreetMap: tiles as viewed only; its tile usage policy forbids bulk
+  downloads, so no "download ahead";
+- IGN aerial photos of France (Géoplateforme WMTS, Licence Ouverte, about
+  20 cm): download ahead allowed;
+- any XYZ URL, for example a satellite layer with your own key (MapTiler,
+  Mapbox, Esri: their terms apply).
+"Download the map around the last GPS position": 1.5 km, zoom 12 to 19, at
+most 2000 tiles. Tests use the runner's own tile server (checkerboard
+tiles) through 10.0.2.2, allowed in cleartext in debug builds only.
+
+### Head tracking
+
+The Disco's camera is a 1080p fisheye; the stream is a window in it,
+moved digitally (`Camera.OrientationV2`, tilt and pan, GroundSdk's
+Gimbal pitch and yaw). In the headset view, the phone's game rotation
+vector (gyroscope and accelerometer, no compass) points it: the head's
+look direction (the phone's -Z axis) relative to the pose when tracking
+starts or is recentred, within the camera's range (+-80 deg assumed), at
+most 10 orientations a second, on changes of 1 deg (`HeadTracker`,
+`HeadMath`). The HUD's centre indicator (`CenterIndicatorView`) shows
+where the centred view is: a ring at the nose's place in the picture, or
+an arrow and CENTER on the edge of the HUD area when it is out of sight;
+the fighter horizon follows the view (roll and pitch for the look
+direction, `HeadMath.viewAttitude`). The recentre button (A by default, a
+setting) makes the current head pose the centred view and centres the
+camera; outside the headset it just centres the camera. The controller's
+slider still moves the camera too; the head's next move takes over. In the
+simulator, the pan turns FlightGear's view (heading offset).
+
+## 24. A better simulator view than FlightGear (research, 2026-11-19)
+
+Question: FlightGear is heavy and shows little near the ground (flat
+textured terrain, coarse photos, no buildings or trees at 50 m). Web
+research only (nothing installed); Intel GPU and headless feasibility
+from documentation and forums, not tried.
+
+- **Google Photorealistic 3D Tiles** (in any 3D Tiles renderer): not
+  available to projects with an EEA billing address since July 2025 (HTTP
+  403); terms forbid caching beyond the headers and offline use and require
+  the Google attribution on screen; users report blurry, late-loading
+  meshes at drone heights (10 to 500 ft). Not a fix for take-off and
+  landing heights even where available.
+- **French open data** is the realistic source: IGN BD ORTHO 20 cm photos
+  (Etalab 2.0, WMTS), LiDAR HD terrain (50 cm, Etalab 2.0), BD TOPO
+  buildings with heights (no official 3D Tiles stream: to convert).
+  Grenoble-Alpes Métropole publishes a 1 m terrain model (licence not
+  stated).
+- **CesiumJS in Chromium** (Apache 2.0): SITL stays the only physics; a
+  page sets the camera from SITL's pose (MAVLink or the native-fdm
+  packets we already relay) over a WebSocket; IGN photos on LiDAR terrain,
+  extruded buildings as 3D Tiles; captured from Xvfb by the existing
+  GStreamer pipeline. Headless Chromium falls back to software rendering
+  unless told otherwise (`--enable-gpu`, `--use-angle=vulkan`): to check on
+  this Intel iGPU in Docker first. Cesium ion's free plan is
+  non-commercial (15 GB a month); self-hosting the IGN data avoids it.
+  Lowest effort, TypeScript, about 1 GB of memory.
+- **osgEarth** (MIT): OpenSceneGraph like FlightGear, so the same
+  VirtualGL EGL path should work; 3D Tiles through Cesium Native; needs a
+  small C++ viewer.
+- **Unreal Engine 5** with Cesium for Unreal (AirSim / Colosseum or a pose
+  driven camera): the best photorealism (vegetation) but multi-GB, fragile
+  headless in containers, Intel Arc crash reports on Linux, Colosseum's
+  maintenance uneven; AirSim flies no planes.
+- **Gazebo** with ardupilot_gazebo (LGPL): computes its own physics (the
+  Disco would need modelling), no 3D Tiles, heightmaps with photos near the
+  ground: not clearly better. **X-Plane 12** (commercial, Intel Arc on
+  Linux unreliable, no headless), **RealFlight** (Windows) and **Webots**
+  (no fixed wing with ArduPilot): rejected.
+- **FlightGear** with photoscenery (orthophotos as terrain textures) and
+  osm2city buildings: the cheapest step, terrain stays coarse.
+
+Recommendation: CesiumJS in Chromium with IGN data, moved by the bridge;
+fallback osgEarth; FlightGear with IGN photoscenery as an interim step;
+Unreal only if photorealism with vegetation becomes a must. First step:
+check WebGL on the GPU in the container (`chrome://gpu`).
+
+Sources: https://developers.google.com/maps/communications/eea/map-tiles ,
+https://developers.google.com/maps/documentation/tile/policies ,
+https://community.cesium.com/t/cesium-isaac-sim-terrain-goes-black-at-drone-scale-10-500ft-google-photorealistic-3d-tiles-not-loading-close-up/45997 ,
+https://www.data.gouv.fr/fr/datasets/bd-ortho-r/ ,
+https://www.data.gouv.fr/datasets/mnt-lidar-hd ,
+https://www.data.gouv.fr/datasets/bd-topo-r ,
+https://chromium.googlesource.com/chromium/src.git/+/main/docs/gpu/using-gpu-hardware-in-headless-chrome.md ,
+https://cesium.com/platform/cesium-ion/pricing/ ,
+https://cesium.com/blog/2023/10/05/osgearth-adds-support-for-cesium-native/ ,
+https://github.com/ArduPilot/ardupilot_gazebo ,
+https://forums.unrealengine.com/t/unreal-engine-5-5-1-segmentation-fault-on-linux-ubuntu-24-10-kernel-6-11-intel-arc-a770/2227491 ,
+https://ardupilot.org/dev/docs/sitl-with-realflight.html ,
+https://ardupilot.org/dev/docs/sitl-with-webots.html ,
+https://wiki.flightgear.org/Photoscenery , https://wiki.flightgear.org/OSM2City
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
+- jadx (decompiler): https://github.com/skylot/jadx
+- OpenStreetMap tile usage policy: https://operations.osmfoundation.org/policies/tiles/
+- IGN Géoplateforme WMTS (orthophotos): https://geoservices.ign.fr/services-geoplateforme-diffusion
 - FPV_VR_OS: https://github.com/Consti10/FPV_VR_OS
 - ArduPilot Parrot Disco setup guide: https://ardupilot.org/plane/docs/airframe-disco.html
 - Controlling Parrot Disco video (ArduPilot forum): https://discuss.ardupilot.org/t/controlling-parrot-disco-video/39828

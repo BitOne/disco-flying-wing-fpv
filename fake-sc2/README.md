@@ -48,6 +48,15 @@ plan states. Commands the real flight program ignores get no answer.
 `disco` on the control socket prints them; `alert <name|auto>` forces an
 alert.
 
+The controller's own model lives in `src/sc2.c`: its input mapper (the
+mappings FreeFlight's control mapping screen shows and changes, grabbed
+inputs, mapped actions: the left slider tilts the Disco's camera), access
+point and co-piloting settings. `button <name>` and `axis <name> <value>`
+on the control socket are the physical inputs; `sc2` prints the state.
+`fail <name> [on|off]` injects the Disco's failures (motor, magnetometer,
+pitot, sensors, camera, storage, weak link, GPS, video, motor cut-out);
+`unhandled` lists the commands nothing in the fake handles.
+
 Protocol tests: `make fake-test` runs each `tests/fake/*.probe` script
 with `disco-probe` (`src/probe.c`, a scripted ARSDK controller that
 connects over mux like the phone) against a fresh fake, without the

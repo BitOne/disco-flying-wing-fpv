@@ -1,0 +1,46 @@
+name: Disco FPV moving map over map tiles
+description: >
+  Needs `make fake`, `make video` and `make emu`. The settings choose a map
+  background (OpenStreetMap, IGN aerial photos of France, or any XYZ URL,
+  for example a satellite layer with your own key); here the custom URL
+  points at the test runner's local tile server (no real map service in
+  the tests), through the emulator's host address. The moving map then
+  draws the tiles under its trail, and the settings download an area ahead
+  for flying without network.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -rf shared_prefs/hud.xml shared_prefs/settings.xml shared_prefs/last_fix.xml files/tiles
+  - send: [drone_link ok, fail gps off, battery 64, home 45.1885 5.7245 300, gps 45.1890 5.7250 350,
+      satellites 12, circle]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Settings
+  - tap_text: "Map background: none"
+  - expect_texts: ["Map background: OpenStreetMap"]
+  - tap_text: "Map background: OpenStreetMap"
+  - expect_texts: ["Map background: IGN aerial photos (France)"]
+  - tap_text: "Map background: IGN aerial photos (France)"
+  - expect_texts: ["Map background: custom URL"]
+  - tap_text: "Custom map tiles URL: none"
+  - shell: "input text 'http://10.0.2.2:8091/{z}/{x}/{y}.png'"
+  - tap_text: OK
+  - expect_texts: ["Custom map tiles URL: http://10.0.2.2:8091/{z}/{x}/{y}.png"]
+  - back
+  - tap_text: Flight view
+  - expect_texts: [CIRCLING]
+  - send: [button b]
+  - expect_texts: ["HUD MAP"]
+  - expect_http: { url: "http://127.0.0.1:8091/stats", matches: "served [1-9]" }
+  - wait: 2000
+  - screenshot: map-tiles
+  - send: [button b]
+  # an area ahead, for the field without network (the last position, 1.5 km)
+  - back
+  - tap_text: Settings
+  - tap_text: Download the map around the last GPS position
+  - expect_texts: ["of 2000 tiles"]
+    timeout: 30000
+  - shell: run-as io.github.bitone.discofpv rm -rf shared_prefs/settings.xml shared_prefs/last_fix.xml files/tiles

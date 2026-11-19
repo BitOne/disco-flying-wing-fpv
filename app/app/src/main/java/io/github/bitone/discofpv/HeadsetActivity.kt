@@ -16,12 +16,18 @@ import com.parrot.drone.groundsdk.hmd.GsdkHmdView
  * (hud_headset.xml) stays in the middle of the video, the part seen through
  * the lenses (its size is a setting).
  *
+ * Head tracking (a setting, on by default): the phone's orientation points
+ * the Disco's camera in its fisheye picture; the HUD shows where the
+ * centred view is, and the recentre button brings it back in front of the
+ * eyes (HeadTracker).
+ *
  * A tap shows the lens calibration panel (left and right lens offsets,
  * height), applied live and saved for the next sessions.
  */
 class HeadsetActivity : DroneScreenActivity() {
 
     private var hmdView: GsdkHmdView? = null
+    private var tracker: HeadTracker? = null
     private var lens = LensSettings()
 
     override fun onDroneReady(drone: Drone) {
@@ -33,6 +39,7 @@ class HeadsetActivity : DroneScreenActivity() {
         view.setOverlay(hudView)
         withLiveStream { view.setStream(it) }
         setupHud(hudView)
+        if (settings.headTracking) tracker = HeadTracker(this, drone).takeIf { it.available }
         lens = LensSettings.load(this)
         applyLens()
         bindLensPanel(view)
@@ -68,6 +75,21 @@ class HeadsetActivity : DroneScreenActivity() {
         step(R.id.lens_right_plus) { it.stepRight(1) }
         step(R.id.lens_vertical_minus) { it.stepVertical(-1) }
         step(R.id.lens_vertical_plus) { it.stepVertical(1) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        tracker?.start()
+    }
+
+    override fun onPause() {
+        tracker?.stop()
+        super.onPause()
+    }
+
+    /** Head tracking: the current head pose becomes the centred view. */
+    override fun recenterView() {
+        tracker?.recenter() ?: super.recenterView()
     }
 
     override fun onDestroy() {

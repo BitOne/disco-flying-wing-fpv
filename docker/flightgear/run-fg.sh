@@ -54,6 +54,7 @@ $GL_WRAP fgfs --fdm=external --native-fdm=socket,in,${FPS},,${FDM_PORT:-5504},ud
 	--prop:/sim/current-view/field-of-view=${FOV:-80} \
 	--prop:/sim/frame-rate-throttle-hz=${FPS} \
 	--prop:/sim/menubar/visibility=false \
+	--telnet=${PROPS_PORT:-5401} \
 	${FG_ARGS:-} &
 FG=$!
 

@@ -28,6 +28,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -206,6 +207,16 @@ static int find_endpoints(int fd, struct link *l)
 	return l->ep_in && l->ep_out ? 0 : -ENOENT;
 }
 
+/* AOA_TRACE=1: log every transfer with a timestamp (latency debugging) */
+static int trace;
+
+static uint64_t mono_ms(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+}
+
 static int bulk(int fd, unsigned char ep, void *data, unsigned len, unsigned timeout)
 {
 	struct usbdevfs_bulktransfer bt = {
@@ -227,6 +238,8 @@ static void *usb_to_tcp(void *arg)
 			logf_("usb in: %s", strerror(errno));
 			break;
 		}
+		if (n > 0 && trace)
+			logf_("%llu usb->tcp %d", (unsigned long long)mono_ms(), n);
 		if (n > 0 && send(l->sock, buf, (size_t)n, MSG_NOSIGNAL) != n) {
 			logf_("tcp send: %s", strerror(errno));
 			break;
@@ -251,10 +264,14 @@ static void *tcp_to_usb(void *arg)
 			logf_("tcp closed");
 			break;
 		}
+		uint64_t t0 = trace ? mono_ms() : 0;
 		if (bulk(l->usb, l->ep_out, buf, (unsigned)n, 2000) != n) {
 			logf_("usb out: %s", strerror(errno));
 			break;
 		}
+		if (trace)
+			logf_("%llu tcp->usb %zd in %llu ms", (unsigned long long)t0, n,
+					(unsigned long long)(mono_ms() - t0));
 	}
 	l->stop = 1;
 	return NULL;
@@ -281,6 +298,8 @@ int main(int argc, char *argv[])
 	const char *host = "10.0.2.2";
 	int port = 4321;
 	int i;
+
+	trace = getenv("AOA_TRACE") != NULL;
 	for (i = 1; i + 1 < argc; i += 2) {
 		if (strcmp(argv[i], "--host") == 0)
 			host = argv[i + 1];

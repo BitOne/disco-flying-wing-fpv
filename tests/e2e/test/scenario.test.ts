@@ -36,6 +36,7 @@ test('parses every step kind', () => {
   - resume_app
   - rotate: landscape
   - shell: echo hi
+  - emu: sensor set acceleration 0:9.81:0
   - expect_stereo: { region: [0.1, 0.2, 0.45, 0.8], max_diff: 5 }
 `);
   assert.deepEqual(s.steps, [
@@ -60,6 +61,7 @@ test('parses every step kind', () => {
     { kind: 'resume_app' },
     { kind: 'rotate', to: 'landscape' },
     { kind: 'shell', command: 'echo hi' },
+    { kind: 'emu', command: 'sensor set acceleration 0:9.81:0' },
     {
       kind: 'expect_stereo', region: [0.1, 0.2, 0.45, 0.8], minShift: 0.3, maxShift: 0.6,
       maxDiff: 5, minContrast: 20, timeoutMs: 10000,

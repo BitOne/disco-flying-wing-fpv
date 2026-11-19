@@ -37,7 +37,7 @@ class FighterHudView @JvmOverloads constructor(
         // not the heading: it turns all the time while circling
         return "HUD FIGHTER, SPD ${HudTape.value(speed)}, ALT ${HudTape.value(model.altitude)}, " +
             HudFormat.battery("BAT", model.battery) +
-            (HudAlerts.camera(model.cameraTilt)?.let { ", $it" } ?: "")
+            (HudAlerts.camera(model.cameraTilt, model.cameraPan)?.let { ", $it" } ?: "")
     }
 
     override fun drawHud(canvas: Canvas) {
@@ -62,7 +62,7 @@ class FighterHudView @JvmOverloads constructor(
         canvas.save()
         // between the tapes and under the heading tape
         canvas.clipRect(w * 0.2f, h * 0.25f, w * 0.8f, h * 0.8f)
-        canvas.rotate(-(m.roll ?: 0.0).toFloat(), cx, cy)
+        canvas.rotate(-(m.viewRoll ?: 0.0).toFloat(), cx, cy)
         // the camera's view: attitude plus the camera tilt (tilted down, the
         // horizon rises in the picture)
         canvas.translate(0f, ((m.viewPitch ?: 0.0) * pxPerDeg).toFloat())
@@ -199,7 +199,7 @@ class FighterHudView @JvmOverloads constructor(
 
     private fun drawBottomRow(canvas: Canvas, m: HudModel) {
         val y = h * 0.9f
-        HudAlerts.camera(m.cameraTilt)?.let {
+        HudAlerts.camera(m.cameraTilt, m.cameraPan)?.let {
             text.textAlign = Paint.Align.LEFT
             text.color = HUD_COLOR
             canvas.drawText(it, w * 0.12f, y - text.textSize * 1.3f, text)
