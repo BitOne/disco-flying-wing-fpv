@@ -68,6 +68,10 @@ USB side (`NOTES.md` section 20).
 `make sim` (with `make fake`, instead of `make video`) flies a simulated
 Disco: ArduPilot SITL for the flight, FlightGear for the camera (on the
 host GPU), a TypeScript bridge in `sim/bridge` (`NOTES.md` section 21).
+`make sim SIM_ENGINE=gazebo` uses Gazebo instead: its physics and a 3D
+world of houses and trees (`sim/gazebo`), and `make sim-view` shows the
+Disco from the pilot's position on the PC's screen, as when flying line of
+sight (`VIEW=chase` follows it instead; `NOTES.md` section 25).
 
 The fake Disco was also checked against Parrot's own FreeFlight Pro
 (`make freeflight FREEFLIGHT_APK=<your copy>`, see `fake-sc2/README.md`).

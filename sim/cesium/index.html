@@ -1,0 +1,93 @@
+<!doctype html>
+<!-- Disco FPV. Copyright (c) 2026, Benoit Jacquemont. BSD-3-Clause.
+     CesiumJS prototype of the simulated Disco's camera: IGN aerial photos
+     (Géoplateforme WMTS, Licence Ouverte) on the WGS84 ellipsoid, the
+     OpenStreetMap buildings around (ODbL) extruded to their height, a
+     camera flying a 80 m circle at 50 m. No Cesium ion (no token). -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Disco Cesium probe</title>
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.123.0/Build/Cesium/Cesium.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/cesium@1.123.0/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<style>html, body, #view { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }</style>
+</head>
+<body>
+<div id="view"></div>
+<script>
+const params = new URLSearchParams(location.search);
+const LAT = Number(params.get('lat') ?? 45.815);
+const LON = Number(params.get('lon') ?? 4.818);
+const ALT = Number(params.get('alt') ?? 50);
+const RADIUS = 80;
+
+const viewer = new Cesium.Viewer('view', {
+  baseLayer: Cesium.ImageryLayer.fromProviderAsync(Promise.resolve(new Cesium.WebMapTileServiceImageryProvider({
+    url: 'https://data.geopf.fr/wmts',
+    layer: 'ORTHOIMAGERY.ORTHOPHOTOS',
+    style: 'normal',
+    format: 'image/jpeg',
+    tileMatrixSetID: 'PM',
+    maximumLevel: 19,
+    tilingScheme: new Cesium.WebMercatorTilingScheme(),
+    credit: 'IGN Géoplateforme',
+  }))),
+  baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false,
+  navigationHelpButton: false, animation: false, timeline: false, fullscreenButton: false,
+  infoBox: false, selectionIndicator: false, requestRenderMode: false,
+});
+viewer.scene.globe.maximumScreenSpaceError = 1.5;
+viewer.scene.camera.frustum.fov = Cesium.Math.toRadians(80);
+viewer.scene.fog.enabled = true;
+viewer.shadows = false;
+
+// OpenStreetMap buildings within 1 km, extruded (height, levels x 3 m, else 8 m)
+async function buildings() {
+  const d = 0.01;
+  const q = `[out:json][timeout:25];way["building"](${LAT - d},${LON - d * 1.4},${LAT + d},${LON + d * 1.4});out geom;`;
+  let json;
+  for (let i = 0; ; i++) { // Overpass answers 502/429 when busy
+    const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(q) });
+    if (r.ok) { json = await r.json(); break; }
+    if (i >= 4) throw new Error(`Overpass: HTTP ${r.status}`);
+    await new Promise((ok) => setTimeout(ok, 5000));
+  }
+  let n = 0;
+  for (const w of json.elements) {
+    if (!w.geometry || w.geometry.length < 4) continue;
+    const t = w.tags || {};
+    const h = Number(t.height) || (Number(t['building:levels']) * 3 + 2) || 8;
+    viewer.entities.add({
+      polygon: {
+        hierarchy: Cesium.Cartesian3.fromDegreesArray(w.geometry.flatMap((p) => [p.lon, p.lat])),
+        extrudedHeight: h, height: 0,
+        material: Cesium.Color.fromCssColorString(t.building === 'house' ? '#d8cbb8' : '#bfbcb6'),
+        outline: false,
+      },
+    });
+    n++;
+  }
+  return n;
+}
+
+// frame counting while the camera flies the circle (as the Disco loiters)
+window.probe = { frames: 0, renderer: '', buildings: -1, ready: false };
+const gl = viewer.scene.context._gl;
+const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+window.probe.renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+const t0 = performance.now();
+viewer.scene.postRender.addEventListener(() => {
+  window.probe.frames++;
+  const a = ((performance.now() - t0) / 1000) * (15 / RADIUS); // 15 m/s
+  const north = RADIUS * Math.cos(a), east = RADIUS * Math.sin(a);
+  const lat = LAT + north / 111320, lon = LON + east / (111320 * Math.cos(LAT * Math.PI / 180));
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(lon, lat, ALT),
+    orientation: { heading: a + Math.PI / 2, pitch: Cesium.Math.toRadians(-12), roll: Cesium.Math.toRadians(-20) },
+  });
+});
+buildings().then((n) => { window.probe.buildings = n; }).catch((e) => { window.probe.error = String(e); })
+  .finally(() => { window.probe.ready = true; });
+</script>
+</body>
+</html>

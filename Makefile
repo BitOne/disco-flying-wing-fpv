@@ -196,11 +196,20 @@ check-usb: app-usb fake video ## make check through the emulated USB accessory i
 # autopilot modes. Replaces `make video`; needs `make fake`.
 SITL_IMAGE := disco-fpv/sitl:1
 FG_IMAGE   := disco-fpv/flightgear:1
+GZ_IMAGE   := disco-fpv/gazebo:1
+# flightgear: SITL's flying-wing model, FlightGear's scenery for the camera;
+# gazebo: Gazebo's physics (ArduPilot's Zephyr) and 3D world (sim/gazebo)
+SIM_ENGINE ?= flightgear
 # lat,lon,alt,heading: Kapiolani Park, Honolulu (Waikiki, Diamond Head),
 # in the Hawaii scenery bundled with FlightGear
 SIM_HOME   ?= 21.2665,-157.8205,3,60
 SIM_ARGS   ?= --auto-takeoff
-SIM_NAMES  := disco-fpv-sitl disco-fpv-fg disco-fpv-bridge
+SIM_NAMES  := disco-fpv-sitl disco-fpv-fg disco-fpv-gz disco-fpv-gz-view disco-fpv-bridge
+SIM_SITL_ENV = $(if $(filter gazebo,$(SIM_ENGINE)),-e SITL_MODEL=JSON:127.0.0.1 \
+	-e SITL_DEFAULTS=Tools/autotest/default_params/gazebo-zephyr.parm)
+# the PC's screen, for the line-of-sight view (make sim-view)
+SIM_DISPLAY ?= $(or $(DISPLAY),:0)
+SIM_XAUTH   ?= $(or $(XAUTHORITY),$(HOME)/.Xauthority)
 # The host GPU for FlightGear (VirtualGL's EGL back end wants the card
 # device): software rendering is far too slow. SIM_CARD=none to go without.
 SIM_CARD   ?= $(firstword $(wildcard /dev/dri/card*))
@@ -210,9 +219,15 @@ SIM_GPU     = $(if $(filter-out none,$(SIM_CARD)),--device $(SIM_CARD) --device 
 	-e GPU_DEVICE=$(SIM_CARD))
 
 .PHONY: sim-image
-sim-image: ## Build the simulator images (ArduPilot SITL, FlightGear)
+sim-image: ## Build the simulator images (ArduPilot SITL, FlightGear, Gazebo)
 	docker build -t $(SITL_IMAGE) docker/sitl
 	docker build -t $(FG_IMAGE) docker/flightgear
+	docker build -t $(GZ_IMAGE) docker/gazebo
+
+.PHONY: sim-world
+sim-world: sim/bridge/node_modules ## Regenerate the Gazebo world (sim/gazebo/worlds, models/fuel_*)
+	docker run --rm -u $(UID):$(GID) -v "$(ROOT)/sim":/s -w /s/bridge $(NODE_IMAGE) \
+		node src/gazebo-world.ts ../gazebo
 
 sim/bridge/node_modules: sim/bridge/package.json
 	docker run --rm -u $(UID):$(GID) -e npm_config_cache=/tmp/npm -v "$(ROOT)/sim/bridge":/b -w /b \
@@ -225,14 +240,28 @@ sim-unit: sim/bridge/node_modules ## Type-check and unit-test the simulator brid
 		sh -c 'node_modules/.bin/tsc --noEmit -p . && node --test test/*.test.ts'
 
 .PHONY: sim
-sim: ## Fly the simulated Disco: SITL, FlightGear camera, bridge to fake-sc2 (needs make fake)
+sim: ## Fly the simulated Disco: SITL, camera (SIM_ENGINE=flightgear|gazebo), bridge to fake-sc2 (needs make fake)
 	docker rm -f $(VIDEO_NAME) $(SIM_NAMES) >/dev/null 2>&1 || true
-	docker run -d --name disco-fpv-sitl --network host -e HOME_LOC=$(SIM_HOME) \
-		-v "$(ROOT)/sim":/sim:ro $(SITL_IMAGE) >/dev/null
+ifeq ($(SIM_ENGINE),gazebo)
+	docker run -d --name disco-fpv-gz --network host $(SIM_GPU) -e GZ_IP=127.0.0.1 \
+		-v "$(ROOT)/sim":/sim:ro $(GZ_IMAGE) >/dev/null
+else
 	docker run -d --name disco-fpv-fg --network host $(SIM_GPU) -e HOME_LOC=$(SIM_HOME) $(FG_IMAGE) >/dev/null
+endif
+	docker run -d --name disco-fpv-sitl --network host -e HOME_LOC=$(SIM_HOME) $(SIM_SITL_ENV) \
+		-v "$(ROOT)/sim":/sim:ro $(SITL_IMAGE) >/dev/null
 	docker run -d --name disco-fpv-bridge --network host -u $(UID):$(GID) \
 		-v "$(ROOT)/sim/bridge":/b -w /b $(NODE_IMAGE) node src/main.ts $(SIM_ARGS) >/dev/null
 	@echo "simulated Disco started (logs: docker logs disco-fpv-bridge, -sitl, -fg)"
+
+.PHONY: sim-view
+sim-view: ## Line-of-sight view of the Gazebo Disco on the PC's screen (SIM_ENGINE=gazebo)
+	docker rm -f disco-fpv-gz-view >/dev/null 2>&1 || true
+	docker run -d --name disco-fpv-gz-view --network host $(SIM_GPU) -u $(UID):$(GID) \
+		-e GZ_IP=127.0.0.1 -e DISPLAY=$(SIM_DISPLAY) -e XAUTHORITY=/tmp/.Xauthority -e HOME=/tmp \
+		-v /tmp/.X11-unix:/tmp/.X11-unix:ro -v "$(SIM_XAUTH)":/tmp/.Xauthority:ro \
+		-v "$(ROOT)/sim":/sim:ro $(GZ_IMAGE) sim-view >/dev/null
+	@echo "line-of-sight view started (logs: docker logs disco-fpv-gz-view)"
 
 .PHONY: sim-stop
 sim-stop: ## Stop the simulated Disco, logs to out/sim-*.log

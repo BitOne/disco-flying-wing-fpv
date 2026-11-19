@@ -15,6 +15,11 @@
  *
  * usage: node src/main.ts [--sitl 127.0.0.1:5760] [--ctrl-port 4322]
  *        [--fg-in 5503] [--fg-out 5504] [--fg-rate 15] [--auto-takeoff]
+ *        [--gz-helper 5410]
+ *
+ * With Gazebo (docker/gazebo), take-off is a hand launch like the real
+ * Disco's: once armed, the bridge asks Gazebo's helper (UDP --gz-helper)
+ * to throw it; without Gazebo nobody listens and SITL's own model rolls.
  */
 import { createSocket } from 'node:dgram';
 import { Socket } from 'node:net';
@@ -34,6 +39,13 @@ const fgIn = Number(opt('--fg-in', '5503'));
 const fgOut = Number(opt('--fg-out', '5504'));
 const fgRate = Number(opt('--fg-rate', '15'));
 const fgProps = Number(opt('--fg-props', '5401'));
+const gzHelper = Number(opt('--gz-helper', '5410'));
+const gzSock = createSocket('udp4');
+
+/** A command to Gazebo's helper (docker/gazebo/gz-helper.py), if it runs. */
+function gazebo(cmd: string): void {
+  gzSock.send(cmd, gzHelper, '127.0.0.1', () => {});
+}
 
 /** Latest FlightGear packet from SITL, forwarded at the camera frame rate. */
 function relayFlightGear(): void {
@@ -170,6 +182,10 @@ async function takeoff(): Promise<void> {
   setMode(Mode.TAKEOFF);
   await sleep(300);
   arm(true, true);
+  // the pilot throws it once the motor runs
+  await sleep(1500);
+  const heading = ((attitude.yaw * 180) / Math.PI + 360) % 360;
+  gazebo(`throw ${heading.toFixed(1)}`);
 }
 
 function land(): void {

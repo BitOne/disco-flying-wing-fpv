@@ -529,10 +529,18 @@ M5 done (2026-11-18): `make check` green with the six app scenarios.
   simulator view follows (FlightGear pitch and heading offsets).
   `app-head-tracking` (tilt through the emulator's virtual accelerometer;
   its fusion ignores gyroscope overrides, so pan is unit-tested).
-- [ ] **T6.6 Simulator view** (research done, `NOTES.md` section 24):
-  CesiumJS in Chromium with IGN photos, LiDAR terrain and buildings,
-  moved by the bridge, instead of FlightGear. First check WebGL on the GPU
-  in the container.
+- [x] **T6.6 Simulator view** (`NOTES.md` sections 24, 25): FlightGear,
+  Gazebo and CesiumJS tried and compared. `make sim SIM_ENGINE=gazebo`:
+  Gazebo Harmonic's physics (ArduPilot's Zephyr) and a 3D world of houses
+  and trees, the nose camera streamed to fake-sc2, a hand launch; `make
+  sim-view`: line-of-sight (or chase) view on the PC's screen. CesiumJS
+  probe in `sim/cesium` (real place, not wired to the bridge).
+- [ ] **T6.7 Gazebo follow-ups**: the camera tilt and pan (FlightGear's
+  view offsets have no Gazebo equivalent yet: a gimbal joint driven by
+  gz-helper); a world generated from a real place (OSM buildings and IGN
+  photos as the ground, the CesiumJS probe's data, with the Fuel trees and
+  houses); a model closer to the Disco (750 g, 1.15 m) than the Zephyr
+  (1.9 kg); `make e2e` against the Gazebo camera.
 
 Known gap: on the ground before take-off, the simulator's camera can sit
 just below FlightGear's terrain (SITL home altitude 3 m vs the scenery's

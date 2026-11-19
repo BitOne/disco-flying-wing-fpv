@@ -1,0 +1,7 @@
+{
+  "name": "disco-sim-cesium",
+  "private": true,
+  "type": "module",
+  "description": "CesiumJS prototype of the simulated Disco's camera (comparison with FlightGear and Gazebo)",
+  "devDependencies": { "playwright-core": "1.49.1", "@types/node": "22.18.0", "typescript": "5.9.3" }
+}

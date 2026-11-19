@@ -1252,6 +1252,103 @@ https://ardupilot.org/dev/docs/sitl-with-realflight.html ,
 https://ardupilot.org/dev/docs/sitl-with-webots.html ,
 https://wiki.flightgear.org/Photoscenery , https://wiki.flightgear.org/OSM2City
 
+## 25. FlightGear, Gazebo and CesiumJS tried (2026-11-20)
+
+Tried on this PC (Intel Lunar Lake iGPU, `xe` driver, Mesa 25.2), all in
+Docker on the GPU, the simulated Disco circling at 50 m:
+
+| | FlightGear (`make sim`) | Gazebo Harmonic (`SIM_ENGINE=gazebo`) | CesiumJS in Chromium (`sim/cesium`) |
+|---|---|---|---|
+| near the ground | flat terrain with painted textures, no objects | real 3D houses, trees, lamp posts, water tower, with shadows; a made-up place | the real place: IGN 20 cm photos (cars visible), the OSM building footprints and heights as plain boxes; trees only flat in the photos, no relief (no terrain without Cesium ion) |
+| flight physics | SITL's plane-elevon model | Gazebo's (ArduPilot's Zephyr, lift and drag per surface), SITL as the autopilot through its JSON interface | SITL (the view only) |
+| camera rate | 15 frames/s (configured) | 25 of 30 frames/s (real-time factor 0.88) | 60 frames/s (uncapped) |
+| CPU, memory | 43 %, 1.6 GB | 220 % (1 kHz physics in lock step with SITL, rendering), 1.0 GB; the view 0.8 GB more | 80 to 120 %, 0.3 to 0.6 GB |
+| line-of-sight view | no | yes (`make sim-view`) | possible (a second camera) |
+| state | integrated | integrated | probe only |
+
+Screenshots: `docs/screenshots/flightgear-onboard.jpg`,
+`gazebo-onboard.jpg`, `gazebo-line-of-sight.jpg`, `gazebo-chase.jpg`,
+`cesium-onboard.jpg`.
+
+Conclusion: Gazebo for now. Near the ground it is the only one with real
+objects to fly around and judge height by, it gives the line-of-sight view,
+and the flight is physical (a wing with lift, drag and a thrown launch)
+instead of a view moved by SITL. CesiumJS is the way to fly a real place;
+the two can meet: the world generator can place OSM buildings and lay the
+IGN photos as the ground of a Gazebo world (T6.7).
+
+How the Gazebo simulator works (`docker/gazebo`, `sim/gazebo`):
+
+- Image: Ubuntu 24.04, Gazebo Harmonic (8.15) from OSRF's apt repository,
+  ardupilot_gazebo built at a pinned commit (LGPL-3.0: its plugins run
+  inside Gazebo, a separate program), the Fuel models downloaded at build
+  time. gz-transport's CMake files want `cppzmq-dev`.
+- SITL runs ArduPlane with `--model JSON:127.0.0.1` and ArduPilot's
+  `gazebo-zephyr.parm` (plus `sim/disco.parm`); Gazebo's ArduPilotPlugin
+  exchanges servo outputs and sensor data with it on UDP 9002/9003 in lock
+  step. `docker/sitl/run-sitl.sh` takes `SITL_MODEL` and `SITL_DEFAULTS`.
+- `sim/gazebo/models/disco_zephyr`: ardupilot_gazebo's Zephyr with its
+  links inlined (a DetachableJoint cannot name a link inside an included
+  model), a nose camera (1280x720, 80 degrees, 5 degrees down) streamed by
+  ardupilot_gazebo's GstCameraPlugin (RTP H.264 to 127.0.0.1:5600) once
+  enabled. `run-gazebo.sh` re-encodes it like the Disco's stream (intra
+  refresh, RTCP) to fake-sc2's 55004/55005 and keeps a frame a second in
+  `/tmp/camera.jpg`.
+- The Zephyr's frame is x left, y back, z up, as the plugin says. Its
+  worlds spawn it rolled -90 degrees, standing on its tail (pitch 90: the
+  take-off check refuses with "Bad launch AUTO"). Flat on its belly it
+  rests 17 degrees nose down and only skids when the motor runs, so it
+  cannot take off by rolling either.
+- Hand launch, like the real Disco: the world's "hand" model (fixed to the
+  world, 1.5 m up) holds the Zephyr level with a DetachableJoint; after
+  arming in TAKEOFF the bridge sends `throw <heading>` over UDP 5410 to
+  `gz-helper.py` (Python: Gazebo's transport has Python bindings in the
+  image, none for Node), which releases it and pushes it for 0.3 s with
+  the ApplyLinkWrench system to 13 m/s, 12 degrees up. It climbs to 50 m
+  and circles. Without Gazebo nobody listens and SITL's own model rolls.
+- The world is generated (`sim/bridge/src/gazebo-world.ts`, `make
+  sim-world`, fixed seed): a 4 km ground plane (low friction), a road and
+  two rows of houses 250 m north, a wood south-west, a hedgerow of oaks,
+  scattered trees. Fuel's Open Robotics models (CC-BY 4.0) were made for
+  Gazebo Classic and colour their meshes with Ogre material scripts, which
+  Harmonic ignores (black shapes): the generator writes wrappers
+  (`models/fuel_*`) using their meshes with the textures as PBR albedo
+  maps. The water tower's mesh names a texture file Fuel does not resolve
+  (it shows untextured).
+- `make sim-view`: Gazebo's GUI in a container on the host's X display
+  (`DISPLAY`, `XAUTHORITY` mounted; XWayland here), a minimal GUI
+  configuration with the CameraTracking plugin: its camera moves to the
+  pilot's position (`PILOT=0,-15,1.7`) through `/gui/move_to/pose`, then
+  `/gui/track` in TRACK mode turns it to keep the Disco in view.
+  MinimalScene's `horizontal_fov` is in degrees; 40 is about the angle a
+  monitor fills in the eyes, so the Disco shows at its true apparent size
+  (a speck at 300 m, as in real line-of-sight flying). `VIEW=chase`:
+  FOLLOW_LOOK_AT 8 m behind, 2 m up (pgains 0.5 and 1; 0.05 lags tens of
+  metres behind).
+- Gazebo's transport partition defaults to hostname:username: the server
+  and the view (run as the host user for the X display) did not see each
+  other until both set `GZ_PARTITION=disco-fpv`.
+- Rendering is on the GPU: the server opens `/dev/dri/renderD128` and
+  loads Mesa's gallium driver (EGL headless).
+
+CesiumJS probe (`sim/cesium`, `docker/cesium`): Playwright's image with
+Mesa's Vulkan driver added; without it Chromium falls back to SwiftShader
+(3.4 frames/s). `--use-angle=vulkan` then renders on the iGPU ("ANGLE
+(Intel, Vulkan 1.4.318 (Intel(R) Graphics (LNL)))"). IGN's WMTS
+orthophotos as imagery, OSM buildings from Overpass extruded (height, or
+levels x 3 + 2 m, else 8 m; Overpass answers 502 when busy: retried), a
+camera flying an 80 m circle at 50 m. Not wired to the bridge nor
+streamed.
+
+Sources: https://github.com/ArduPilot/ardupilot_gazebo ,
+https://gazebosim.org/docs/harmonic/install_ubuntu ,
+https://github.com/gazebosim/gz-gui/blob/gz-gui8/src/plugins/camera_tracking/CameraTracking.cc ,
+https://github.com/gazebosim/gz-msgs/blob/gz-msgs10/proto/gz/msgs/cameratrack.proto ,
+https://app.gazebosim.org/OpenRobotics/fuel/models ,
+https://ardupilot.org/dev/docs/sitl-with-gazebo.html ,
+https://cesium.com/learn/cesiumjs/ref-doc/WebMapTileServiceImageryProvider.html ,
+https://wiki.openstreetmap.org/wiki/Overpass_API
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
