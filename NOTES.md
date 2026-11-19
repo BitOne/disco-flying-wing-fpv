@@ -1065,18 +1065,46 @@ the simulator (`make fake sim`, then run it with disco-probe by hand).
 - `unhandled` on the fake's control socket lists the commands nothing
   handles, for finding gaps with any app.
 
-### Known issue: latency of the emulated USB link
+### FreeFlight's acknowledgement latency (investigated 2026-11-20)
 
-FreeFlight's network layer (ARSDK3 libARNetwork) waits 150 ms for an
-acknowledgement and retries 5 times. Over the emulated USB accessory the
-round trip often exceeds a second (aoa-host's bulk writes to the phone
-average 34 ms and reached 6.5 s, `AOA_TRACE=1` logs them), so FreeFlight
-logs every acknowledged command as cancelled and the fake logs late
-acknowledgements ("ACK: Bad seq"). Every command still arrives once
-(retries are deduplicated), so the logging above holds, but FreeFlight's
-UI can lag (a recording it thinks did not start). GroundSdk tolerates it.
-Not yet understood: the phone side reading slowly (dummy_hcd and the
-accessory gadget) is the lead; video was ruled out (same with it stopped).
+Symptom: over the emulated USB link FreeFlight logs most acknowledged
+commands as cancelled after its 5 retries, and the fake logs late
+acknowledgements ("ACK: Bad seq"); FreeFlight's UI can lag. Our app
+(GroundSdk) on the same link: no timeout, no late acknowledgement.
+
+Measured (aoa-host `AOA_TRACE=1` now decodes the mux stream and logs each
+ARSDK frame and acknowledgement with its time):
+- FreeFlight command to the fake's acknowledgement back on the USB link:
+  median 9 ms, max 33 ms. The relay and the fake are not the problem;
+  aoa-host's USB writes stay under 20 ms but for a handful.
+- The fake's frame on the USB link to FreeFlight's acknowledgement:
+  median 16 ms, but growing by about 100 ms a second after the first slow
+  moment, up to 4.8 s. FreeFlight's receiver logs each frame within 1 ms
+  of aoa-host writing it: the frames are received at once, the
+  acknowledgements leave late.
+- The cause is in FreeFlight's network library (ARSDK3 libARNetwork,
+  open source, read on GitHub): an acknowledgement wakes the sender
+  thread only when the acknowledgement queue was empty; queued
+  acknowledgements then go out one per sender cycle (130 to 155 ms here,
+  the wait being its own commands' 150 ms acknowledgement timeout); it
+  acknowledges duplicates too; and acknowledgements of its own commands are
+  only noticed at the next cycle, so its commands "time out" although the
+  acknowledgement came back in about 10 ms, and it re-sends them.
+- The fake (arsdk-ng, like the real SkyController 2: its firmware's
+  libarsdk has the same table, 150 ms and 5 retries) retries after 150 ms:
+  once one acknowledgement is late (FreeFlight's slow start in the
+  emulator), each retry adds a duplicate acknowledgement to FreeFlight's
+  queue, which never empties, and the lag only grows. FreeFlight's
+  repeated requests (the Wi-Fi channel list, 21 acknowledged answers each,
+  asked again every few seconds) feed it.
+
+Whether a real phone falls into the same trap is for the bench: it should
+be faster to start, but the library behaves the same. For the test rig,
+`make fake FAKE_ENV="-e ARSDK_D2C_ACK_TIMEOUT_MS=500"` (arsdk-ng patch
+`patches/packages/common/arsdk-ng/0001-peer-ack-timeout-override.patch`)
+removes the retry storm: no timeout on the fake's side, FreeFlight's lag
+stays around a second instead of several. The default stays 150 ms, as
+on the real controller.
 
 ### SkyController 2 mapper in the fake (`fake-sc2/src/sc2.c`)
 

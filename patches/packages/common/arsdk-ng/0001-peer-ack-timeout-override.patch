@@ -1,0 +1,40 @@
+diff --git a/libarsdk/src/arsdk_peer.c b/libarsdk/src/arsdk_peer.c
+index 273134f..bd56f39 100644
+--- a/libarsdk/src/arsdk_peer.c
++++ b/libarsdk/src/arsdk_peer.c
+@@ -24,6 +24,7 @@
+  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
++#include <stdlib.h>
+ #include "arsdk_priv.h"
+ #include "cmd_itf/arsdk_cmd_itf_priv.h"
+ #include "arsdk_default_log.h"
+@@ -419,6 +420,8 @@ int arsdk_peer_create_cmd_itf(struct arsdk_peer *self,
+ 	const struct arsdk_cmd_queue_info *tx_info_table = NULL;
+ 	uint32_t tx_count = 0;
+ 	uint8_t ackoff = 0;
++	struct arsdk_cmd_queue_info tx_info_copy[4];
++	const char *ack_env = getenv("ARSDK_D2C_ACK_TIMEOUT_MS");
+ 
+ 	ARSDK_RETURN_ERR_IF_FAILED(ret_itf != NULL, -EINVAL);
+ 	*ret_itf = NULL;
+@@ -443,6 +446,18 @@ int arsdk_peer_create_cmd_itf(struct arsdk_peer *self,
+ 		ackoff = ARSDK_TRANSPORT_ID_ACKOFF;
+ 	}
+ 
++	/* Optional override of the acknowledged queue's timeout (test rigs
++	 * standing in for a device): ARSDK_D2C_ACK_TIMEOUT_MS */
++	if (ack_env != NULL && atoi(ack_env) > 0 && tx_count <= 4) {
++		uint32_t i;
++		memcpy(tx_info_copy, tx_info_table, tx_count * sizeof(*tx_info_table));
++		for (i = 0; i < tx_count; i++) {
++			if (tx_info_copy[i].type == ARSDK_TRANSPORT_DATA_TYPE_WITHACK)
++				tx_info_copy[i].ack_timeout_ms = atoi(ack_env);
++		}
++		tx_info_table = tx_info_copy;
++	}
++
+ 	/* Create command interface */
+ 	memset(&internal_cbs, 0, sizeof(internal_cbs));
+ 	internal_cbs.userdata = self;

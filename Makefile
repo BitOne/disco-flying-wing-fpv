@@ -270,6 +270,9 @@ FAKE_PRUNE := $(addprefix /work/sdk/packages/, pdraw olympe groundsdk-android \
 	common/libARMavlink common/mavlink common/lz4 \
 	common/logger)
 FAKE_MODULES ?= fake-sc2 disco-probe arsdk-ng-controller
+# extra docker -e options for the fake, e.g. FAKE_ENV="-e ARSDK_D2C_ACK_TIMEOUT_MS=500"
+# (acknowledgement timeout towards the phone; the real SkyController 2 uses 150)
+FAKE_ENV ?=
 FAKE_NAME    := disco-fpv-fake
 FAKE_BIN_DIR := /work/sdk/out/olympe-linux/staging/usr/bin
 FAKE_LIB_DIR := /work/sdk/out/olympe-linux/staging/usr/lib
@@ -291,7 +294,7 @@ fake: fake-build ## Build and start the fake SkyController 2 + Disco (container 
 	docker rm -f $(FAKE_NAME) >/dev/null 2>&1 || true
 	docker run -d --name $(FAKE_NAME) --network host \
 		-v "$(ROOT)":/work -e LD_LIBRARY_PATH=$(FAKE_LIB_DIR) \
-		-e ULOG_LEVEL=D -e ULOG_STDERR=y $(SDK_IMAGE) \
+		-e ULOG_LEVEL=D -e ULOG_STDERR=y $(FAKE_ENV) $(SDK_IMAGE) \
 		$(FAKE_BIN_DIR)/fake-sc2 --mux --mux-port $(FAKE_PORT) \
 		--no-publisher-avahi --no-publisher-net $(FAKE_ARGS) >/dev/null
 	@sleep 1; docker ps --format '{{.Names}}' | grep -qx $(FAKE_NAME) \

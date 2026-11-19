@@ -207,14 +207,66 @@ static int find_endpoints(int fd, struct link *l)
 	return l->ep_in && l->ep_out ? 0 : -ENOENT;
 }
 
-/* AOA_TRACE=1: log every transfer with a timestamp (latency debugging) */
+/* AOA_TRACE=1: log every transfer with a timestamp (latency debugging),
+ * and every ARSDK frame inside the mux stream (channel 1): direction,
+ * frame type (1 ack, 2 data, 3 low latency, 4 data with ack), buffer id,
+ * sequence number (for an ack, the acknowledged one) */
 static int trace;
+
+struct demux {
+	uint8_t  buf[1 << 17];
+	size_t   len;
+};
+
+static void trace_frames(struct demux *d, const char *dir, const uint8_t *data,
+		size_t n, unsigned long long t);
 
 static uint64_t mono_ms(void)
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+}
+
+static uint32_t le32(const uint8_t *p)
+{
+	return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+/* mux frames: "MUX!", channel id (le32), size with the header (le32) */
+static void trace_frames(struct demux *d, const char *dir, const uint8_t *data,
+		size_t n, unsigned long long t)
+{
+	size_t off = 0;
+	if (d->len + n > sizeof(d->buf))
+		d->len = 0; /* lost sync: start over */
+	memcpy(d->buf + d->len, data, n);
+	d->len += n;
+	while (d->len - off >= 12) {
+		const uint8_t *h = d->buf + off;
+		uint32_t chan, size;
+		if (memcmp(h, "MUX!", 4) != 0) {
+			off++;
+			continue;
+		}
+		chan = le32(h + 4);
+		size = le32(h + 8);
+		if (size < 12 || size > sizeof(d->buf))
+			{ off++; continue; }
+		if (d->len - off < size)
+			break;
+		if (chan == 1 && size >= 12 + 7) {
+			const uint8_t *f = h + 12;
+			if (f[0] == 1 && size >= 12 + 8)
+				logf_("%llu %s ack id=%u acked=%u", t, dir, f[1], f[7]);
+			else if (f[0] != 2 && f[0] != 3)
+				logf_("%llu %s type=%u id=%u seq=%u len=%u", t, dir,
+						f[0], f[1], f[2], le32(f + 3));
+		}
+		off += size;
+	}
+	memmove(d->buf, d->buf + off, d->len - off);
+	d->len -= off;
 }
 
 static int bulk(int fd, unsigned char ep, void *data, unsigned len, unsigned timeout)
@@ -238,8 +290,10 @@ static void *usb_to_tcp(void *arg)
 			logf_("usb in: %s", strerror(errno));
 			break;
 		}
-		if (n > 0 && trace)
-			logf_("%llu usb->tcp %d", (unsigned long long)mono_ms(), n);
+		if (n > 0 && trace) {
+			static struct demux up;
+			trace_frames(&up, "phone>", buf, (size_t)n, (unsigned long long)mono_ms());
+		}
 		if (n > 0 && send(l->sock, buf, (size_t)n, MSG_NOSIGNAL) != n) {
 			logf_("tcp send: %s", strerror(errno));
 			break;
@@ -269,9 +323,14 @@ static void *tcp_to_usb(void *arg)
 			logf_("usb out: %s", strerror(errno));
 			break;
 		}
-		if (trace)
-			logf_("%llu tcp->usb %zd in %llu ms", (unsigned long long)t0, n,
-					(unsigned long long)(mono_ms() - t0));
+		if (trace) {
+			static struct demux down;
+			uint64_t t1 = mono_ms();
+			if (t1 - t0 > 20)
+				logf_("%llu tcp->usb %zd took %llu ms", (unsigned long long)t0, n,
+						(unsigned long long)(t1 - t0));
+			trace_frames(&down, "<phone", buf, (size_t)n, (unsigned long long)t1);
+		}
 	}
 	l->stop = 1;
 	return NULL;
