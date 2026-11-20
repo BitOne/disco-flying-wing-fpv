@@ -34,4 +34,22 @@
     <string name="download_offline">The offline map file needs no download</string>
     <string name="setting_head_tracking">Head tracking in the headset: %1$s</string>
     <string name="setting_recenter_button">Recentre view button: %1$s</string>
+    <string name="rc_button">RC transmitter</string>
+    <string name="rc_title">RC transmitter</string>
+    <string name="rc_unsupported">This drone has no RC receiver</string>
+    <string name="rc_turn_on">Turn the radio on</string>
+    <string name="rc_turn_off">Turn the radio off</string>
+    <string name="rc_enable_note">The Disco accepts it only on the ground, once calibrated. Once on, the radio flies the Disco while its take-control switch is on; keep the SkyController in hand.</string>
+    <string name="rc_calibration">Calibration</string>
+    <string name="rc_start_step">Start this step</string>
+    <string name="rc_abort">Abort</string>
+    <string name="rc_reset">Reset the calibration</string>
+    <string name="rc_step">Step %1$d of %2$d. %3$s</string>
+    <string name="rc_step_busy">Now: %1$s</string>
+    <string name="rc_step_neutral_busy">Now: leave every stick and switch at rest</string>
+    <string name="rc_steps_done">Calibrated</string>
+    <string name="rc_channels">Channels</string>
+    <string name="rc_monitor_on">Show the channels</string>
+    <string name="rc_monitor_off">Hide the channels</string>
+    <string name="rc_inverted">Invert %1$s: %2$s</string>
 </resources>

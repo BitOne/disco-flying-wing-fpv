@@ -2,7 +2,8 @@ name: Disco FPV HUD modes cycle with the SkyController button
 description: >
   Needs `make fake`, `make video` and `make emu`. The Disco circles (fake
   flight simulation) 30 m around home, the firmware's circle radius. In the flight view the app grabs the
-  controller's SETTINGS button (and B, the map button); each press of
+  controller's SETTINGS button (and B, the map button, and A, the
+  recentre button), which the controller's default mapping leaves to the app; each press of
   SETTINGS moves to the next HUD mode: classic text, minimal (battery and
   home arrow), fighter (horizon and tapes), map. The drawn modes describe what they show (content description).
   The mode is kept across restarts, also applies to the headset view (same
@@ -12,13 +13,14 @@ app:
   package: io.github.bitone.discofpv
   activity: .MainActivity
 steps:
-  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml # HUD mode back to CLASSIC
+  # HUD mode back to CLASSIC, default settings (map button B, recentre A)
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml shared_prefs/settings.xml
   - send: [drone_link ok, battery 64, home 45.1885 5.7245 300, gps 45.1890 5.7250 350, satellites 12, circle]
   - restart_app
   - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
     timeout: 20000
   - tap_text: Flight view
-  - expect_fake: grabbed=0x9
+  - expect_fake: grabbed=0x19 # settings, B (map) and A (recentre)
   - expect_texts: [CIRCLING, ALT 50.0 m, BAT 64 %]
   - send: [button settings]
   - expect_texts: ["HUD MINIMAL, BAT 64 %, HOME 3"]
@@ -43,7 +45,7 @@ steps:
   - back
   - expect_fake: grabbed=0x0 # buttons given back on the main screen
   - tap_text: Headset view
-  - expect_fake: grabbed=0x9
+  - expect_fake: grabbed=0x19 # settings, B (map) and A (recentre)
   - expect_video: { region: [0.12, 0.3, 0.45, 0.65], min_contrast: 30 }
     timeout: 30000
   - expect_stereo: { region: [0.10, 0.17, 0.47, 0.82], max_diff: 8, min_contrast: 30 }

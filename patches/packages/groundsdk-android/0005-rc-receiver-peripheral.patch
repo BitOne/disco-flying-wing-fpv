@@ -1,0 +1,763 @@
+From: disco-flying-wing-fpv
+Subject: [PATCH] RcReceiver peripheral: the Disco's receiver for a hobby radio
+
+The Disco's flight program handles the ARSDK Rc feature (a hobby radio's
+receiver on the C.H.U.C.K.: S.BUS or SUMD), but GroundSdk had no
+peripheral for it, only the generated ArsdkFeatureRc. Add RcReceiver
+(receiver state and protocol, enable, channel monitoring, neutral and
+min/max calibration per action, inversion, supported actions), its core,
+and the Disco's controller (published for the Disco only).
+---
+diff --git a/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/devicecontroller/BebopFamilyDroneController.java b/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/devicecontroller/BebopFamilyDroneController.java
+index 8705522..3e97f12 100644
+--- a/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/devicecontroller/BebopFamilyDroneController.java
++++ b/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/devicecontroller/BebopFamilyDroneController.java
+@@ -58,6 +58,7 @@ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.BebopRemovableUse
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.BebopStreamServer;
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.DiscoFlightTuning;
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.DiscoPitot;
++import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.DiscoRcReceiver;
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.camera.BebopAntiFlicker;
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.camera.BebopCameraController;
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.flightdata.BebopFlightDataDownloader;
+@@ -132,6 +133,7 @@ public class BebopFamilyDroneController extends DroneController {
+                 // peripherals
+                 new AnafiMagnetometer(this),
+                 new DiscoPitot(this),
++                new DiscoRcReceiver(this), // Disco FPV
+                 new DiscoFlightTuning(this),
+                 new AnafiSystemInfo(this),
+                 new AnafiBeeper(this),
+diff --git a/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/peripheral/bebop/DiscoRcReceiver.java b/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/peripheral/bebop/DiscoRcReceiver.java
+new file mode 100644
+index 0000000..26eba15
+--- /dev/null
++++ b/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/peripheral/bebop/DiscoRcReceiver.java
+@@ -0,0 +1,185 @@
++/*
++ * Disco FPV: the Disco's RC receiver (ARSDK Rc feature) as the RcReceiver
++ * peripheral.
++ */
++
++package com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import com.parrot.drone.groundsdk.arsdkengine.devicecontroller.DroneController;
++import com.parrot.drone.groundsdk.arsdkengine.peripheral.DronePeripheralController;
++import com.parrot.drone.groundsdk.device.Drone;
++import com.parrot.drone.groundsdk.device.peripheral.RcReceiver;
++import com.parrot.drone.groundsdk.internal.device.peripheral.RcReceiverCore;
++import com.parrot.drone.sdkcore.arsdk.ArsdkFeatureRc;
++import com.parrot.drone.sdkcore.arsdk.command.ArsdkCommand;
++
++import java.util.EnumSet;
++import java.util.Set;
++
++/** RcReceiver peripheral controller for the Disco. */
++public final class DiscoRcReceiver extends DronePeripheralController {
++
++    /** First item of a list (ARSDK generic list flags, bit 0). */
++    private static final int LIST_FIRST = 1;
++
++    /** Last item of a list (bit 1). */
++    private static final int LIST_LAST = 2;
++
++    @NonNull
++    private final RcReceiverCore mRc;
++
++    public DiscoRcReceiver(@NonNull DroneController droneController) {
++        super(droneController);
++        mRc = new RcReceiverCore(mComponentStore, mBackend);
++    }
++
++    @Override
++    public void onConnected() {
++        // the Disco has the receiver input; quad Bebops don't
++        if (mDeviceController.getDevice().getModel() == Drone.Model.DISCO) {
++            mRc.publish();
++        }
++    }
++
++    @Override
++    public void onDisconnected() {
++        mRc.updateMonitoring(false);
++        mRc.unpublish();
++    }
++
++    @Override
++    public void onCommandReceived(@NonNull ArsdkCommand command) {
++        if (command.getFeatureId() == ArsdkFeatureRc.UID) {
++            ArsdkFeatureRc.decode(command, mCallback);
++        }
++    }
++
++    @Nullable
++    private static RcReceiver.Action action(@Nullable ArsdkFeatureRc.ChannelAction a) {
++        if (a == null || a == ArsdkFeatureRc.ChannelAction.INVALID) return null;
++        try {
++            return RcReceiver.Action.valueOf(a.name());
++        } catch (IllegalArgumentException e) {
++            return null;
++        }
++    }
++
++    @Nullable
++    private static RcReceiver.ChannelType type(@Nullable ArsdkFeatureRc.ChannelType t) {
++        if (t == null || t == ArsdkFeatureRc.ChannelType.INVALID) return null;
++        try {
++            return RcReceiver.ChannelType.valueOf(t.name());
++        } catch (IllegalArgumentException e) {
++            return null;
++        }
++    }
++
++    @NonNull
++    private static Set<RcReceiver.Action> actions(int bitfield) {
++        Set<RcReceiver.Action> out = EnumSet.noneOf(RcReceiver.Action.class);
++        for (ArsdkFeatureRc.ChannelAction a : ArsdkFeatureRc.ChannelAction.fromBitfield(bitfield)) {
++            RcReceiver.Action x = action(a);
++            if (x != null) out.add(x);
++        }
++        return out;
++    }
++
++    @NonNull
++    private static Set<RcReceiver.ChannelType> types(int bitfield) {
++        Set<RcReceiver.ChannelType> out = EnumSet.noneOf(RcReceiver.ChannelType.class);
++        for (ArsdkFeatureRc.ChannelType t : ArsdkFeatureRc.ChannelType.fromBitfield(bitfield)) {
++            RcReceiver.ChannelType x = type(t);
++            if (x != null) out.add(x);
++        }
++        return out;
++    }
++
++    private final ArsdkFeatureRc.Callback mCallback = new ArsdkFeatureRc.Callback() {
++
++        @Override
++        public void onReceiverState(@Nullable ArsdkFeatureRc.ReceiverState state, String protocol, int enabled) {
++            mRc.updateReceiver(state == ArsdkFeatureRc.ReceiverState.CONNECTED,
++                    protocol == null ? "" : protocol, enabled != 0).notifyUpdated();
++        }
++
++        @Override
++        public void onChannelsMonitorState(int state) {
++            mRc.updateMonitoring(state != 0).notifyUpdated();
++        }
++
++        @Override
++        public void onChannelValue(int id, @Nullable ArsdkFeatureRc.ChannelAction channelAction, int value,
++                                   int listFlagsBitField) {
++            mRc.updateChannel((listFlagsBitField & LIST_FIRST) != 0, (listFlagsBitField & LIST_LAST) != 0, id,
++                    action(channelAction), value).notifyUpdated();
++        }
++
++        @Override
++        public void onCalibrationState(@Nullable ArsdkFeatureRc.CalibrationType calibrationType,
++                                       @Nullable ArsdkFeatureRc.ChannelAction channelAction, int requiredBitField,
++                                       int calibratedBitField, int neutralCalibrated) {
++            RcReceiver.Calibration calibration = calibrationType == null ? RcReceiver.Calibration.NONE
++                    : RcReceiver.Calibration.valueOf(calibrationType.name());
++            mRc.updateCalibration(calibration, action(channelAction), actions(requiredBitField),
++                    actions(calibratedBitField), neutralCalibrated != 0).notifyUpdated();
++        }
++
++        @Override
++        public void onChannelActionItem(@Nullable ArsdkFeatureRc.ChannelAction channelAction,
++                                        int supportedTypeBitField,
++                                        @Nullable ArsdkFeatureRc.ChannelType calibratedType, int inverted) {
++            RcReceiver.Action a = action(channelAction);
++            if (a == null) return;
++            mRc.updateAction(a, new RcReceiverCore.ActionInfoCore(types(supportedTypeBitField),
++                    type(calibratedType), inverted != 0)).notifyUpdated();
++        }
++    };
++
++    @NonNull
++    private static ArsdkFeatureRc.ChannelAction arsdk(@Nullable RcReceiver.Action a) {
++        return a == null ? ArsdkFeatureRc.ChannelAction.INVALID : ArsdkFeatureRc.ChannelAction.valueOf(a.name());
++    }
++
++    @NonNull
++    private static ArsdkFeatureRc.ChannelType arsdk(@Nullable RcReceiver.ChannelType t) {
++        return t == null ? ArsdkFeatureRc.ChannelType.INVALID : ArsdkFeatureRc.ChannelType.valueOf(t.name());
++    }
++
++    private final RcReceiverCore.Backend mBackend = new RcReceiverCore.Backend() {
++
++        @Override
++        public void setEnabled(boolean enable) {
++            sendCommand(ArsdkFeatureRc.encodeEnableReceiver(enable ? 1 : 0));
++        }
++
++        @Override
++        public void setMonitoring(boolean monitor) {
++            sendCommand(ArsdkFeatureRc.encodeMonitorChannels(monitor ? 1 : 0));
++        }
++
++        @Override
++        public void startCalibration(@NonNull RcReceiver.Calibration type, @Nullable RcReceiver.Action action,
++                                     @Nullable RcReceiver.ChannelType channelType) {
++            sendCommand(ArsdkFeatureRc.encodeStartCalibration(ArsdkFeatureRc.CalibrationType.valueOf(type.name()),
++                    arsdk(action), arsdk(channelType)));
++        }
++
++        @Override
++        public void abortCalibration() {
++            sendCommand(ArsdkFeatureRc.encodeAbortCalibration());
++        }
++
++        @Override
++        public void resetCalibration() {
++            sendCommand(ArsdkFeatureRc.encodeResetCalibration());
++        }
++
++        @Override
++        public void setInverted(@NonNull RcReceiver.Action action, boolean inverted) {
++            sendCommand(ArsdkFeatureRc.encodeInvertChannel(arsdk(action), inverted ? 1 : 0));
++        }
++    };
++}
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/device/peripheral/RcReceiver.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/device/peripheral/RcReceiver.java
+new file mode 100644
+index 0000000..e75b03c
+--- /dev/null
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/device/peripheral/RcReceiver.java
+@@ -0,0 +1,189 @@
++/*
++ * Disco FPV: the Disco's receiver for a hobby radio (S.BUS or SUMD on the
++ * C.H.U.C.K.), from the ARSDK Rc feature, which the Disco's flight program
++ * handles but GroundSdk had no peripheral for.
++ */
++
++package com.parrot.drone.groundsdk.device.peripheral;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++
++/**
++ * RC receiver peripheral: a hobby radio transmitter flying the drone through
++ * a receiver plugged on it.
++ * <p>
++ * The receiver must be calibrated (neutral, then the channel of each
++ * {@link #getRequiredActions() required action} by moving it) before it can
++ * be {@link #setEnabled enabled}, which the drone only accepts on the
++ * ground; once enabled, the radio flies the drone while its take-control
++ * switch, if calibrated, is on.
++ * <p>
++ * This peripheral can be obtained from a {@code Drone} (Disco) using:
++ * <pre>{@code drone.getPeripheral(RcReceiver.class)}</pre>
++ */
++public interface RcReceiver extends Peripheral {
++
++    /** What a channel does. */
++    enum Action {
++        /** Roll axis. */
++        ROLL,
++        /** Pitch axis. */
++        PITCH,
++        /** Yaw axis. */
++        YAW,
++        /** Throttle axis. */
++        GAZ,
++        /** Take-off or land. */
++        TAKEOFF_LAND,
++        /** Emergency. */
++        EMERGENCY,
++        /** Return home. */
++        RETURN_HOME,
++        /** Piloting mode. */
++        PILOTING_MODE,
++        /** The radio takes control (over the remote controller). */
++        TAKE_CONTROL
++    }
++
++    /** Kind of a channel. */
++    enum ChannelType {
++        /** Axis centred on zero. */
++        SIGNED_AXIS,
++        /** Axis from zero. */
++        UNSIGNED_AXIS,
++        /** Push button. */
++        MONOSTABLE_BUTTON,
++        /** Two-position switch. */
++        BISTABLE_BUTTON,
++        /** Three-position switch. */
++        TRISTATE_BUTTON,
++        /** Rotary knob. */
++        ROTARY_BUTTON
++    }
++
++    /** Calibration in progress. */
++    enum Calibration {
++        /** None. */
++        NONE,
++        /** Neutral: every stick and switch at rest. */
++        NEUTRAL,
++        /** One action's channel, moved to its ends. */
++        MIN_MAX
++    }
++
++    /** What the drone accepts for an action, and its calibration. */
++    interface ActionInfo {
++
++        /** @return the channel types the action accepts */
++        @NonNull
++        Set<ChannelType> getSupportedTypes();
++
++        /** @return the calibrated channel type, {@code null} if not calibrated */
++        @Nullable
++        ChannelType getCalibratedType();
++
++        /** @return whether the channel is inverted */
++        boolean isInverted();
++    }
++
++    /** A channel's value, while {@link #setMonitoring monitored}. */
++    interface Channel {
++
++        /** @return channel id, from 1 */
++        int getId();
++
++        /** @return what the channel does, {@code null} if nothing calibrated on it */
++        @Nullable
++        Action getAction();
++
++        /** @return channel value */
++        int getValue();
++    }
++
++    /** @return whether a receiver is connected to the drone */
++    boolean isConnected();
++
++    /** @return the receiver's protocol ("SBUS", "SUMD"), empty if none */
++    @NonNull
++    String getProtocol();
++
++    /** @return whether the drone applies the radio */
++    boolean isEnabled();
++
++    /**
++     * Enables or disables the radio. The drone refuses to enable it in
++     * flight, or before the required actions are calibrated: then
++     * {@link #isEnabled()} stays false.
++     *
++     * @param enable true to enable
++     */
++    void setEnabled(boolean enable);
++
++    /** @return whether channel values are being received */
++    boolean isMonitoring();
++
++    /**
++     * Starts or stops receiving channel values ({@link #getChannels()}).
++     *
++     * @param monitor true to receive them
++     */
++    void setMonitoring(boolean monitor);
++
++    /** @return the channels' values, by id, while monitored */
++    @NonNull
++    List<Channel> getChannels();
++
++    /** @return the calibration in progress */
++    @NonNull
++    Calibration getCalibration();
++
++    /** @return the action being calibrated (min/max), {@code null} if none */
++    @Nullable
++    Action getCalibratingAction();
++
++    /** @return the actions to calibrate before enabling */
++    @NonNull
++    Set<Action> getRequiredActions();
++
++    /** @return the actions calibrated */
++    @NonNull
++    Set<Action> getCalibratedActions();
++
++    /** @return whether the neutral position is calibrated */
++    boolean isNeutralCalibrated();
++
++    /** Starts the neutral calibration: every stick and switch at rest. */
++    void startNeutralCalibration();
++
++    /**
++     * Starts calibrating an action: the channel moved to both ends is the
++     * action's.
++     *
++     * @param action action to calibrate
++     * @param type   the channel's type, among the action's supported ones
++     */
++    void startCalibration(@NonNull Action action, @NonNull ChannelType type);
++
++    /** Aborts the calibration in progress. */
++    void abortCalibration();
++
++    /** Resets the calibration to its defaults (nothing calibrated). */
++    void resetCalibration();
++
++    /** @return the actions the drone supports */
++    @NonNull
++    Map<Action, ActionInfo> getActions();
++
++    /**
++     * Inverts an action's channel.
++     *
++     * @param action   action
++     * @param inverted true to invert
++     */
++    void setInverted(@NonNull Action action, boolean inverted);
++}
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/device/peripheral/RcReceiverCore.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/device/peripheral/RcReceiverCore.java
+new file mode 100644
+index 0000000..06ab7c4
+--- /dev/null
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/device/peripheral/RcReceiverCore.java
+@@ -0,0 +1,341 @@
++/*
++ * Disco FPV: core class for the RcReceiver peripheral.
++ */
++
++package com.parrot.drone.groundsdk.internal.device.peripheral;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import com.parrot.drone.groundsdk.device.peripheral.Peripheral;
++import com.parrot.drone.groundsdk.device.peripheral.RcReceiver;
++import com.parrot.drone.groundsdk.internal.component.ComponentDescriptor;
++import com.parrot.drone.groundsdk.internal.component.ComponentStore;
++import com.parrot.drone.groundsdk.internal.component.SingletonComponentCore;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.EnumMap;
++import java.util.EnumSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Objects;
++import java.util.Set;
++import java.util.TreeMap;
++
++/** Core class for the RcReceiver peripheral. */
++public class RcReceiverCore extends SingletonComponentCore implements RcReceiver {
++
++    /** Description of RcReceiver. */
++    private static final ComponentDescriptor<Peripheral, RcReceiver> DESC =
++            ComponentDescriptor.of(RcReceiver.class);
++
++    /** Engine-specific backend. */
++    public interface Backend {
++
++        void setEnabled(boolean enable);
++
++        void setMonitoring(boolean monitor);
++
++        void startCalibration(@NonNull Calibration type, @Nullable Action action, @Nullable ChannelType channelType);
++
++        void abortCalibration();
++
++        void resetCalibration();
++
++        void setInverted(@NonNull Action action, boolean inverted);
++    }
++
++    /** An action's info. */
++    public static final class ActionInfoCore implements ActionInfo {
++
++        @NonNull
++        private final Set<ChannelType> mSupported;
++
++        @Nullable
++        private final ChannelType mCalibrated;
++
++        private final boolean mInverted;
++
++        public ActionInfoCore(@NonNull Set<ChannelType> supported, @Nullable ChannelType calibrated, boolean inverted) {
++            mSupported = Collections.unmodifiableSet(supported.isEmpty()
++                    ? EnumSet.noneOf(ChannelType.class) : EnumSet.copyOf(supported));
++            mCalibrated = calibrated;
++            mInverted = inverted;
++        }
++
++        @NonNull
++        @Override
++        public Set<ChannelType> getSupportedTypes() {
++            return mSupported;
++        }
++
++        @Nullable
++        @Override
++        public ChannelType getCalibratedType() {
++            return mCalibrated;
++        }
++
++        @Override
++        public boolean isInverted() {
++            return mInverted;
++        }
++
++        @Override
++        public boolean equals(Object o) {
++            if (!(o instanceof ActionInfoCore)) return false;
++            ActionInfoCore that = (ActionInfoCore) o;
++            return mInverted == that.mInverted && mSupported.equals(that.mSupported) && mCalibrated == that.mCalibrated;
++        }
++
++        @Override
++        public int hashCode() {
++            return Objects.hash(mSupported, mCalibrated, mInverted);
++        }
++    }
++
++    /** A channel's value. */
++    public static final class ChannelCore implements Channel {
++
++        private final int mId;
++
++        @Nullable
++        private final Action mAction;
++
++        private final int mValue;
++
++        public ChannelCore(int id, @Nullable Action action, int value) {
++            mId = id;
++            mAction = action;
++            mValue = value;
++        }
++
++        @Override
++        public int getId() {
++            return mId;
++        }
++
++        @Nullable
++        @Override
++        public Action getAction() {
++            return mAction;
++        }
++
++        @Override
++        public int getValue() {
++            return mValue;
++        }
++    }
++
++    @NonNull
++    private final Backend mBackend;
++
++    private boolean mConnected;
++
++    @NonNull
++    private String mProtocol = "";
++
++    private boolean mEnabled;
++
++    private boolean mMonitoring;
++
++    /** Channels by id; the list being received replaces them when complete. */
++    @NonNull
++    private final TreeMap<Integer, ChannelCore> mChannels = new TreeMap<>();
++
++    @NonNull
++    private Calibration mCalibration = Calibration.NONE;
++
++    @Nullable
++    private Action mCalibratingAction;
++
++    @NonNull
++    private Set<Action> mRequired = EnumSet.noneOf(Action.class);
++
++    @NonNull
++    private Set<Action> mCalibrated = EnumSet.noneOf(Action.class);
++
++    private boolean mNeutralCalibrated;
++
++    @NonNull
++    private final EnumMap<Action, ActionInfo> mActions = new EnumMap<>(Action.class);
++
++    public RcReceiverCore(@NonNull ComponentStore<Peripheral> peripheralStore, @NonNull Backend backend) {
++        super(DESC, peripheralStore);
++        mBackend = backend;
++    }
++
++    @Override
++    public boolean isConnected() {
++        return mConnected;
++    }
++
++    @NonNull
++    @Override
++    public String getProtocol() {
++        return mProtocol;
++    }
++
++    @Override
++    public boolean isEnabled() {
++        return mEnabled;
++    }
++
++    @Override
++    public void setEnabled(boolean enable) {
++        mBackend.setEnabled(enable);
++    }
++
++    @Override
++    public boolean isMonitoring() {
++        return mMonitoring;
++    }
++
++    @Override
++    public void setMonitoring(boolean monitor) {
++        mBackend.setMonitoring(monitor);
++    }
++
++    @NonNull
++    @Override
++    public List<Channel> getChannels() {
++        return Collections.unmodifiableList(new ArrayList<>(mChannels.values()));
++    }
++
++    @NonNull
++    @Override
++    public Calibration getCalibration() {
++        return mCalibration;
++    }
++
++    @Nullable
++    @Override
++    public Action getCalibratingAction() {
++        return mCalibratingAction;
++    }
++
++    @NonNull
++    @Override
++    public Set<Action> getRequiredActions() {
++        return Collections.unmodifiableSet(mRequired);
++    }
++
++    @NonNull
++    @Override
++    public Set<Action> getCalibratedActions() {
++        return Collections.unmodifiableSet(mCalibrated);
++    }
++
++    @Override
++    public boolean isNeutralCalibrated() {
++        return mNeutralCalibrated;
++    }
++
++    @Override
++    public void startNeutralCalibration() {
++        mBackend.startCalibration(Calibration.NEUTRAL, null, null);
++    }
++
++    @Override
++    public void startCalibration(@NonNull Action action, @NonNull ChannelType type) {
++        mBackend.startCalibration(Calibration.MIN_MAX, action, type);
++    }
++
++    @Override
++    public void abortCalibration() {
++        mBackend.abortCalibration();
++    }
++
++    @Override
++    public void resetCalibration() {
++        mBackend.resetCalibration();
++    }
++
++    @NonNull
++    @Override
++    public Map<Action, ActionInfo> getActions() {
++        return Collections.unmodifiableMap(mActions);
++    }
++
++    @Override
++    public void setInverted(@NonNull Action action, boolean inverted) {
++        mBackend.setInverted(action, inverted);
++    }
++
++    @NonNull
++    public RcReceiverCore updateReceiver(boolean connected, @NonNull String protocol, boolean enabled) {
++        if (mConnected != connected || !mProtocol.equals(protocol) || mEnabled != enabled) {
++            mConnected = connected;
++            mProtocol = protocol;
++            mEnabled = enabled;
++            mChanged = true;
++        }
++        return this;
++    }
++
++    @NonNull
++    public RcReceiverCore updateMonitoring(boolean monitoring) {
++        if (mMonitoring != monitoring) {
++            mMonitoring = monitoring;
++            if (!monitoring) {
++                mChannels.clear();
++            }
++            mChanged = true;
++        }
++        return this;
++    }
++
++    /** Ids of the list being received. */
++    @NonNull
++    private final java.util.Set<Integer> mListIds = new java.util.HashSet<>();
++
++    /**
++     * Updates a channel's value, in place: the same values sent again (the
++     * drone sends the whole list periodically) change nothing. Channels
++     * missing from a list are removed at its last item.
++     *
++     * @param first whether it is the first of a list
++     * @param last  whether it is the last of a list
++     */
++    @NonNull
++    public RcReceiverCore updateChannel(boolean first, boolean last, int id, @Nullable Action action, int value) {
++        if (first) {
++            mListIds.clear();
++        }
++        mListIds.add(id);
++        ChannelCore old = mChannels.get(id);
++        if (old == null || old.mAction != action || old.mValue != value) {
++            mChannels.put(id, new ChannelCore(id, action, value));
++            mChanged = true;
++        }
++        if (last && mChannels.keySet().retainAll(mListIds)) {
++            mChanged = true;
++        }
++        return this;
++    }
++
++    @NonNull
++    public RcReceiverCore updateCalibration(@NonNull Calibration calibration, @Nullable Action action,
++                                            @NonNull Set<Action> required, @NonNull Set<Action> calibrated,
++                                            boolean neutralCalibrated) {
++        if (mCalibration != calibration || mCalibratingAction != action || !mRequired.equals(required)
++            || !mCalibrated.equals(calibrated) || mNeutralCalibrated != neutralCalibrated) {
++            mCalibration = calibration;
++            mCalibratingAction = action;
++            mRequired = required;
++            mCalibrated = calibrated;
++            mNeutralCalibrated = neutralCalibrated;
++            mChanged = true;
++        }
++        return this;
++    }
++
++    @NonNull
++    public RcReceiverCore updateAction(@NonNull Action action, @NonNull ActionInfo info) {
++        if (!info.equals(mActions.get(action))) {
++            mActions.put(action, info);
++            mChanged = true;
++        }
++        return this;
++    }
++}

@@ -4,6 +4,7 @@
 package io.github.bitone.discofpv
 
 import android.graphics.RectF
+import android.view.Choreographer
 import android.view.View
 import android.widget.TextView
 
@@ -24,6 +25,21 @@ class Hud(private val root: View, mode: HudMode) {
     private val banner: TextView = root.findViewById(R.id.hud_mode_banner)
     private val hideBanner = Runnable { banner.visibility = View.GONE }
     private var last = HudModel()
+
+    /** Warnings from outside the drone's state, first of all, by key: the
+     *  video (VideoWatchdog), refused buttons (HudButton). */
+    private val extraAlerts = linkedMapOf<String, String>()
+
+    /** Sets or clears (null) the warning under [key]. */
+    fun setAlert(key: String, alert: String?) {
+        val changed = if (alert == null) extraAlerts.remove(key) != null else extraAlerts.put(key, alert) != alert
+        if (changed) renderAlerts(last)
+    }
+
+    fun setVideoAlert(alert: String?) = setAlert("video", alert)
+
+    /** Draws the warnings again: the last fix's age goes on with no telemetry. */
+    fun refreshAlerts() = renderAlerts(last)
 
     var mode: HudMode = mode
         private set
@@ -76,6 +92,24 @@ class Hud(private val root: View, mode: HudMode) {
         map.visibility = if (m == HudMode.MAP) View.VISIBLE else View.GONE
     }
 
+    private var pending: HudModel? = null
+    private val frame = Choreographer.FrameCallback {
+        pending?.let { m ->
+            pending = null
+            render(m)
+        }
+    }
+
+    /**
+     * The latest model, drawn on the next display frame: telemetry comes as
+     * many small updates (attitude, speeds, position... each its own
+     * message), drawing each one would queue frames and delay them all.
+     */
+    fun submit(m: HudModel) {
+        if (pending == null) Choreographer.getInstance().postFrameCallback(frame)
+        pending = m
+    }
+
     fun render(m: HudModel) {
         last = m
         minimal.model = m
@@ -94,10 +128,12 @@ class Hud(private val root: View, mode: HudMode) {
     }
 
     private fun renderAlerts(m: HudModel) {
-        val lines = m.alerts.toMutableList()
+        // no video alert without a link: LINK LOST says it all
+        val lines = ((if (m.connected) extraAlerts.values.toList() else emptyList()) + m.alerts).toMutableList()
         val fix = m.lastFix
-        // where it was: in every mode but the map, which draws it
-        if (m.position == null && fix != null && m.connected && !(mapShown || mode == HudMode.MAP)) {
+        // where it was, also (above all) with the link lost: a crash, the
+        // battery thrown out; in every mode but the map, which draws it
+        if (m.position == null && fix != null && !(mapShown || mode == HudMode.MAP)) {
             lines += HudAlerts.lastFix(fix, System.currentTimeMillis())
         }
         val value = lines.joinToString("\n")

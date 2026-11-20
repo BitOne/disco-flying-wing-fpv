@@ -19,6 +19,7 @@ import com.parrot.drone.groundsdk.device.instrument.Speedometer
 import com.parrot.drone.groundsdk.device.peripheral.Gimbal
 import com.parrot.drone.groundsdk.device.peripheral.Magnetometer
 import com.parrot.drone.groundsdk.device.peripheral.Pitot
+import com.parrot.drone.groundsdk.device.peripheral.RcReceiver
 import com.parrot.drone.groundsdk.device.pilotingitf.ReturnHomePilotingItf
 
 /**
@@ -111,6 +112,9 @@ class HudBinder(
         drone.getPilotingItf(ReturnHomePilotingItf::class.java) { r ->
             val home = r?.homeLocation
             update { it.copy(home = home?.let { h -> GeoPoint(h.latitude, h.longitude) }) }
+        }
+        drone.getPeripheral(RcReceiver::class.java) { r ->
+            updateAlerts { it.copy(radioEnabled = r?.isEnabled == true, radioConnected = r?.isConnected == true) }
         }
         drone.getInstrument(Alarms::class.java) { a ->
             val warning = mutableSetOf<String>()

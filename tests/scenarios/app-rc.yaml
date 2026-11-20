@@ -1,0 +1,66 @@
+name: Disco FPV sets up a hobby radio on the Disco's receiver
+description: >
+  Needs `make fake`, `make video` and `make emu`. An S.BUS receiver on the
+  fake Disco (`rc connect sbus`); from the main screen, RC transmitter:
+  the receiver's state, then the calibration steps (neutral; roll, pitch,
+  throttle and the take-control switch, each by moving it: `rc ch`), the
+  radio turned on (the Disco on the ground), the channels shown as bars,
+  the radio flying the Disco only with its take-control switch on, and
+  the HUD saying RADIO ON, then RADIO LOST when its receiver goes.
+  SDK patch 0005 (RcReceiver), NOTES.md section 31.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  # a fresh receiver: sticks centred, throttle at rest (down), switches off
+  - send: [drone_link ok, flying_state landed, rc reset, rc connect sbus, rc ch 1 0, rc ch 2 0, rc ch 3 -100, rc ch 5 -100]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: RC transmitter
+  - expect_texts: ["Receiver SBUS connected, radio off", "Step 1 of 7"]
+  - tap_text: Start this step
+  - expect_texts: ["Step 2 of 7. Roll"]
+  - tap_text: Start this step
+  - send: [rc ch 1 -90, rc ch 1 95, rc ch 1 0]
+  - expect_texts: ["Step 3 of 7. Pitch"]
+  - tap_text: Start this step
+  - send: [rc ch 2 90, rc ch 2 -90, rc ch 2 0]
+  - expect_texts: ["Step 4 of 7. Throttle"]
+  - tap_text: Start this step
+  - send: [rc ch 3 100, rc ch 3 -100]
+  - expect_texts: ["Step 5 of 7. Take control"]
+  - tap_text: Start this step
+  - send: [rc ch 5 100, rc ch 5 -100]
+  - expect_texts: ["Step 6 of 7. Return home (optional)", "Invert roll: off"]
+  - screenshot: rc-calibrated
+  - tap_text: Turn the radio on
+  - expect_texts: ["the radio can fly the Disco"]
+  - expect_fake: rc=SBUS,enabled
+    query: disco
+  - tap_text: Show the channels
+  - expect_texts: [" 1 roll", " 3 gaz", " 5 take control"]
+    scroll: true
+  # the radio flies only with its take-control switch on
+  - expect_fake: piloting=0
+    query: disco
+  - send: [rc ch 5 100]
+  - expect_fake: piloting=1
+    query: disco
+  - screenshot: rc-flying
+  - send: [rc ch 5 -100]
+  # the HUD: the radio on, and its receiver lost
+  - back
+  - tap_text: Flight view
+  - expect_texts: ["RADIO ON"]
+  - send: [rc disconnect]
+  - expect_texts: ["RADIO LOST"]
+  - screenshot: radio-lost
+  - send: [rc connect sbus]
+  - expect_gone: ["RADIO LOST"]
+  - back
+  - tap_text: RC transmitter
+  - tap_text: Turn the radio off
+  - expect_texts: ["Receiver SBUS connected, radio off"]
+  - send: [rc disconnect]
+  - expect_texts: ["No receiver on the Disco"]

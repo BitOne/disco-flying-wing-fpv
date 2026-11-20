@@ -28,6 +28,8 @@ class FlightActivity : DroneScreenActivity() {
         view.setOnClickListener { cycleHud() }
     }
 
+    override fun videoFrameCount(): Int = streamView?.frameCount ?: -1
+
     override fun onDestroy() {
         streamView?.setStream(null)
         super.onDestroy()

@@ -8,9 +8,12 @@ import android.util.Log
 import com.parrot.drone.groundsdk.GroundSdk
 import com.parrot.drone.groundsdk.Ref
 import com.parrot.drone.groundsdk.device.DeviceState
+import com.parrot.drone.groundsdk.device.Drone
 import com.parrot.drone.groundsdk.device.RemoteControlListEntry
 import com.parrot.drone.groundsdk.device.peripheral.SkyController2Gamepad
 import com.parrot.drone.groundsdk.device.peripheral.gamepad.skycontroller2.ButtonEvent
+import com.parrot.drone.groundsdk.device.peripheral.gamepad.skycontroller2.ButtonsMappingEntry
+import com.parrot.drone.groundsdk.device.peripheral.gamepad.skycontroller2.MappingEntry
 import java.util.EnumSet
 
 /**
@@ -20,6 +23,11 @@ import java.util.EnumSet
  * modes; the map button ([AppSettings.mapButton], none by choice) shows the
  * moving map, [onMap] with true on press and false on release; the
  * recentre button ([AppSettings.recenterButton]) calls [onRecenter].
+ *
+ * A button the controller's mapping uses for a Disco action (return home,
+ * take-off or land... after a remapping) is never taken (ButtonSafety):
+ * [onRefused] gets the HUD warnings (empty when none). Nothing is taken
+ * until the mapping is known; it is checked again on each update.
  */
 class HudButton(
     private val groundSdk: GroundSdk,
@@ -28,6 +36,7 @@ class HudButton(
     private val onMap: (pressed: Boolean) -> Unit,
     private val recenterButton: AppSettings.MapButton = AppSettings.MapButton.NONE,
     private val onRecenter: () -> Unit = {},
+    private val onRefused: (List<String>) -> Unit = {},
 ) {
 
     private var rcList: Ref<MutableList<RemoteControlListEntry>>? = null
@@ -56,14 +65,46 @@ class HudButton(
             val rc = uid?.let { u -> groundSdk.getRemoteControl(u) } ?: return@getRemoteControlList
             gamepadRef = rc.getPeripheral(SkyController2Gamepad::class.java) { pad ->
                 Log.d(TAG, "gamepad update: grabbed ${pad?.grabbedButtons}, same ${pad === gamepad}")
-                if (pad == null || pad === gamepad) return@getPeripheral
-                gamepad = pad
-                pad.setButtonEventListener(listener)
-                val buttons = EnumSet.of(CYCLE_BUTTON)
-                map?.let { m -> buttons.add(m.first) }
-                recenter?.let { r -> buttons.add(r.first) }
-                pad.grabInputs(buttons, EnumSet.noneOf(SkyController2Gamepad.Axis::class.java))
+                if (pad == null) return@getPeripheral
+                if (pad !== gamepad) {
+                    gamepad = pad
+                    pad.setButtonEventListener(listener)
+                }
+                grabSafely(pad)
             }
+        }
+    }
+
+    /** Takes the wanted buttons the mapping leaves to the app (see the class comment). */
+    private fun grabSafely(pad: SkyController2Gamepad) {
+        val mapping = pad.getMapping(Drone.Model.DISCO)
+        if (mapping == null) {
+            Log.i(TAG, "controller mapping not known yet: no button taken")
+            return
+        }
+        val entries = mapping.filter { it.type == MappingEntry.Type.BUTTONS_MAPPING }.map {
+            val e = it.`as`(ButtonsMappingEntry::class.java)
+            ButtonSafety.Entry(e.action.name, e.buttonEvents.map { ev -> ev.name }.toSet())
+        }
+        val wanted = listOfNotNull(
+            Triple(CYCLE_BUTTON, CYCLE_EVENT, "SETTINGS"),
+            map?.let { Triple(it.first, it.second, mapButton.label) },
+            recenter?.let { Triple(it.first, it.second, recenterButton.label) },
+        )
+        val buttons = EnumSet.noneOf(SkyController2Gamepad.Button::class.java)
+        val refused = mutableListOf<String>()
+        for ((button, event, label) in wanted) {
+            val actions = ButtonSafety.droneActionsOn(entries, event.name)
+            if (actions.isEmpty()) {
+                buttons.add(button)
+            } else {
+                Log.w(TAG, "not taking $label: mapped to $actions on the controller")
+                refused += ButtonSafety.warning(label.uppercase(), actions)
+            }
+        }
+        onRefused(refused)
+        if (buttons != pad.grabbedButtons) {
+            pad.grabInputs(buttons, EnumSet.noneOf(SkyController2Gamepad.Axis::class.java))
         }
     }
 

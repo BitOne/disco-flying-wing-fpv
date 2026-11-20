@@ -46,6 +46,10 @@ class HeadTracker(context: Context, private val drone: Drone) : SensorEventListe
 
     fun stop() {
         sensors.unregisterListener(this)
+        // the camera back along the nose: no head turns it any more (headset
+        // view left or paused), an off-centre view would mislead (T8.5)
+        send(Pair(0.0, 0.0), force = true)
+        reference = null
         gimbalRef?.close()
         gimbalRef = null
         gimbal = null

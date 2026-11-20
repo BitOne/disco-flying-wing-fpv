@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- usb test builds, like debug ones (src/debug, which also holds the
+     debug bridge setting): plain HTTP to the emulator's host (10.0.2.2)
+     only, for the end-to-end tests' local map tile server. Release builds
+     keep Android's default (HTTPS only). -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

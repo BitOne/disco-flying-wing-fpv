@@ -409,6 +409,8 @@ void disco_send_states(struct disco *d)
 	send_camera(d);
 	send_flight_plan(d);
 	send_mavlink_state(d);
+	rc_set_itf(&d->rc, d->itf);
+	rc_send_states(&d->rc);
 }
 
 /* ------------------------------------------------------------------ */
@@ -661,6 +663,9 @@ int disco_recv_cmd(struct disco *d, const struct arsdk_cmd *cmd)
 
 	if (d->itf == NULL)
 		return 0;
+	rc_set_itf(&d->rc, d->itf);
+	if (rc_recv_cmd(&d->rc, cmd))
+		return 1;
 
 	switch (cmd->id) {
 	/* identity */
@@ -980,6 +985,7 @@ void disco_flying_state(struct disco *d, int32_t state)
 		|| state == ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_FLYING
 		|| state == ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDING;
 
+	rc_landed(&d->rc, state == ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDED);
 	if (airborne && d->takeoff_ms == 0) {
 		d->takeoff_ms = now_ms();
 		/* video_autorecord: records from take-off to landing */
@@ -1230,7 +1236,7 @@ static const char *alert_name(int32_t value)
 int disco_status(const struct disco *d, char *buf, size_t len)
 {
 	const struct disco_settings *s = &d->s;
-	return snprintf(buf, len,
+	int n = snprintf(buf, len,
 			"name=%s max_alt=%.0f min_alt=%.0f max_dist=%.0f no_fly_over=%u "
 			"circling=%s,%u pitch_mode=%s home_type=%s rth_delay=%u "
 			"recording=%d photos=%u videos=%u flights=%u alert=%s "
@@ -1247,6 +1253,11 @@ int disco_status(const struct disco *d, char *buf, size_t len)
 			"playing" : d->mavlink_state ==
 			ARSDK_COMMON_MAVLINKSTATE_MAVLINKFILEPLAYINGSTATECHANGED_STATE_PAUSED ?
 			"paused" : "stopped", d->failures);
+	if (n >= 0 && (size_t)n + 1 < len) {
+		buf[n++] = ' ';
+		n += rc_status(&d->rc, buf + n, len - (size_t)n);
+	}
+	return n;
 }
 
 void disco_init(struct disco *d, struct pomp_loop *loop, const char *name)
@@ -1258,6 +1269,7 @@ void disco_init(struct disco *d, struct pomp_loop *loop, const char *name)
 	d->alert = ARSDK_ARDRONE3_PILOTINGSTATE_ALERTSTATECHANGED_STATE_NONE;
 	d->mavlink_state = ARSDK_COMMON_MAVLINKSTATE_MAVLINKFILEPLAYINGSTATECHANGED_STATE_STOPPED;
 	snprintf(d->run_id, sizeof(d->run_id), "%08lX", (unsigned long)time(NULL));
+	rc_init(&d->rc, loop);
 	d->picture_timer = pomp_timer_new(loop, &picture_done, d);
 	d->calib_timer = pomp_timer_new(loop, &calib_tick, d);
 	d->cam_timer = pomp_timer_new(loop, &camera_tick, d);
@@ -1272,4 +1284,5 @@ void disco_clear(struct disco *d)
 	if (d->cam_timer != NULL)
 		pomp_timer_destroy(d->cam_timer);
 	d->picture_timer = d->calib_timer = d->cam_timer = NULL;
+	rc_clear(&d->rc);
 }

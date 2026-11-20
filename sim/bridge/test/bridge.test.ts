@@ -145,3 +145,37 @@ test('the camera tilt and pan reach FlightGear and Gazebo', () => {
   assert.equal(parseCameraPan('ok tilt=-35 pan=20 wifi=1,1'), 20);
   assert.equal(cameraCommand(-35, 20), 'cam -35 20');
 });
+
+test('crash: a sudden stop near the ground, not a belly landing', async () => {
+  const { detectCrash, crashCommands } = await import('../src/model.ts');
+  // flying at 14 m/s, stopped within 0.2 s at ground level
+  const crash = [
+    { t: 0.0, alt: 4, speed: 14, sink: 1 },
+    { t: 0.1, alt: 2, speed: 14, sink: 1 },
+    { t: 0.2, alt: 0.3, speed: 1, sink: 0 },
+  ];
+  assert.deepEqual(detectCrash(crash), { speed: 14, impact: true });
+  assert.deepEqual(crashCommands({ speed: 14, impact: true }), ['fail cut_out on', 'drone_link lost']);
+  assert.deepEqual(crashCommands({ speed: 8, impact: true }), ['fail cut_out on']);
+  assert.deepEqual(crashCommands({ speed: 14, impact: false }), ['fail cut_out on']);
+  // a landing: 10 m/s sliding to a stop over 4 s
+  const landing = Array.from({ length: 41 }, (_, i) => ({ t: i * 0.1, alt: 0.2, speed: Math.max(0, 10 - i * 0.25), sink: 0.1 }));
+  // the bridge keeps the last 2 s
+  const window2s = (all: typeof landing, k: number) => all.slice(0, k).filter((s) => all[k - 1]!.t - s.t <= 2);
+  for (let k = 1; k <= landing.length; k++) assert.equal(detectCrash(window2s(landing, k)), null);
+  // ...but stopped there, still flying (no landing commanded), for 1.5 s: crashed, softly
+  const stoppedThere = [...landing, ...Array.from({ length: 16 }, (_, i) => ({ t: 4.1 + i * 0.1, alt: 0.2, speed: 0, sink: 0 }))];
+  const soft = detectCrash(window2s(stoppedThere, stoppedThere.length));
+  assert.equal(soft?.impact, false);
+  // a stop high up (a stall in the air) is not an impact
+  assert.equal(detectCrash([{ t: 0, alt: 40, speed: 14, sink: 0 }, { t: 0.2, alt: 39, speed: 1, sink: 0 }]), null);
+  // flown into the ground at 13 m/s sinking 5 m/s: its descent stops, it slides on
+  const shallow = [
+    { t: 0.0, alt: 1.5, speed: 13.9, sink: 5 },
+    { t: 0.1, alt: 0.6, speed: 13.9, sink: 5 },
+    { t: 0.2, alt: 0.1, speed: 12.5, sink: 0.2 },
+  ];
+  assert.deepEqual(detectCrash(shallow), { speed: 13.9, impact: true });
+  // a gentle glide onto the ground (sinking 1 m/s) is a belly landing
+  assert.equal(detectCrash([{ t: 0, alt: 0.5, speed: 11, sink: 1 }, { t: 0.1, alt: 0.1, speed: 10.5, sink: 0 }]), null);
+});

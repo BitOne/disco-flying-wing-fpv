@@ -35,6 +35,10 @@
             android:name=".SettingsActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".RcActivity"
+            android:exported="false" />
+
         <!-- singleTop, not singleTask: the launcher icon must bring back the
              flight or headset view the pilot was on, not clear it. -->
         <activity

@@ -1,0 +1,66 @@
+From: disco-flying-wing-fpv
+Subject: [PATCH] sdkcore: USB accessory permission request on Android 12 and 14+
+
+When the SkyController is plugged in and the app has no USB permission
+yet (launched from the launcher, Android's chooser dismissed, another app
+picked once), the mux backend asks for it with a runtime receiver and a
+PendingIntent. With a target SDK of 34+ on Android 14+, registering the
+receiver without RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED throws a
+SecurityException (seen in the emulator: the app crashes on connection);
+with a target of 31+, a PendingIntent without FLAG_MUTABLE or
+FLAG_IMMUTABLE throws an IllegalArgumentException. The PendingIntent must
+be mutable (UsbManager adds the result to it), hence explicit (our
+package), which Android 14+ requires of mutable PendingIntents; the
+receiver is not exported, only our PendingIntent sends to it.
+---
+diff --git a/sdkcore/src/main/java/com/parrot/drone/sdkcore/arsdk/backend/mux/ArsdkUsbMuxBackendController.java b/sdkcore/src/main/java/com/parrot/drone/sdkcore/arsdk/backend/mux/ArsdkUsbMuxBackendController.java
+index bb96e21..9e180d7 100644
+--- a/sdkcore/src/main/java/com/parrot/drone/sdkcore/arsdk/backend/mux/ArsdkUsbMuxBackendController.java
++++ b/sdkcore/src/main/java/com/parrot/drone/sdkcore/arsdk/backend/mux/ArsdkUsbMuxBackendController.java
+@@ -40,6 +40,7 @@ import android.content.IntentFilter;
+ import android.content.pm.PackageManager;
+ import android.hardware.usb.UsbAccessory;
+ import android.hardware.usb.UsbManager;
++import android.os.Build;
+ import android.os.ParcelFileDescriptor;
+ 
+ import androidx.annotation.NonNull;
+@@ -194,6 +195,12 @@ public final class ArsdkUsbMuxBackendController extends ArsdkBackendController {
+     private static final String ACTION_USB_ACCESSORY_PERMISSION =
+             "com.parrot.drone.sdkcore.arsdk.backend.mux.ACTION_USB_ACCESSORY_PERMISSION";
+ 
++    /** Context.RECEIVER_NOT_EXPORTED (API 33), not in the SDK's compile SDK. */
++    private static final int RECEIVER_NOT_EXPORTED = 0x4;
++
++    /** PendingIntent.FLAG_MUTABLE (API 31), not in the SDK's compile SDK. */
++    private static final int FLAG_MUTABLE = 0x02000000;
++
+     /**
+      * Requests user permission to use an USB RC accessory.
+      *
+@@ -215,9 +222,22 @@ public final class ArsdkUsbMuxBackendController extends ArsdkBackendController {
+                     mPermissionReceiver = null;
+                 }
+             };
+-            mContext.registerReceiver(mPermissionReceiver, new IntentFilter(ACTION_USB_ACCESSORY_PERMISSION));
+-            mUsbManager.requestPermission(rc,
+-                    PendingIntent.getBroadcast(mContext, 0, new Intent(ACTION_USB_ACCESSORY_PERMISSION), 0));
++            // Disco FPV: Android 14+ (target 34+) requires an exported flag on
++            // runtime receivers of non-system broadcasts (SecurityException
++            // otherwise), and Android 12+ (target 31+) a mutability flag on
++            // PendingIntents (IllegalArgumentException otherwise): mutable, as
++            // UsbManager adds the permission result to it, so it is made
++            // explicit (our package), which Android 14+ requires of mutable
++            // PendingIntents; not exported, as only our PendingIntent sends it.
++            IntentFilter filter = new IntentFilter(ACTION_USB_ACCESSORY_PERMISSION);
++            if (Build.VERSION.SDK_INT >= 33) {
++                mContext.registerReceiver(mPermissionReceiver, filter, RECEIVER_NOT_EXPORTED);
++            } else {
++                mContext.registerReceiver(mPermissionReceiver, filter);
++            }
++            Intent intent = new Intent(ACTION_USB_ACCESSORY_PERMISSION).setPackage(mContext.getPackageName());
++            int flags = Build.VERSION.SDK_INT >= 31 ? FLAG_MUTABLE : 0;
++            mUsbManager.requestPermission(rc, PendingIntent.getBroadcast(mContext, 0, intent, flags));
+         }
+     }
+ 

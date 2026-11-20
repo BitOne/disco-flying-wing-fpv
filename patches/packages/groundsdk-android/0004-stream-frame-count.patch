@@ -1,0 +1,246 @@
+From: disco-flying-wing-fpv
+Subject: [PATCH] stream: count the distinct frames rendered, for frozen video
+
+A frozen picture looks like live video: when the decoder stops delivering
+(a camera stream restart, whose timestamps go back, stalls pdraw's
+decoder for good; a decoder stall), the views keep showing the last
+frame, and pdraw's renderer still signals "render ready" on its timer,
+so frame-ready callbacks keep coming. Count the distinct frames actually
+rendered (the play timestamp changes, seen in the overlay callback, which
+runs on each render), return the count with the content zone, and expose
+it on GsdkStreamView and GsdkHmdView (getFrameCount), so the app can tell
+a frozen stream and restart it.
+---
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/GsdkHmdView.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/GsdkHmdView.java
+index c69fa3f..6cf9d04 100644
+--- a/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/GsdkHmdView.java
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/hmd/GsdkHmdView.java
+@@ -577,16 +577,34 @@ public final class GsdkHmdView extends FrameLayout {
+         super.onDetachedFromWindow();
+     }
+ 
++    /** Disco FPV: the current stream renderer, for its frame count; main thread. */
++    @Nullable
++    private GlRenderSink.Renderer mCountedRenderer;
++
++    /**
++     * Disco FPV: number of distinct stream frames rendered so far. It stays
++     * still while the view keeps showing the same frame (a frozen stream),
++     * and starts over with each new stream renderer.
++     *
++     * @return the count, wrapping around, -1 without a stream renderer
++     */
++    public int getFrameCount() {
++        GlRenderSink.Renderer renderer = mCountedRenderer;
++        return renderer == null ? -1 : renderer.frameCount();
++    }
++
+     /** Listens to GL render sink events. Callbacks are called on main thread. */
+     private final GlRenderSink.Callback mSinkCallback = new GlRenderSink.Callback() {
+ 
+         @Override
+         public void onRenderingMayStart(@NonNull GlRenderSink.Renderer renderer) {
++            mCountedRenderer = renderer;
+             mRenderer.setStreamRenderer(renderer);
+         }
+ 
+         @Override
+         public void onRenderingMustStop(@NonNull GlRenderSink.Renderer renderer) {
++            mCountedRenderer = null;
+             mRenderer.setStreamRenderer(null);
+         }
+     };
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/stream/GlRenderSink.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/stream/GlRenderSink.java
+index a328571..b16a7c2 100644
+--- a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/stream/GlRenderSink.java
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/stream/GlRenderSink.java
+@@ -211,6 +211,16 @@ public interface GlRenderSink extends Stream.Sink {
+          */
+         boolean renderFrame();
+ 
++        /**
++         * Disco FPV: number of distinct frames rendered so far; still while the
++         * same frame is rendered again (a frozen stream). Any thread.
++         *
++         * @return the count, wrapping around, -1 if unknown
++         */
++        default int frameCount() {
++            return -1;
++        }
++
+         /**
+          * Stops the renderer.
+          *
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/stream/GlRenderSinkCore.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/stream/GlRenderSinkCore.java
+index cd7daca..2372582 100644
+--- a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/stream/GlRenderSinkCore.java
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/stream/GlRenderSinkCore.java
+@@ -176,6 +176,12 @@ final class GlRenderSinkCore extends StreamCore.Sink implements GlRenderSink {
+                     overlayer == null ? null : newOverlayerCallback(overlayer));
+         }
+ 
++        @Override
++        public int frameCount() {
++            SdkCoreRenderer renderer = mSdkCoreRenderer;
++            return renderer == null ? -1 : renderer.getFrameCount();
++        }
++
+         @Override
+         public boolean renderFrame() {
+             return mSdkCoreRenderer != null && mSdkCoreRenderer.renderFrame();
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/stream/GsdkStreamView.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/stream/GsdkStreamView.java
+index 9cfc72e..f0976e3 100644
+--- a/groundsdk/src/main/java/com/parrot/drone/groundsdk/stream/GsdkStreamView.java
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/stream/GsdkStreamView.java
+@@ -537,16 +537,34 @@ public class GsdkStreamView extends FrameLayout {
+     }
+ 
+     /** Listens to GL render sink events. Callbacks are called on main thread. */
++    /** Disco FPV: the current stream renderer, for its frame count; main thread. */
++    @Nullable
++    private GlRenderSink.Renderer mCountedRenderer;
++
++    /**
++     * Disco FPV: number of distinct stream frames rendered so far. It stays
++     * still while the view keeps showing the same frame (a frozen stream),
++     * and starts over with each new stream renderer.
++     *
++     * @return the count, wrapping around, -1 without a stream renderer
++     */
++    public int getFrameCount() {
++        GlRenderSink.Renderer renderer = mCountedRenderer;
++        return renderer == null ? -1 : renderer.frameCount();
++    }
++
+     private final GlRenderSink.Callback mSinkCallback = new GlRenderSink.Callback() {
+ 
+         @Override
+         public void onRenderingMayStart(@NonNull GlRenderSink.Renderer renderer) {
++            mCountedRenderer = renderer;
+             mView.onResume();
+             mView.queueEvent(() -> mViewRenderer.setStreamRenderer(renderer));
+         }
+ 
+         @Override
+         public void onRenderingMustStop(@NonNull GlRenderSink.Renderer renderer) {
++            mCountedRenderer = null;
+             mView.queueEvent(() -> mViewRenderer.setStreamRenderer(null));
+             mView.onPause();
+         }
+diff --git a/sdkcore/src/main/java/com/parrot/drone/sdkcore/stream/SdkCoreRenderer.java b/sdkcore/src/main/java/com/parrot/drone/sdkcore/stream/SdkCoreRenderer.java
+index e758dd0..c258471 100644
+--- a/sdkcore/src/main/java/com/parrot/drone/sdkcore/stream/SdkCoreRenderer.java
++++ b/sdkcore/src/main/java/com/parrot/drone/sdkcore/stream/SdkCoreRenderer.java
+@@ -385,7 +385,20 @@ public class SdkCoreRenderer {
+      * <p>
+      * Zone x coordinate at index 0; zone y coordinate at index 1; zone width at index 2; zone height at index 3.
+      */
+-    private final int[] mTmpContentZone = new int[4];
++    private final int[] mTmpContentZone = new int[5]; // Disco FPV: [4] the frame count
++
++    /** Disco FPV: distinct frames rendered, updated on the rendering thread. */
++    private volatile int mFrameCount;
++
++    /**
++     * Disco FPV: number of distinct frames rendered so far; it stays still
++     * while the same frame is rendered again (a frozen stream). Any thread.
++     *
++     * @return the count, wrapping around
++     */
++    public int getFrameCount() {
++        return mFrameCount;
++    }
+ 
+     /**
+      * Requests rendering of current frame.
+@@ -404,6 +417,7 @@ public class SdkCoreRenderer {
+         if (!nativeRenderFrame(mNativePtr, mTmpContentZone)) {
+             return false;
+         }
++        mFrameCount = mTmpContentZone[4];
+ 
+         // check content zone change
+         if (mTmpContentZone[0] != x || mTmpContentZone[1] != y
+diff --git a/sdkcore/src/main/jni/stream/sdkcore_renderer.c b/sdkcore/src/main/jni/stream/sdkcore_renderer.c
+index 6e65734..b288c86 100644
+--- a/sdkcore/src/main/jni/stream/sdkcore_renderer.c
++++ b/sdkcore/src/main/jni/stream/sdkcore_renderer.c
+@@ -55,6 +55,11 @@ struct sdkcore_renderer {
+ 	struct sdkcore_overlayer *overlayer;
+ 	/** Configured texture loader; NULL if none. */
+ 	struct sdkcore_texture_loader *texture_loader;
++	/** Disco FPV: distinct frames rendered (play timestamp changes), and
++	 *  the last frame's play timestamp; a frozen stream renders the same
++	 *  frame again on pdraw's timer, the count then stays still. */
++	uint32_t frames;
++	uint64_t last_play_ts;
+ 	/** PDRAW & renderer, held together as they share lifecycle. */
+ 	struct {
+ 		/** PDRAW instance; non NULL if pdraw.renderer is non NULL. */
+@@ -107,6 +112,12 @@ static void render_overlay(struct pdraw *pdraw,
+ 	struct sdkcore_renderer *self = userdata;
+ 	RETURN_IF_FAILED(self != NULL, -EINVAL);
+ 
++	if (frame_extra != NULL && (self->frames == 0
++			|| frame_extra->play_timestamp != self->last_play_ts)) {
++		self->last_play_ts = frame_extra->play_timestamp;
++		self->frames++;
++	}
++
+ 	if (self->overlayer) {
+ 		sdkcore_overlayer_overlay(self->overlayer, render_pos, content_pos,
+ 				frame_extra);
+@@ -327,6 +338,12 @@ int sdkcore_renderer_render_frame(struct sdkcore_renderer *self,
+ 	return 0;
+ }
+ 
++/** Documented in public header. */
++uint32_t sdkcore_renderer_frame_count(struct sdkcore_renderer *self)
++{
++	return self != NULL ? self->frames : 0;
++}
++
+ /** Documented in public header. */
+ int sdkcore_renderer_stop(struct sdkcore_renderer *self) {
+ 	RETURN_ERRNO_IF_FAILED(self != NULL, -EINVAL);
+diff --git a/sdkcore/src/main/jni/stream/sdkcore_renderer.h b/sdkcore/src/main/jni/stream/sdkcore_renderer.h
+index 4479514..bdc3ffb 100644
+--- a/sdkcore/src/main/jni/stream/sdkcore_renderer.h
++++ b/sdkcore/src/main/jni/stream/sdkcore_renderer.h
+@@ -158,6 +158,14 @@ int sdkcore_renderer_render_frame(
+ 		struct sdkcore_renderer *self,
+ 		struct pdraw_rect *content_zone);
+ 
++/**
++ * Disco FPV: number of distinct frames rendered so far (a frame rendered
++ * again, as a frozen stream is, does not count); wraps around.
++ * @param[in] self: renderer instance
++ * @return the count, 0 if none
++ */
++uint32_t sdkcore_renderer_frame_count(struct sdkcore_renderer *self);
++
+ /**
+  * Stops rendering.
+  * @param[in] self: renderer instance to operate on
+diff --git a/sdkcore/src/main/jni/stream/sdkcore_renderer_jni.c b/sdkcore/src/main/jni/stream/sdkcore_renderer_jni.c
+index 36ac54a..a9e61f8 100644
+--- a/sdkcore/src/main/jni/stream/sdkcore_renderer_jni.c
++++ b/sdkcore/src/main/jni/stream/sdkcore_renderer_jni.c
+@@ -303,6 +303,7 @@ Java_com_parrot_drone_sdkcore_stream_SdkCoreRenderer_nativeRenderFrame(
+ 		return JNI_TRUE;
+ 	}
+ 
++	jsize zoneLen = (*env)->GetArrayLength(env, contentZone);
+ 	jint *contentZonePtr = (*env)->GetPrimitiveArrayCritical(env, contentZone,
+ 			NULL);
+ 	RETURN_VAL_IF_FAILED(contentZonePtr != NULL, -ENOMEM, JNI_TRUE);
+@@ -311,6 +312,9 @@ Java_com_parrot_drone_sdkcore_stream_SdkCoreRenderer_nativeRenderFrame(
+ 	contentZonePtr[1] = (jint) content_zone.y;
+ 	contentZonePtr[2] = (jint) content_zone.width;
+ 	contentZonePtr[3] = (jint) content_zone.height;
++	/* Disco FPV: distinct frames rendered, in a fifth element if any */
++	if (zoneLen > 4)
++		contentZonePtr[4] = (jint) sdkcore_renderer_frame_count(self);
+ 
+ 	(*env)->ReleasePrimitiveArrayCritical(env, contentZone, contentZonePtr, 0);
+ 

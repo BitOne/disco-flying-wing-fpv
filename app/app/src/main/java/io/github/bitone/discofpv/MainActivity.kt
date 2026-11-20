@@ -23,6 +23,7 @@ class MainActivity : Activity() {
     private lateinit var droneStatus: TextView
     private lateinit var flightButton: Button
     private lateinit var headsetButton: Button
+    private lateinit var rcButton: Button
     private var connectedDroneUid: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,6 +38,14 @@ class MainActivity : Activity() {
         headsetButton = findViewById(R.id.headset_button)
         headsetButton.setOnClickListener {
             connectedDroneUid?.let { startActivity(DroneScreenActivity.intent(this, HeadsetActivity::class.java, it)) }
+        }
+
+        rcButton = findViewById(R.id.rc_button)
+        rcButton.setOnClickListener {
+            connectedDroneUid?.let {
+                startActivity(android.content.Intent(this, RcActivity::class.java)
+                    .putExtra(DroneScreenActivity.EXTRA_DRONE_UID, it))
+            }
         }
 
         findViewById<Button>(R.id.settings_button).setOnClickListener {
@@ -55,6 +64,7 @@ class MainActivity : Activity() {
             }?.uid
             flightButton.isEnabled = connectedDroneUid != null
             headsetButton.isEnabled = connectedDroneUid != null
+            rcButton.isEnabled = connectedDroneUid != null
         }
     }
 

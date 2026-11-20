@@ -179,6 +179,8 @@ app-usb-install: ## Install out/disco-fpv-usb.apk on the emulator
 	docker exec $(EMU_NAME) adb -s emulator-5554 install -r -g /tmp/disco-fpv.apk \
 		|| { docker exec $(EMU_NAME) adb -s emulator-5554 uninstall io.github.bitone.discofpv; \
 		docker exec $(EMU_NAME) adb -s emulator-5554 install -r -g /tmp/disco-fpv.apk; }
+	@# a copy on the device, for scenarios reinstalling it (usb-permission.yaml)
+	docker exec $(EMU_NAME) adb -s emulator-5554 push /tmp/disco-fpv.apk /data/local/tmp/disco-fpv.apk >/dev/null
 
 .PHONY: check-usb
 check-usb: app-usb fake video ## make check through the emulated USB accessory instead of the debug bridge
@@ -187,7 +189,7 @@ check-usb: app-usb fake video ## make check through the emulated USB accessory i
 	EMU_MODE_ARGS=-writable-system scripts/emu-start.sh $(EMU_IMAGE) $(EMU_NAME) $(OUT)
 	$(MAKE) --no-print-directory app-usb-install
 	scripts/emu-usb-setup.sh $(EMU_NAME) $(OUT)/aoa-host $(FAKE_PORT)
-	$(MAKE) --no-print-directory e2e
+	$(MAKE) --no-print-directory e2e SCENARIOS="$(SCENARIOS) tests/scenarios/usb-permission.yaml"
 
 # Simulated Disco (sim/): ArduPilot SITL (ArduPlane, flying wing) for the
 # flight, FlightGear following it for the camera (streamed to fake-sc2's
@@ -263,13 +265,19 @@ sim-view: ## Line-of-sight view of the Gazebo Disco on the PC's screen (SIM_ENGI
 		-v "$(ROOT)/sim":/sim:ro $(GZ_IMAGE) sim-view >/dev/null
 	@echo "line-of-sight view started (logs: docker logs disco-fpv-gz-view)"
 
+.PHONY: sim-crash
+sim-crash: ## Crash the simulated Disco nose first (test tool: MANUAL, nose down, on SITL's 2nd port); needs make sim
+	docker run --rm --network host -u $(UID):$(GID) -v "$(ROOT)/sim/bridge":/b -w /b $(NODE_IMAGE) \
+		node src/crash.ts $(CRASH_ARGS)
+
 .PHONY: sim-stop
 sim-stop: ## Stop the simulated Disco, logs to out/sim-*.log
 	@mkdir -p $(OUT)
 	-for c in $(SIM_NAMES); do docker logs $$c > $(OUT)/sim-$${c#disco-fpv-}.log 2>&1; done
 	docker rm -f $(SIM_NAMES) >/dev/null 2>&1 || true
-	@# the bridge switched the fake's own flight model off: back on
-	-printf 'sim internal\n' | nc -q1 127.0.0.1 $(E2E_CTRL_PORT) >/dev/null 2>&1
+	@# the bridge switched the fake's own flight model off, and a crash
+	@# cut the motor or the link: all back to normal
+	-printf 'sim internal\nfail cut_out off\ndrone_link ok\n' | nc -q1 127.0.0.1 $(E2E_CTRL_PORT) >/dev/null 2>&1
 
 .PHONY: apk-check
 apk-check: ## Check out/disco-fpv-debug.apk's arm64 native libraries are 16 KB aligned

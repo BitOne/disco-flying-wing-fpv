@@ -169,3 +169,77 @@ export function parseCameraPan(reply: string): number | null {
 export function cameraCommand(tilt: number, pan: number): string {
   return `cam ${tilt} ${pan}`;
 }
+
+/** One telemetry sample for crash detection: time (s), height (m), 3D speed and sink rate (m/s, down positive). */
+export interface Motion {
+  t: number;
+  alt: number;
+  speed: number;
+  sink: number;
+}
+
+/** Crash detection thresholds (bridge options). */
+export interface CrashLimits {
+  /** Speed lost at once that makes an impact, m/s (a belly landing slides to a stop over seconds). */
+  drop: number;
+  /** Within this time, s. */
+  window: number;
+  /** Below this height above home, m. */
+  nearGround: number;
+  /** Impact speed from which the battery is thrown out: the link is lost, m/s. */
+  linkLost: number;
+  /** Sink rate that makes reaching the ground an impact (not a belly landing), m/s. */
+  sink: number;
+  /** Stopped (below 1.5 m/s) on the ground this long while still flying: crashed or landed off, s. */
+  stopped: number;
+}
+
+export const CRASH_LIMITS: CrashLimits = { drop: 6, window: 0.6, nearGround: 3, linkLost: 12, sink: 2.5, stopped: 1.5 };
+
+/** A crash: the speed before it (m/s), and whether it was an impact (else it slid to a stop). */
+export interface Crash {
+  speed: number;
+  impact: boolean;
+}
+
+/**
+ * A crash in the recent samples (oldest first), near the ground, while
+ * flying (a landing the bridge commanded is not checked: the caller):
+ * - an impact: the speed fell by at least `drop` within `window` to a near
+ *   stop (nose in), or the plane was sinking at `sink` or more and its
+ *   descent stopped at once (flown into the ground; it may slide on);
+ * - or it slid to a stop: below 1.5 m/s for `stopped` seconds, still
+ *   flying (flown gently into the ground, or landed off where it was).
+ * Returns the speed before it, else null.
+ */
+export function detectCrash(samples: Motion[], limits: CrashLimits = CRASH_LIMITS): Crash | null {
+  const now = samples[samples.length - 1];
+  if (!now || now.alt > limits.nearGround) return null;
+  let before = 0;
+  let sinkBefore = 0;
+  for (const s of samples) {
+    if (now.t - s.t > limits.window || s === now) continue;
+    before = Math.max(before, s.speed);
+    sinkBefore = Math.max(sinkBefore, s.sink);
+  }
+  const nosedIn = now.speed <= 3 && before - now.speed >= limits.drop;
+  const hitGround = sinkBefore >= limits.sink && Math.abs(now.sink) <= 0.5;
+  if (nosedIn || hitGround) return { speed: Math.max(before, now.speed), impact: true };
+  const recent = samples.filter((s) => now.t - s.t <= limits.stopped);
+  const span = recent.length > 0 ? now.t - recent[0]!.t : 0;
+  if (span >= limits.stopped * 0.9 && recent.every((s) => s.speed < 1.5 && s.alt <= limits.nearGround)) {
+    return { speed: Math.max(...samples.map((s) => s.speed)), impact: false };
+  }
+  return null;
+}
+
+/**
+ * What a Disco does on a crash, as fake-sc2 commands: its motor stops
+ * (the "motor cut out" alarm); a hard impact throws the battery out, so
+ * the controller loses the drone (the app keeps its last position).
+ */
+export function crashCommands(crash: Crash, limits: CrashLimits = CRASH_LIMITS): string[] {
+  const cmds = ['fail cut_out on'];
+  if (crash.impact && crash.speed >= limits.linkLost) cmds.push('drone_link lost');
+  return cmds;
+}

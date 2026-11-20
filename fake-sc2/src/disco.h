@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <libpomp.h>
 #include "arsdk/arsdk.h"
+#include "rc.h"
 
 /* Settings: kept across connections, like the drone's config file. */
 struct disco_settings {
@@ -93,6 +94,9 @@ struct disco {
 
 	/* injected failures (disco_fail), DISCO_FAIL_* bits */
 	uint32_t   failures;
+
+	/* the RC receiver for a hobby radio (rc.h) */
+	struct disco_rc rc;
 };
 
 /* Failures of the Disco itself (the control socket's "fail"). */

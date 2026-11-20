@@ -1,0 +1,27 @@
+name: Disco FPV asks for the USB permission instead of crashing (Android 14+)
+description: >
+  USB mode only (`make check-usb`, which runs it). The controller is plugged
+  in (aoa-host restarted: a replug), Android's "Open Disco FPV to handle
+  ...?" prompt is dismissed, then the app is opened from the launcher
+  without the USB permission. The SDK asks for it (patch
+  0003-sdkcore-usb-permission-android-14: it used to crash with a
+  SecurityException on Android 14+); once granted, the app connects.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  # a USB permission lasts until the app is removed: reinstall it (the copy
+  # `make app-usb-install` leaves on the device)
+  - shell: pm uninstall io.github.bitone.discofpv
+  - shell: pm install -g /data/local/tmp/disco-fpv.apk || (sleep 5; pm install -g /data/local/tmp/disco-fpv.apk)
+  - shell: su 0 sh /data/local/tmp/start-aoa.sh
+  - expect_texts: ["Open Disco FPV to handle"]
+    timeout: 20000
+  - tap_text: Cancel
+  - restart_app
+  - expect_texts: ["Allow Disco FPV to access"]
+    timeout: 20000
+  - screenshot: usb-permission-asked
+  - tap_text: OK
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 30000

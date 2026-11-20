@@ -1699,6 +1699,244 @@ First real flight checklist:
 10. Then the headset, put on at altitude in loiter; rehearse a video loss;
     head tracking last.
 
+## 30. Before the first flight: T8 work, and crashes in the simulator (2026-11-20)
+
+### A file cleaner damaged the tree (2026-11-20, about 12:40)
+
+Something outside this project's tools deleted, at 12:39 to 12:40, files
+that had an identical copy elsewhere under the project folder, the
+pattern of a duplicate file cleaner: our app's layout XML files (copies in
+app/build), most PNG screenshots (copies in out/ run folders),
+sim/bridge/tsconfig.json, the `HEAD` file of all 37 SDK git projects and
+of the repo manifest, the SDK's `.MODULE_NAME*`/licence marker files,
+COPYING, `.clang-format`, Python `__init__.py`, three git blobs shared
+between SDK projects (the empty blob among them), the patched HMD shaders
+(restored at first to their unpatched versions, which made the headset
+view black again: GL error 0x502 in glGetUniformLocation), out/sdk-aar,
+object files under sdk/out/olympe-linux (the fake no longer linked) and
+files in node_modules. Repaired: tracked files checked out again (main
+repository and every SDK project), each SDK `HEAD` rewritten from its
+reflog, the three blobs written back from copies in other projects
+(`git fsck` clean everywhere), the patch 0001 shaders re-applied (every
+patch checked with `git apply --check -R`), olympe-linux clobbered and
+rebuilt, SDK native libraries and AARs rebuilt, node_modules reinstalled.
+Whatever ran should be told to leave this folder alone: duplicates are
+normal in source trees and build outputs.
+
+### T8.1 USB permission crash (done)
+
+Patch `0003-sdkcore-usb-permission-android-14`: the receiver registered
+with RECEIVER_NOT_EXPORTED on API 33+, the PendingIntent explicit (our
+package) and FLAG_MUTABLE on API 31+ (UsbManager adds the result to it).
+Reproduced and fixed on the emulator: opened from the launcher with the
+controller plugged in and no permission, the app crashed
+(SecurityException); now Android asks "Allow Disco FPV to access ...?"
+and the app connects. Scenario `usb-permission.yaml` (USB mode, run by
+`make check-usb`): reinstalls the app (a USB permission lasts until the
+app is removed; `make app-usb-install` leaves a copy on the device),
+replugs the controller, dismisses the "Open with" prompt, opens the app.
+
+### T8.2 Frozen video watchdog (done; one case not recovered)
+
+- GroundSdk's views keep their last frame when frames stop, and pdraw's
+  renderer signals "render ready" on its own timer (GLES2 renderer,
+  GLES2_RENDERER_DEFAULT_DELAY_MS) even without a new frame: about 28 a
+  second through a freeze, so frame-ready callbacks can't tell. Patch
+  `0004-stream-frame-count`: the native renderer counts distinct frames
+  rendered (the play timestamp changes, seen in the overlay callback,
+  which runs on every render), returned with the content zone (a fifth
+  element, no new JNI call) and exposed as `getFrameCount()` on
+  GsdkStreamView and GsdkHmdView.
+- `VideoWatchdog` (app, unit-tested), polled every 250 ms: fewer than 3
+  frames in 1 s is a frozen or slow picture (warnings VIDEO FROZEN, VIDEO
+  SLOW with some frames, NO VIDEO before the first); no new frame at all
+  for 3 s restarts the stream, at most every 4 s (VIDEO LOST, RESTARTING
+  until frames flow). A new stream gets 4 s for its first frames before
+  NO VIDEO, and 10 s before a restart. Only total silence restarts: a
+  restart blanks the picture, worse than slow, and the emulator (a busy
+  phone too) renders slowly at times; the first versions restarted on a
+  low frame rate and blanked the headset view during the lens tests.
+- Restart = release the stream and the view's sink, open it again (as a
+  new screen does); a stop and play of the same stream was not enough.
+- Scenario `app-video-frozen.yaml`: the fake stops forwarding video (`fail
+  video`): the warning shows; video back: it goes, the picture moves.
+- Not recovered: a camera stream restart (the timestamps go back, section
+  28). Each new pdraw session gets frames stamped 0 ("duplicate timestamp
+  (0)") and stalls again within half a second; only a new connection (app
+  restarted) recovers, in our app and in FreeFlight. The warning shows;
+  the pilot knows the video is gone. To look at if a real Disco ever does
+  it (an encoder restart): the state kept per connection below pdraw.
+
+Found by the watchdog: in the headset view, after about 4 minutes of the
+lens scenario (many UI dumps), the decoder stalls ("no buffer available";
+the goldfish codec's 4 output buffers all held) and new sessions don't
+recover while the headset view is up; `app-lens.yaml` fails at its stereo
+check (it used to pass on the frozen frame). Not reproduced with a short
+lens session nor in the flight view. To investigate (T8.9): frames not
+released by the HMD rendering path, on a real phone too.
+
+### T8.3 Safe button grabs (done)
+
+`ButtonSafety` (unit-tested): a button the controller's mapping uses for
+a Disco action (any action but APP_ACTION_*, alone or in a combination)
+is never grabbed; the HUD says so ("B: RETURN HOME, NOT TAKEN"). The
+mapping is read from SkyController2Gamepad.getMapping(DISCO); nothing is
+grabbed until it is known; checked again on every gamepad update. With
+the default mapping the app takes SETTINGS, B (map) and A (recentre):
+`app-hud-modes.yaml` now clears the settings first and expects 0x19 (it
+passed before only because an earlier scenario had left the recentre
+button set to none).
+
+### T8.4 Telemetry delay (improved)
+
+- On the device clock (an altitude change sent from inside the emulator
+  to the fake, `nc 10.0.2.2 4322`), GroundSdk's callback comes 11 to 94
+  ms after the send. The device clock is not usable against the host's
+  over minutes: its offset moved from -960 to -553 ms and jumps by about
+  half a second between samples.
+- The rest was drawing: every telemetry message re-rendered the whole
+  HUD, and the emulator's UI frames are slow (median 26 ms, 90th
+  percentile 117 ms, 99th 300 ms, software GL at 2400x1080). Renders are
+  now coalesced to one per display frame (`Hud.submit`, Choreographer):
+  telemetry to screen went from a median between 381 and 589 ms to
+  between 155 and 266 ms (`telemetry-latency.ts`, 10 changes), close to
+  the video's 125 ms on the same rig.
+- Found with the crash tests: the bridge sent `flying_state` every 100 ms
+  and the fake resent the GPS fix with every position; both are
+  acknowledged commands, one in flight at a time per buffer, so over the
+  emulated USB link they queued faster than they were acknowledged and
+  the app showed states seconds late (still FLYING long after landing).
+  Now sent on change (and every 5 s), like the Disco; satellites,
+  battery and return home too.
+
+### T8.5 Headset (partly)
+
+Head tracking stopping (headset view left or paused) now sends the camera
+back to centre. The 30 minute soak and head tracking off for the first
+flights are for the bench.
+
+### Crashes in the simulator
+
+The bridge watches for crashes once the plane has been above 10 m since
+armed, outside a landing it commanded (`detectCrash`, unit-tested):
+- an impact: near the ground (3 m), the speed falls by 6 m/s within 0.6 s
+  to a near stop (nose in), or the plane was sinking at 2.5 m/s or more
+  and its descent stops at once;
+- slid to a stop: below 1.5 m/s for 1.5 s on the ground, still flying
+  (FBWB's full down stick only sinks about 1.2 m/s: flown gently into the
+  ground, it slides on).
+What a Disco does, as fake commands: its motor stops (`fail cut_out on`,
+the MOTOR CUT OUT alarm), SITL is disarmed (flying state LANDED); an
+impact at 12 m/s or more also throws the battery out (`drone_link lost`):
+LINK LOST, video cleared. Cleared when SITL is armed again after the
+disarm; `make sim-stop` resets the fake. Options `--crash-drop`,
+`--crash-link-lost`, `--no-crash`.
+
+`make sim-crash` (test tool, `src/crash.ts`): on SITL's second MAVLink
+port (5762), ArduPlane's MANUAL mode with full down elevator and full
+throttle: a nose-in crash.
+
+Checked in Gazebo with the app (USB mode):
+- full down stick from circling (FBWB): slid to a stop at 1.8 m/s; within
+  2 s the app shows LANDED and MOTOR CUT OUT;
+- `make sim-crash`: impact at 14.5 m/s: LINK LOST, no stale values, the
+  video cleared, and now the last GPS position with its age (the HUD only
+  showed it with the link up before: hidden exactly when it matters,
+  after a crash; its age now counts on with no telemetry).
+
+## 31. A traditional RC transmitter on the Disco (research, 2026-11-20)
+
+What the Disco supports (firmware 1.7.1, static analysis, the PLF
+downloaded again: SHA-256 starting f52f226d04c986b6):
+- Radio drivers `usr/lib/radio-drivers/libradio-sbus.so` (Futaba S.BUS,
+  on `/dev/uart-sbus`) and `libradio-sumd.so` (Graupner HoTT SUMD, on
+  `/dev/uart-sumd`, with a failsafe mode), loaded by `libradio.so`; the
+  board init (`etc/boxinit.standalone.chuck.rc` and `.evinrudeboard.rc`)
+  links `/dev/ttyPA2` to uart-sbus and `/dev/ttyPA3` to uart-sumd. The
+  firmware's manifest lists Parrot's `libradio-sbus` and `libradio-sumd`
+  projects. ArduPilot's C.H.U.C.K. page documents a 3-pin R/C input on
+  the C.H.U.C.K.'s left side (S.BUS, DSM, SUMD, ST24 under ArduPilot; the
+  Parrot firmware: S.BUS and SUMD).
+- `dragon-prog` handles the ARSDK `Rc` feature (`rc.xml`): receiver
+  state (connected, protocol, enabled), `enable_receiver` (refused unless
+  landed: "Could not set RC receiver state: drone is not landed"),
+  channel monitoring (`monitor_channels`, `channel_value` per channel:
+  action and value), calibration (`start_calibration` neutral or min/max
+  per action and channel type, `abort`, `reset`, `calibration_state` with
+  required and calibrated actions), `invert_channel`, and the supported
+  actions (`channel_action_item`: roll, pitch, yaw, gaz, take-off/land,
+  emergency, return home, piloting mode, take control; channel types:
+  signed or unsigned axis, monostable, bistable, tristate or rotary
+  button).
+- GroundSdk: no peripheral uses it; the generated `ArsdkFeatureRc` exists
+  in sdkcore. FreeFlight 5.2.7 sends `Rc.*` (its RC receiver screens).
+
+Practical points (to check on the bench):
+- Receivers with S.BUS output exist for most systems (FrSky, Futaba,
+  RadioMaster/ELRS, TBS Crossfire). A 2.4 GHz radio next to the Disco's
+  2.4 GHz Wi-Fi to the SkyController can hurt both (ArduPilot's Disco page
+  warns about receiver telemetry interfering with the Wi-Fi): an 868/915
+  MHz link (ELRS 900, Crossfire), or the Disco's Wi-Fi on 5 GHz.
+- The video and telemetry still need the SkyController 2 (long range
+  Wi-Fi) or the phone's own Wi-Fi to the Disco (short range); the app
+  stays the screen.
+- Failsafe: the receiver should send no pulses on signal loss (not hold
+  or preset values), so the Disco sees the radio lost.
+- The "take control" action suggests a switch giving the RC priority over
+  the SkyController; who wins with both, and what the SkyController's
+  sticks do then, is for the bench.
+
+Plan: T8.8.
+
+### Built (2026-11-20)
+
+- **Fake** (`fake-sc2/src/rc.c`): the Disco's receiver as the flight
+  program would present it, from rc.xml and dragon-prog's strings, to
+  check against a real Disco: receiver state and protocol; channel values
+  while monitored; neutral calibration (1 s), then min/max per action
+  (the channel moved fully: a centred axis both ways, a throttle across
+  its travel, a switch by 60 %); inversion; supported actions per channel
+  type; required actions roll, pitch, gaz, take control (an assumption);
+  enabling refused in flight or before calibration. Control socket: `rc
+  connect sbus|sumd`, `rc disconnect`, `rc reset`, `rc ch <n> <value>`,
+  `rc sticks ...`; `disco` reports `rc=...,piloting=0|1`. When enabled
+  with its take-control switch on, the radio's sticks fly the fake's own
+  flight model instead of the controller's. Protocol test
+  `tests/fake/disco-rc.probe`.
+- Channel values are acknowledged events (rc.xml sets no buffer): sending
+  all 16 five times a second, the first version queued acknowledgements
+  faster than the emulated USB link returned them (the app saw the radio
+  still on after turning it off). Now the whole list when monitoring
+  starts and every 5 s, and each channel as it moves. The real Disco's
+  rate is unknown: watch for it on the bench.
+- **SDK** patch `0005-rc-receiver-peripheral`: `RcReceiver` (GroundSdk
+  peripheral), its core and the Disco's controller (`DiscoRcReceiver`,
+  registered in BebopFamilyDroneController, published for the Disco
+  only). Channels are updated in place: the same values again change
+  nothing, so the screen stays idle. `scripts/sdk-sync.sh` now also
+  removes the files patches create before applying them again.
+- **App**: main screen > RC transmitter (`RcActivity`, logic in `RcSetup`,
+  unit-tested): the receiver's state; the calibration steps in order
+  (neutral with the throttle down; roll, pitch, throttle as an unsigned
+  axis since a plane radio's throttle rests at one end, the take-control
+  switch; then return home and take-off/land, optional); the channels as
+  bars; inversion of each calibrated action; the radio on or off (on only
+  once calibrated, the Disco refusing it in flight). Scenario
+  `tests/scenarios/app-rc.yaml`: the whole setup, then the radio flying
+  the fake only with its take-control switch on.
+- HUD: RADIO ON while the radio is enabled (its take-control switch
+  decides who flies: the switch's position isn't known without channel
+  monitoring, which stays on the setup screen), RADIO LOST first of all
+  when its receiver is gone (the Disco's own failsafe then applies).
+- Still to do: the bench (wiring, failsafe, frequencies, range, which of
+  the radio and the SkyController wins), and FreeFlight's RC screens
+  compared.
+
+Sources: https://ardupilot.org/plane/docs/airframe-disco.html ,
+https://ardupilot.org/copter/docs/common-CHUCK-overview.html ,
+https://www.modelaviation.com/comment/88127 ,
+https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf

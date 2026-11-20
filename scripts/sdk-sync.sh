@@ -33,7 +33,14 @@ patched_projects() {
 # Reset patched projects (drop previously applied patches) before syncing.
 for project in $(patched_projects); do
     if [ -d "$project/.git" ] || [ -f "$project/.git" ]; then
+        git -C "$project" reset -q
         git -C "$project" checkout -q -- .
+        # files the patches created (new in the patch: "--- /dev/null")
+        for patch in "$PATCHES/$project"/*.patch; do
+            awk '/^--- \/dev\/null/ {n=1; next} n && /^\+\+\+ b\// {print substr($0, 7)} {n=0}' "$patch"
+        done | while read -r created; do
+            rm -f "$project/$created"
+        done
     fi
 done
 

@@ -23,6 +23,9 @@ object HudAlerts {
         val gpsLost: Boolean = false,
         /** Wi-Fi signal of the drone, dBm. */
         val rssi: Int? = null,
+        /** A hobby radio on the Disco's receiver is on (RcReceiver), and its receiver connected. */
+        val radioEnabled: Boolean = false,
+        val radioConnected: Boolean = false,
     )
 
     /** Signal below which the link is shown as weak, dBm. */
@@ -54,10 +57,15 @@ object HudAlerts {
         val out = mutableListOf<String>()
         i.criticalAlarms.filter { it !in IGNORED }.sorted().forEach { out += alarmText(it) }
         i.warningAlarms.filter { it !in IGNORED && it !in i.criticalAlarms }.sorted().forEach { out += alarmText(it) }
+        // the radio on and its receiver gone: the Disco's own failsafe
+        // applies, the pilot must know at once; on and there: a reminder
+        // that the radio's take-control switch decides who flies
+        if (i.radioEnabled && !i.radioConnected) out.add(0, "RADIO LOST")
         if (i.gpsLost) out += "GPS LOST"
         if (i.rssi != null && i.rssi < WEAK_RSSI) out += "WEAK LINK"
         if (i.magnetometerCalibrated == false) out += "CALIBRATE COMPASS"
         if (i.pitotCalibrated == false) out += "PITOT"
+        if (i.radioEnabled && i.radioConnected) out += "RADIO ON"
         return out
     }
 

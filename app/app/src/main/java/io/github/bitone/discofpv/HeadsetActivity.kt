@@ -92,6 +92,8 @@ class HeadsetActivity : DroneScreenActivity() {
         tracker?.recenter() ?: super.recenterView()
     }
 
+    override fun videoFrameCount(): Int = hmdView?.frameCount ?: -1
+
     override fun onDestroy() {
         hmdView?.setStream(null)
         super.onDestroy()

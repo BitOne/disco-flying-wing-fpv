@@ -8,6 +8,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import com.parrot.drone.groundsdk.GroundSdk
@@ -37,6 +41,50 @@ abstract class DroneScreenActivity : Activity() {
     private var hudButton: HudButton? = null
     private var tileLayer: TileLayer? = null
 
+    /** Frozen picture detection (T8.2): fed by the view's frame listener. */
+    private val videoWatchdog = VideoWatchdog()
+    private var liveStream: CameraLive? = null
+
+    /**
+     * Restarts the live stream as a new screen would: releases it (the view
+     * drops its sink and renderer) and opens it again. A stop and play of
+     * the same stream is not enough after the camera's timestamps went back
+     * (pdraw keeps stalling).
+     */
+    private var restartLive: (() -> Unit)? = null
+    private val main = Handler(Looper.getMainLooper())
+    private var lastVideoState = VideoWatchdog.State.NO_STREAM
+    private var ticks = 0
+    private val watchdogTick = object : Runnable {
+        override fun run() {
+            val now = SystemClock.elapsedRealtime()
+            val frames = videoFrameCount()
+            // a new renderer counts from 0 again
+            if (frames >= 0) videoWatchdog.onFrames(now, if (frames >= lastFrameCount) frames - lastFrameCount else frames)
+            lastFrameCount = frames.coerceAtLeast(0)
+            val state = videoWatchdog.state(now)
+            if (state != lastVideoState) {
+                Log.i(TAG, "video $lastVideoState -> $state")
+                lastVideoState = state
+            }
+            hud?.setVideoAlert(videoWatchdog.alert(now))
+            if (++ticks % 4 == 0) hud?.refreshAlerts()
+            if (videoWatchdog.shouldRestart(now)) {
+                Log.w(TAG, "no video for a while: restarting the stream (${videoWatchdog.restarts})")
+                restartLive?.invoke()
+            }
+            main.postDelayed(this, WATCHDOG_TICK_MS)
+        }
+    }
+
+    /**
+     * Distinct frames the stream view has rendered so far (GsdkStreamView or
+     * GsdkHmdView getFrameCount, SDK patch 0004), -1 without a stream: still
+     * while the same frame is shown again, a frozen picture.
+     */
+    protected open fun videoFrameCount(): Int = -1
+    private var lastFrameCount = 0
+
     /** The user's settings, read when the screen opens. */
     protected val settings: AppSettings by lazy { AppSettings.load(this) }
 
@@ -55,7 +103,7 @@ abstract class DroneScreenActivity : Activity() {
             h.setTiles(layer)
         }
         val store = if (settings.rememberLastFix) LastFixStore(this) else null
-        HudBinder(groundSdk, drone, store) { h.render(it) }.bind()
+        HudBinder(groundSdk, drone, store) { h.submit(it) }.bind()
         hudButton = HudButton(
             groundSdk, settings.mapButton, onCycle = { cycleHud() },
             onMap = { pressed ->
@@ -63,6 +111,7 @@ abstract class DroneScreenActivity : Activity() {
             },
             recenterButton = settings.recenterButton,
             onRecenter = { recenterView() },
+            onRefused = { h.setAlert("buttons", it.joinToString("\n").ifEmpty { null }) },
         )
     }
 
@@ -83,10 +132,12 @@ abstract class DroneScreenActivity : Activity() {
     override fun onResume() {
         super.onResume()
         hudButton?.start()
+        main.post(watchdogTick)
     }
 
     override fun onPause() {
         hudButton?.stop()
+        main.removeCallbacks(watchdogTick)
         super.onPause()
     }
 
@@ -139,6 +190,8 @@ abstract class DroneScreenActivity : Activity() {
             if (live == null) return
             live?.close()
             live = null
+            liveStream = null
+            videoWatchdog.onStreamClosed()
             onLive(null)
         }
         fun open() {
@@ -150,10 +203,19 @@ abstract class DroneScreenActivity : Activity() {
             }
             live = s.live { stream ->
                 if (stream != null) {
+                    val first = liveStream == null
+                    liveStream = stream
                     onLive(stream)
-                    if (stream.playState() != CameraLive.PlayState.PLAYING) stream.play()
+                    val stopped = stream.playState() != CameraLive.PlayState.PLAYING
+                    if (stopped) stream.play()
+                    // a new subscription or session: time for its first frame
+                    if (first || stopped) videoWatchdog.onStreamOpened(SystemClock.elapsedRealtime())
                 }
             }
+        }
+        restartLive = {
+            release()
+            main.postDelayed({ open() }, RESTART_GAP_MS)
         }
         drone.getState {
             connected = it?.connectionState == DeviceState.ConnectionState.CONNECTED
@@ -166,6 +228,9 @@ abstract class DroneScreenActivity : Activity() {
     }
 
     companion object {
+        private const val TAG = "DroneScreen"
+        private const val WATCHDOG_TICK_MS = 250L
+        private const val RESTART_GAP_MS = 500L
         const val EXTRA_DRONE_UID = "drone_uid"
 
         fun <T : DroneScreenActivity> intent(context: Context, screen: Class<T>, droneUid: String): Intent =

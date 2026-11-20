@@ -1,0 +1,30 @@
+name: Disco FPV says when the video stops, and restarts it
+description: >
+  Needs `make fake`, `make video` and `make emu`. The fake stops forwarding
+  the camera's video (`fail video`): the picture stays on its last frame,
+  which must not pass for live video. The app counts the frames its view
+  really renders (SDK patch 0004) and warns (VIDEO FROZEN, then VIDEO LOST,
+  RESTARTING while it reopens the stream); when the video comes back, the
+  warning goes and the picture moves again.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - send: [drone_link ok, fail video off, battery 64, home 45.1885 5.7245 300, gps 45.1890 5.7250 350,
+      satellites 12, circle]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flight view
+  - expect_texts: [CIRCLING]
+  - expect_video: { region: [0.3, 0.2, 0.7, 0.6], min_contrast: 30, min_change: 0.002 }
+  - send: [fail video]
+  - expect_texts: ["VIDEO"]
+    timeout: 5000
+  - screenshot: video-lost
+  - send: [fail video off]
+  - expect_gone: ["VIDEO LOST", "VIDEO FROZEN"]
+    timeout: 15000
+  - expect_video: { region: [0.3, 0.2, 0.7, 0.6], min_contrast: 30, min_change: 0.002 }
+    timeout: 15000
+  - screenshot: video-back

@@ -55,4 +55,13 @@ class HudAlertsTest {
         assertNull(HudAlerts.camera(0.4))
         assertEquals("CAM -20", HudAlerts.camera(-19.6))
     }
+
+    @Test
+    fun theRadioOnAndItsReceiverLost() {
+        val on = HudAlerts.Inputs(connected = true, radioEnabled = true, radioConnected = true)
+        assertEquals(listOf("RADIO ON"), HudAlerts.of(on))
+        val lost = on.copy(radioConnected = false, gpsLost = true)
+        assertEquals(listOf("RADIO LOST", "GPS LOST"), HudAlerts.of(lost))
+        assertEquals(emptyList<String>(), HudAlerts.of(HudAlerts.Inputs(connected = true)))
+    }
 }

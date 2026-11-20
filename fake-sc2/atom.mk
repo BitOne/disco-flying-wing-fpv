@@ -7,7 +7,7 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_MODULE := fake-sc2
 LOCAL_DESCRIPTION := Fake SkyController 2 + Disco for end-to-end tests
-LOCAL_SRC_FILES := src/fake_sc2.c src/disco.c src/sc2.c
+LOCAL_SRC_FILES := src/fake_sc2.c src/disco.c src/sc2.c src/rc.c
 LOCAL_LIBRARIES := libpomp libulog libmux libarsdk
 LOCAL_LDLIBS := -lm
 include $(BUILD_EXECUTABLE)

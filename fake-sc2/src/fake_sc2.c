@@ -724,6 +724,10 @@ static int flight_sticks(struct app *app, double *roll, double *pitch,
 {
 	int r = app->flight.stick_roll, p = app->flight.stick_pitch;
 	int g = app->flight.stick_gaz;
+	/* a hobby radio on the Disco's receiver, enabled and given control
+	 * (rc.h): its sticks fly it, the controller's are ignored */
+	if (rc_piloting(&app->disco.rc, roll, pitch, gaz))
+		return fabs(*roll) > 0.05 || fabs(*pitch) > 0.05 || fabs(*gaz) > 0.05;
 	if (r == 0 && p == 0 && g == 0 && app->flight.pcmd_flag
 			&& now_ms() - app->flight.pcmd_ms < STICK_TIMEOUT_MS) {
 		r = app->flight.pcmd_roll;
@@ -2210,6 +2214,8 @@ static int ctrl_handle_line(struct app *app, char *line,
 				app->flight.home, app->flight.pcmd,
 				app->sc2.grabbed_buttons, app->flight.fp, tm->battery,
 				dist, tm->yaw * 180 / M_PI);
+	} else if (strcmp(word, "rc") == 0) {
+		return rc_ctrl(&app->disco.rc, line, reply, reply_size);
 	} else if (strcmp(word, "disco") == 0 && n == 1) {
 		char buf[512];
 		disco_status(&app->disco, buf, sizeof(buf));
@@ -2326,6 +2332,10 @@ static int ctrl_handle_line(struct app *app, char *line,
 		app->events[0] = '\0';
 		return len;
 	} else if (strcmp(word, "position") == 0 && n == 4) {
+		/* the fix state is acknowledged: sent on change only, as the
+		 * Disco does (at the bridge's rate it would queue acknowledgements
+		 * faster than a slow link turns them round) */
+		int was_fixed = tm->gps_fixed;
 		tm->latitude = a; tm->longitude = b; tm->gps_altitude = c;
 		tm->gps_fixed = 1;
 		disco_gps_fix(&app->disco, 1);
@@ -2333,8 +2343,9 @@ static int ctrl_handle_line(struct app *app, char *line,
 			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_PositionChanged(
 				app->cmd_itf, &send_status, app,
 				tm->latitude, tm->longitude, tm->gps_altitude));
-			SEND(res, arsdk_cmd_send_Ardrone3_GPSSettingsState_GPSFixStateChanged(
-				app->cmd_itf, &send_status, app, 1));
+			if (!was_fixed)
+				SEND(res, arsdk_cmd_send_Ardrone3_GPSSettingsState_GPSFixStateChanged(
+					app->cmd_itf, &send_status, app, 1));
 		}
 	} else if (strcmp(word, "rth") == 0 && n == 2) {
 		int on = a != 0;
@@ -2429,6 +2440,8 @@ static int ctrl_handle_line(struct app *app, char *line,
 			return snprintf(reply, reply_size, "error unknown state\n");
 		app->flight.active = 0;
 		tm->flying_state = flying_states[i].value;
+		rc_landed(&app->disco.rc, tm->flying_state ==
+				ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDED);
 		if (app->cmd_itf)
 			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_FlyingStateChanged(
 				app->cmd_itf, &send_status, app, tm->flying_state));

@@ -25,7 +25,7 @@ import { createSocket } from 'node:dgram';
 import { Socket } from 'node:net';
 import { Control } from './control.ts';
 import * as mav from './mavlink.ts';
-import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState, parseSticks, sticksToRc, parseCircling, circlingParams, parseCameraTilt, parseCameraPan, cameraCommand, type Circling } from './model.ts';
+import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState, parseSticks, sticksToRc, parseCircling, circlingParams, parseCameraTilt, parseCameraPan, cameraCommand, type Circling, CRASH_LIMITS, crashCommands, detectCrash, type Motion } from './model.ts';
 
 const args = process.argv.slice(2);
 const opt = (name: string, def: string): string => {
@@ -41,6 +41,14 @@ const fgRate = Number(opt('--fg-rate', '15'));
 const fgProps = Number(opt('--fg-props', '5401'));
 const gzHelper = Number(opt('--gz-helper', '5410'));
 const gzSock = createSocket('udp4');
+// crash: an impact speed lost at once (m/s), and from which the battery is
+// thrown out (the link to the Disco lost); --no-crash to fly through
+const crashLimits = {
+  ...CRASH_LIMITS,
+  drop: Number(opt('--crash-drop', String(CRASH_LIMITS.drop))),
+  linkLost: Number(opt('--crash-link-lost', String(CRASH_LIMITS.linkLost))),
+};
+const crashDetection = !args.includes('--no-crash');
 
 /** A command to Gazebo's helper (docker/gazebo/gz-helper.py), if it runs. */
 function gazebo(cmd: string): void {
@@ -267,25 +275,73 @@ async function main(): Promise<void> {
   let piloting = false; // the pilot's sticks fly it (FBWB)
   let cameraTilt = 0;
   let cameraPan = 0;
+  const motion: Motion[] = [];
+  let crashed = false;
+  let airborne = false; // has been above 10 m since armed: the launch is over
+  let lastFlyingState = '';
+  let lastSatellites = -1;
+  let lastBattery = -1;
+  let crashDisarmed = false; // SITL reported the disarm that followed the crash
+  let linkDropped = false; // the crash dropped the link (a hard impact)
   for (;;) {
     await sleep(100);
     tick++;
     if (!heartbeatSeen) continue;
     const cmds: string[] = [];
+    // an impact: the Disco stops its motor (and a hard one loses its battery)
+    if (position) {
+      const t = Date.now() / 1000;
+      motion.push({ t, alt: position.relativeAlt, speed: Math.hypot(position.vx, position.vy, position.vz), sink: position.vz });
+      if (plane.armed && position.relativeAlt > 10) airborne = true;
+      if (!plane.armed) airborne = false; // on the ground: a new launch next
+      while (motion.length > 0 && t - motion[0]!.t > 2) motion.shift();
+      // only in flight: not the hand launch, not a landing the bridge commanded
+      const watch = crashDetection && plane.armed && airborne && !plane.landing && !crashed;
+      const impact = watch ? detectCrash(motion, crashLimits) : null;
+      if (impact !== null) {
+        const crashCmds = crashCommands(impact, crashLimits);
+        crashed = true;
+        crashDisarmed = false;
+        linkDropped = crashCmds.includes('drone_link lost');
+        log(`crash (${impact.impact ? 'impact' : 'slid to a stop'}) at ${impact.speed.toFixed(1)} m/s:`, crashCmds.join(', '));
+        cmds.push(...crashCmds);
+        arm(false, true);
+      } else if (crashed && !plane.armed) {
+        crashDisarmed = true; // SITL has taken the disarm
+      } else if (crashed && crashDisarmed && plane.armed) {
+        // armed again (a new launch): the motor, and the link if it was dropped, are back
+        crashed = false;
+        airborne = false;
+        log('armed again after the crash: motor back' + (linkDropped ? ', link back' : ''));
+        cmds.push('fail cut_out off');
+        if (linkDropped) cmds.push('drone_link ok');
+      }
+    }
     cmds.push(`attitude ${attitude.roll.toFixed(4)} ${attitude.pitch.toFixed(4)} ${attitude.yaw.toFixed(4)}`);
     if (position) {
       cmds.push(`altitude ${position.relativeAlt.toFixed(2)}`);
       cmds.push(`speed ${position.vx.toFixed(2)} ${position.vy.toFixed(2)} ${position.vz.toFixed(2)}`);
     }
     cmds.push(`airspeed ${hud.airspeed.toFixed(2)}`);
-    cmds.push(`flying_state ${flyingState(plane)}`);
+    // acknowledged by the app (the Disco sends it on change): every tick
+    // would queue acknowledgements faster than the emulated USB link turns
+    // them round, delaying it by seconds; on change, and every 5 s
+    const fs = flyingState(plane);
+    if (fs !== lastFlyingState || tick % 50 === 0) {
+      cmds.push(`flying_state ${fs}`);
+      lastFlyingState = fs;
+    }
     if (tick % 5 === 0) {
       if (gps.fixType >= 3 && position) {
         cmds.push(`position ${position.lat.toFixed(7)} ${position.lon.toFixed(7)} ${position.alt.toFixed(1)}`);
       } else {
         cmds.push('gps_lost');
       }
-      cmds.push(`satellites ${gps.satellites}`);
+      // acknowledged by the app: on change, and every 5 s
+      if (gps.satellites !== lastSatellites || tick % 50 === 0) {
+        cmds.push(`satellites ${gps.satellites}`);
+        lastSatellites = gps.satellites;
+      }
     }
     // SITL sends its home when it sets it: ask after a bridge restart
     if (!home && tick % 50 === 0) sendMav(mav.MSG.COMMAND_LONG, mav.commandLong(MAV_CMD.GET_HOME_POSITION, []));
@@ -295,7 +351,8 @@ async function main(): Promise<void> {
       circling = null;
     }
     if (tick % 10 === 0) {
-      cmds.push(`battery ${battery}`);
+      if (battery !== lastBattery || tick % 50 === 0) cmds.push(`battery ${battery}`); // acknowledged
+      lastBattery = battery;
       if (home) {
         const h = `home ${home.lat.toFixed(7)} ${home.lon.toFixed(7)} ${home.alt.toFixed(1)}`;
         if (h !== lastHomeSent) {
@@ -305,7 +362,7 @@ async function main(): Promise<void> {
       }
     }
     const rth = returningHome(plane);
-    if (rth !== lastRth || tick % 20 === 0) {
+    if (rth !== lastRth || tick % 50 === 0) {
       cmds.push(`rth ${rth ? 1 : 0}`);
       lastRth = rth;
     }

@@ -581,7 +581,8 @@ as the real SC2 does (GroundSdk's VideoEnable is a no-op there). Watch.
 
 From `NOTES.md` section 29 (ranked risks) and section 28 (measurements).
 
-- [ ] **T8.1 SDK USB permission crash.** `ArsdkUsbMuxBackendController.
+- [x] **T8.1 SDK USB permission crash.** Done (`NOTES.md` section 30):
+  patch 0003, scenario `usb-permission.yaml` in `make check-usb`. `ArsdkUsbMuxBackendController.
   requestRcPermission` registers its receiver without
   `RECEIVER_NOT_EXPORTED` (SecurityException on Android 14 and later with
   target 35; seen in the emulator) and builds its PendingIntent without a
@@ -591,22 +592,69 @@ From `NOTES.md` section 29 (ranked risks) and section 28 (measurements).
   `patches/packages/groundsdk-android/0003`, a scenario starting the app
   before the permission on `emu-usb`, and a search of the AARs for other
   receivers and PendingIntents.
-- [ ] **T8.2 Frozen video watchdog.** No new frame for about 500 ms: a
+- [x] **T8.2 Frozen video watchdog.** Done (section 30): patch 0004
+  (frames rendered counted), `VideoWatchdog`, `app-video-frozen.yaml`. Not
+  recovered: a camera stream restart (timestamps back), only a new
+  connection; the warning shows. No new frame for about 500 ms: a
   loud HUD alert, then restart the stream. Covers a camera stream restart
   (timestamps going back freeze pdraw for good, both apps, section 28),
   the `app-unplug` flake and decoder stalls.
-- [ ] **T8.3 Safe button grabs.** Read the controller's mapping before
+- [x] **T8.3 Safe button grabs.** Done (section 30): `ButtonSafety`; the
+  release of grabs when the app dies stays for the bench. Read the controller's mapping before
   grabbing B, A and settings; never grab a button mapped to a flight
   action; check grabs are released when the app dies (bench).
-- [ ] **T8.4 Telemetry delay.** 0.2 to 0.8 s from the fake to our HUD
+- [x] **T8.4 Telemetry delay.** Done (section 30): SDK 11 to 94 ms, HUD
+  renders coalesced (median 155 to 266 ms to the screen, was 381 to 589);
+  acknowledged telemetry no longer flooded by the simulator. 0.2 to 0.8 s from the fake to our HUD
   (FreeFlight 0.2 to 0.8 s too), mostly phone side: timestamps in the SDK
   path (mux read, arsdk decode, Java callback, HUD draw) to find where.
-- [ ] **T8.5 Headset view safety.** Recentre the camera when head
+- [ ] **T8.5 Headset view safety.** Partly (section 30): the camera
+  recentres when head tracking stops. Recentre the camera when head
   tracking stops; head tracking off by default for the first flights;
   phone temperature and battery soak test (30 minutes, `dumpsys
   thermalservice`).
 - [ ] **T8.6 Bench session** (propellers off), then the first flight, as
   listed in `NOTES.md` section 29.
+
+- [x] **T8.7 Crashes in the simulator** (user request, section 30): the
+  bridge detects impacts and slides to a stop: MOTOR CUT OUT, LANDED; a
+  hard impact loses the link (LINK LOST, last position shown). `make
+  sim-crash` for a nose-in crash.
+- [ ] **T8.9 Headset decoder stall.** After about 4 minutes of
+  `app-lens.yaml` the decoder stalls in the headset view (its output
+  buffers all held) and restarts don't recover it there (`NOTES.md`
+  section 30); the scenario fails since the watchdog. Find what holds the
+  frames (HMD rendering path), check on a phone.
+- [ ] **T8.8 A traditional RC transmitter** (user request, 2026-11-20;
+  `NOTES.md` section 31). Steps 1 to 4 done (fake, SDK patch 0005, the RC
+  transmitter screen, the HUD's RADIO ON and RADIO LOST, `app-rc.yaml`,
+  `disco-rc.probe`); left: the bench (step 5): pilot the Disco with a hobby radio (S.BUS or
+  SUMD receiver on the C.H.U.C.K.), set up from our app, while the app
+  keeps the video and HUD through the SkyController 2 (or the phone's
+  Wi-Fi). Steps:
+  1. Fake: the Disco's `Rc` feature (receiver state and protocol, enable
+     only when landed, channel monitoring, neutral and min/max calibration
+     per action, inversion, supported actions), channels driven from the
+     control socket (`rc ch <n> <value>`), and the sticks from the RC
+     applied to the flight simulation when enabled (take-control switch).
+  2. SDK: GroundSdk has no peripheral for it (only the generated
+     `ArsdkFeatureRc`): a patch adding an `RcReceiver` peripheral
+     (arsdkengine controller for the Disco), or raw commands from the app.
+  3. App: a settings screen "RC transmitter": receiver state and protocol,
+     enable (landed only), live channel bars, a calibration wizard
+     (neutral, then each action's min/max: roll, pitch, yaw, gaz, and the
+     switches: take-off/land, return home, emergency, piloting mode, take
+     control), channel inversion; the HUD shows who pilots (RC or
+     controller) and the receiver's state; an alert if the receiver is
+     lost while it pilots.
+  4. Scenarios against the fake; FreeFlight's RC screens as a reference
+     (its `Rc.*` commands, section 23).
+  5. Bench: receiver wiring (which C.H.U.C.K. port and UART:
+     /dev/uart-sbus on ttyPA2, /dev/uart-sumd on ttyPA3), the radio's
+     failsafe (no pulses, so the Disco's own link-loss handling applies),
+     a frequency apart from the Disco's Wi-Fi (868/915 MHz ELRS or
+     Crossfire with S.BUS output, or the Disco on 5 GHz), range test,
+     then a flight with the SkyController in hand as a fallback.
 
 ## M6 and later
 
