@@ -45,6 +45,7 @@ you to accept Parrot's Ground SDK EULA once (`make sdk-eula`).
 
     make sdk-sync sdk-native sdk-aar   # the SDK, as AARs (long, once)
     make check                         # app, unit tests, fakes, emulator, scenarios
+    make stop                          # stop the simulator, camera, fake and emulator
 
 `make check` builds the app (`out/disco-fpv-debug.apk`), runs the JVM unit
 tests and the fake Disco's protocol tests (`make fake-test`: its settings,

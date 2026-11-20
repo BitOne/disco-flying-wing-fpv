@@ -496,6 +496,9 @@ freeflight-stop: ## Stop FreeFlight, the in-emulator fake Disco and its mDNS ann
 .PHONY: check
 check: app apk-check unit fake-test fake video emu app-install e2e ## Full verification; exit code is the verdict
 
+.PHONY: stop
+stop: sim-stop video-stop fake-stop emu-stop ## Stop everything running: simulator, camera, fake, emulator (logs to out/)
+
 .PHONY: clean
 clean: ## Remove build outputs and test artifacts (keeps sdk/ and Docker caches)
 	rm -rf $(OUT)
