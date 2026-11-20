@@ -41,37 +41,48 @@ class RcActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val pad = (16 * resources.displayMetrics.density).toInt()
+        val dp = resources.displayMetrics.density
+        fun px(v: Int) = (v * dp).toInt()
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
+            setPadding(px(24), px(24), px(24), px(24))
         }
-        fun text(size: Float = 16f, mono: Boolean = false) = TextView(this).apply {
-            textSize = size
-            if (mono) typeface = Typeface.MONOSPACE
-            column.addView(this)
+        fun place(v: View, top: Int, height: Int = LinearLayout.LayoutParams.WRAP_CONTENT) {
+            column.addView(v, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, height)
+                .apply { topMargin = px(top) })
         }
-        fun button(label: String, onClick: () -> Unit) = Button(this).apply {
-            text = label
-            isAllCaps = false
-            setOnClickListener { onClick() }
-            column.addView(this)
+        // the same styles as the main and settings screens (themes.xml)
+        fun text(style: Int, top: Int = 0) = TextView(this, null, 0, style).apply { place(this, top) }
+        fun card(top: Int = 0, mono: Boolean = false) = TextView(this, null, 0, R.style.Card).apply {
+            textSize = if (mono) 13f else 16f
+            if (mono) {
+                typeface = Typeface.MONOSPACE
+                setTextColor(getColor(R.color.camera))
+            }
+            place(this, top)
         }
-        text(24f).text = getString(R.string.rc_title)
-        status = text()
-        enable = button("") { rc?.let { it.setEnabled(!it.isEnabled) } }
-        text(14f).text = getString(R.string.rc_enable_note)
-        text(20f).text = getString(R.string.rc_calibration)
-        step = text()
+        fun button(label: String, primary: Boolean = false, onClick: () -> Unit) =
+            Button(this, null, 0, if (primary) R.style.Button_Primary else R.style.Button_Secondary).apply {
+                text = label
+                setOnClickListener { onClick() }
+                place(this, 10, px(if (primary) 56 else 48))
+            }
+        text(R.style.Title).text = getString(R.string.rc_title)
+        text(R.style.Section, 24).text = getString(R.string.receiver)
+        status = card(4)
+        enable = button("", primary = true) { rc?.let { it.setEnabled(!it.isEnabled) } }
+        text(R.style.SettingNote).text = getString(R.string.rc_enable_note)
+        text(R.style.Section, 24).text = getString(R.string.rc_calibration)
+        step = card(4)
         startStep = button(getString(R.string.rc_start_step)) { startCurrentStep() }
         abort = button(getString(R.string.rc_abort)) { rc?.abortCalibration() }
         reset = button(getString(R.string.rc_reset)) { rc?.resetCalibration() }
-        text(20f).text = getString(R.string.rc_channels)
+        text(R.style.Section, 24).text = getString(R.string.rc_channels)
         monitor = button("") { rc?.let { it.setMonitoring(!it.isMonitoring) } }
-        channels = text(13f, mono = true)
+        channels = card(10, mono = true)
         inversions = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        column.addView(inversions)
-        setContentView(ScrollView(this).apply { addView(column) })
+        place(inversions, 0)
+        setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(column) })
 
         groundSdk = ManagedGroundSdk.obtainSession(this)
         val drone = intent.getStringExtra(DroneScreenActivity.EXTRA_DRONE_UID)?.let { groundSdk.getDrone(it) { finish() } }
@@ -140,13 +151,13 @@ class RcActivity : Activity() {
         inversions.removeAllViews()
         for ((action, info) in r.actions) {
             if (info.calibratedType == null) continue
-            inversions.addView(Button(this).apply {
-                isAllCaps = false
+            inversions.addView(Button(this, null, 0, R.style.SettingRow).apply {
                 text = getString(R.string.rc_inverted, action.name.replace('_', ' ').lowercase(),
                     getString(if (info.isInverted) R.string.on else R.string.off))
                 isEnabled = !r.isEnabled
                 setOnClickListener { rc?.setInverted(action, !info.isInverted) }
-            })
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = (6 * resources.displayMetrics.density).toInt() })
         }
     }
 }

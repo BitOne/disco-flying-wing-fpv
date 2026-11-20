@@ -110,15 +110,29 @@ export class Emulator {
     await this.shell(`input tap ${Math.round(x)} ${Math.round(y)}`);
   }
 
-  /** Taps the element whose text equals `text`, else the first one containing it. */
-  async tapText(text: string): Promise<void> {
-    const nodes = await this.dumpUi();
-    const node =
-      nodes.find((n) => n.text === text || n.contentDesc === text) ??
-      nodes.find((n) => n.text.includes(text) || n.contentDesc.includes(text));
-    if (!node) throw new Error(`no element with text "${text}" on screen`);
-    const { x1, y1, x2, y2 } = node.bounds;
-    await this.tap((x1 + x2) / 2, (y1 + y2) / 2);
+  /**
+   * Taps the element whose text equals `text`, else the first one
+   * containing it; not on screen, it scrolls down to look for it (long
+   * screens such as the settings), at most `maxScrolls` times, then from
+   * the top again (it may be above).
+   */
+  async tapText(text: string, maxScrolls = 6): Promise<void> {
+    const { height } = await this.screenSize();
+    for (let i = 0; ; i++) {
+      if (maxScrolls > 0 && i === maxScrolls + 1) await this.scrollToTop();
+      const nodes = await this.dumpUi();
+      const node =
+        nodes.find((n) => n.text === text || n.contentDesc === text) ??
+        nodes.find((n) => n.text.includes(text) || n.contentDesc.includes(text));
+      if (node) {
+        const { x1, y1, x2, y2 } = node.bounds;
+        await this.tap((x1 + x2) / 2, (y1 + y2) / 2);
+        return;
+      }
+      if (maxScrolls === 0 || i >= 2 * maxScrolls + 1) throw new Error(`no element with text "${text}" on screen`);
+      await this.swipe(height * 0.75, height * 0.4);
+      await sleep(300);
+    }
   }
 
   /**

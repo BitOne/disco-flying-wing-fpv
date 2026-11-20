@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Settings: one button per setting, showing its value; a tap changes it. -->
+<!-- Settings: grouped rows, each showing its setting and value; a tap changes it. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -12,43 +12,42 @@
         android:padding="24dp">
 
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings"
-            android:textSize="28sp" />
+            style="@style/Title"
+            android:text="@string/settings" />
 
+        <TextView
+            style="@style/Section"
+            android:text="@string/section_controller" />
         <Button android:id="@+id/setting_map_button" style="@style/SettingRow" />
         <Button android:id="@+id/setting_map_hold" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_recenter_button" style="@style/SettingRow" />
+
+        <TextView
+            style="@style/Section"
+            android:text="@string/section_headset" />
         <Button android:id="@+id/setting_hud_size" style="@style/SettingRow" />
         <Button android:id="@+id/setting_head_tracking" style="@style/SettingRow" />
-        <Button android:id="@+id/setting_recenter_button" style="@style/SettingRow" />
-        <Button android:id="@+id/setting_map_tiles" style="@style/SettingRow" />
-        <Button android:id="@+id/setting_tile_url" style="@style/SettingRow" />
-        <Button android:id="@+id/setting_map_file" style="@style/SettingRow" />
 
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/map_file_hint"
-            android:textSize="14sp" />
+            style="@style/Section"
+            android:text="@string/section_map" />
+        <!-- background, preview and offline download: the map screen -->
         <Button
-            android:id="@+id/setting_download_tiles"
+            android:id="@+id/setting_map"
             style="@style/SettingRow"
-            android:text="@string/download_tiles" />
+            android:drawableEnd="@drawable/ic_chevron"
+            android:drawablePadding="8dp" />
 
         <TextView
-            android:id="@+id/setting_download_status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="16sp" />
+            style="@style/Section"
+            android:text="@string/section_last_position" />
         <Button android:id="@+id/setting_last_fix" style="@style/SettingRow" />
 
         <TextView
             android:id="@+id/setting_last_fix_value"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textSize="16sp" />
+            style="@style/SettingNote"
+            android:textColor="@color/camera"
+            android:fontFamily="monospace" />
 
         <Button
             android:id="@+id/setting_forget_fix"

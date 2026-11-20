@@ -1,5 +1,7 @@
 # disco-flying-wing-fpv
 
+<img src="docs/logo/icon.svg" alt="Disco FPV icon: the flying wing over a HUD horizon" width="96" align="right">
+
 Open-source Android app for the Parrot Disco flying wing flown with a
 SkyController 2: live video in a side-by-side headset view (FPV) with a
 HUD, on modern Android phones. Built on the community
@@ -60,7 +62,8 @@ exit code is the verdict; screenshots and results go to `out/latest/`.
 The app: flight view and side-by-side headset view with a HUD in four
 modes (classic, minimal, jet fighter, moving map over map tiles,
 satellite photos worldwide or an offline OpenStreetMap file from
-download.mapsforge.org), the
+download.mapsforge.org; tiles downloaded ahead around the Disco's last
+position, the phone's position or typed coordinates), the
 controller's buttons to cycle them and bring up the map, warnings from the
 Disco's alarms, the last GPS position kept after a loss, the camera tilt,
 and a settings screen.

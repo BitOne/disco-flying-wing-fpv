@@ -20,7 +20,9 @@ steps:
   - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
     timeout: 20000
   - tap_text: Settings
-  - expect_texts: ["Map background: satellite (best available)"]
+  - tap_text: "Map: satellite (best available)"
+  - expect_texts: ["Map background: satellite (best available)", "Sentinel-2"]
+  - back
   - back
   - tap_text: Flight view
   - expect_texts: [CIRCLING]
@@ -35,5 +37,14 @@ steps:
   - wait: 6000
   - screenshot: satellite-sydney
   - send: [button b]
+  - back
+  # the map screen's preview of the same photos, on the Disco's last position
+  - tap_text: Settings
+  - tap_text: "Map: satellite (best available)"
+  - tap_text: The Disco
+  - expect_texts: ["Around the Disco's last position: -33.85"]
+  - wait: 8000
+  - screenshot: satellite-preview
+  - back
   - back
   - shell: run-as io.github.bitone.discofpv rm -rf shared_prefs/settings.xml shared_prefs/last_fix.xml

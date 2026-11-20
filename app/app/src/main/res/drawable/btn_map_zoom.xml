@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Zoom buttons over the map preview: dark, round, orange outline. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#40FF8C1A">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#D9081723" />
+            <stroke android:width="1.5dp" android:color="@color/accent" />
+        </shape>
+    </item>
+</ripple>

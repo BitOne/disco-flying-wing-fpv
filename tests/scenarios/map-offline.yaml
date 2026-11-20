@@ -22,7 +22,12 @@ steps:
   - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
     timeout: 20000
   - tap_text: Settings
+  - expect_texts: ["Map: offline map file"]
+  - tap_text: "Map: offline map file"
   - expect_texts: ["Map background: offline map file", "Offline map file: file:///sdcard/Android/data/io.github.bitone.discofpv/files/rhone-alpes.map"]
+  - wait: 5000
+  - screenshot: map-offline-preview
+  - back
   - back
   - tap_text: Flight view
   - expect_texts: [CIRCLING]

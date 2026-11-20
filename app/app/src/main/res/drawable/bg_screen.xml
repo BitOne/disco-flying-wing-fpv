@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's screens: the icon's night sky. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="270"
+        android:centerColor="@color/sky_mid"
+        android:endColor="@color/sky_bottom"
+        android:startColor="@color/sky_top" />
+</shape>

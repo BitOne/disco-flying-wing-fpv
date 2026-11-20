@@ -1,73 +1,148 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Main screen: the app, what is connected, and where to go. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true"
-    android:orientation="vertical"
-    android:padding="24dp">
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
 
-    <TextView
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/app_name"
-        android:textSize="28sp" />
+        android:orientation="vertical"
+        android:padding="24dp">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="@string/remote_control"
-        android:textSize="14sp" />
+        <!-- header: the icon, the name, what it is -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-    <TextView
-        android:id="@+id/rc_status"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/none"
-        android:textSize="20sp" />
+            <ImageView
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/bg_card"
+                android:clipToOutline="true"
+                android:contentDescription="@null"
+                android:src="@drawable/logo" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="@string/drone"
-        android:textSize="14sp" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/drone_status"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/none"
-        android:textSize="20sp" />
+                <TextView
+                    style="@style/Title"
+                    android:text="@string/app_name" />
 
-    <Button
-        android:id="@+id/flight_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
-        android:enabled="false"
-        android:text="@string/flight_view" />
+                <TextView
+                    style="@style/Subtitle"
+                    android:text="@string/tagline" />
+            </LinearLayout>
+        </LinearLayout>
 
-    <Button
-        android:id="@+id/headset_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:enabled="false"
-        android:text="@string/headset_view" />
+        <!-- what is connected -->
+        <TextView
+            style="@style/Section"
+            android:layout_marginTop="32dp"
+            android:text="@string/remote_control" />
 
-    <Button
-        android:id="@+id/rc_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:enabled="false"
-        android:text="@string/rc_button" />
+        <LinearLayout
+            style="@style/Card"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-    <Button
-        android:id="@+id/settings_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/settings" />
-</LinearLayout>
+            <View
+                android:id="@+id/rc_dot"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:background="@drawable/dot" />
+
+            <TextView
+                android:id="@+id/rc_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:text="@string/none"
+                android:textSize="16sp" />
+        </LinearLayout>
+
+        <TextView
+            style="@style/Section"
+            android:text="@string/drone" />
+
+        <LinearLayout
+            style="@style/Card"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <View
+                android:id="@+id/drone_dot"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:background="@drawable/dot" />
+
+            <TextView
+                android:id="@+id/drone_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:text="@string/none"
+                android:textSize="16sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/main_hint"
+            style="@style/SettingNote"
+            android:layout_marginTop="12dp"
+            android:paddingStart="4dp"
+            android:text="@string/main_hint" />
+
+        <!-- where to go -->
+        <Button
+            android:id="@+id/flight_button"
+            style="@style/Button.Primary"
+            android:layout_marginTop="32dp"
+            android:enabled="false"
+            android:text="@string/flight_view" />
+
+        <Button
+            android:id="@+id/headset_button"
+            style="@style/Button.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="12dp"
+            android:enabled="false"
+            android:text="@string/headset_view" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/rc_button"
+                style="@style/Button.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="@string/rc_button" />
+
+            <Button
+                android:id="@+id/settings_button"
+                style="@style/Button.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:text="@string/settings" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

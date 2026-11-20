@@ -1997,6 +1997,85 @@ https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
   mux listens on all interfaces (port 4321) and carries the video.
 - `docs/QUICKSTART.md`: the parts and the recipes.
 
+## 33. Logo and app design (2026-11-20)
+
+- Logo: the Disco's flying wing seen from behind, over an orange HUD
+  horizon, on a night sky gradient, with a cyan dot for the camera.
+  Master in `docs/logo/icon.svg` (108 units, the adaptive icon's grid:
+  the wing stays inside the 66 unit safe zone); the app has it as an
+  adaptive icon (vector background, foreground, monochrome layer for
+  themed icons) plus PNGs for older launchers.
+- Palette from the icon (`res/values/colors.xml`): sky #1B4566 to
+  #081723, accent orange #FF8C1A for actions and section headings, cyan
+  #36D1FF for values; status dots green (connected), amber (connecting),
+  grey (none).
+- `AppTheme` (`themes.xml`) for the main, settings and RC screens; the
+  flight and headset views keep their full-screen themes. Styles: Title,
+  Subtitle, Section, Card, Button.Primary (the flight view), Button.Secondary
+  (outlined), SettingRow, SettingNote. RcActivity builds its views in code
+  with the same styles (the 4 argument View constructors).
+- The main screen: header with the icon, the controller and the Disco in
+  cards with a status dot, a hint line for what to do next, the flight view
+  as the main action. Settings grouped under Controller buttons, Headset,
+  Map, Last position. Every text the scenarios look for is unchanged; the
+  settings screen is now longer than a phone screen, so the e2e runner's
+  `tap_text` scrolls down to find a row (only after 3 s, once the screen
+  has settled) and `app-map.yaml` looks for the last fix with `scroll`.
+
+## 34. The map screen: background, preview, download around a point (2026-11-20)
+
+- The map settings were the most complex part of the settings screen
+  (background, custom URL, offline file, downloads): they now have their
+  own screen, `MapActivity`, opened from the "Map: <background>" row of
+  the settings. The controller's map buttons stay in the settings.
+- Background: chosen from a list (no more cycling through all of them);
+  only the row it needs is shown (custom URL or offline file), asked for
+  straight away when empty, with a note on what each source is and
+  whether its terms allow downloading ahead (OpenStreetMap does not).
+- Preview (`MapPreviewView`): the chosen background's tiles through the
+  same `TileLayer` as the moving map (memory, disk cache, network or the
+  offline file), north up, dragged with a finger, zoom buttons (3 to the
+  source's maximum, 14 by default), tiles drawn at density/2 so they stay
+  readable, with the 1.5 km download circle, its centre, the attribution
+  and the zoom level. Centre and zoom are kept (`map_screen` preferences).
+- The preview's centre, from three places:
+  - the Disco's last GPS position (the default once there is one);
+  - this phone's position: at the field before the Disco is on. Location
+    permission asked only then (`ACCESS_FINE_LOCATION`, coarse also
+    accepted: 1.5 km covers its error); a fix under 2 min old is reused,
+    else one is asked from GPS (or network), 30 s at most;
+  - coordinates typed or pasted (`Coordinates.kt`, unit tested): decimal
+    with a dot or a decimal comma, hemisphere letters before or after,
+    degrees minutes seconds or decimal minutes, `geo:` URIs, Google Maps
+    (`@lat,lon`, `?q=`) and OpenStreetMap (`mlat/mlon`, `#map=z/lat/lon`)
+    links. A typo keeps the dialog open; the last coordinates are offered
+    again.
+  - or dragged anywhere.
+- "Download this area": the tiles of the circle (zoom 12 to the source's
+  maximum, at most 2000; only for sources whose terms allow it, section
+  26); the status line names the point, one download at a time.
+- Tests: `app-map-tiles.yaml` goes through the screen (background list,
+  custom URL, preview with the test tile server, the three centres, two
+  downloads); the phone's GPS is a test provider (`appops set
+  com.android.shell android:mock_location allow`, then `cmd location
+  providers add-test-provider gps` and `set-test-provider-location gps
+  --location lat,lon`). `map-satellite.yaml` screenshots the preview of
+  real satellite photos (Sydney, Sentinel-2). The e2e runner's
+  `tap_text` scrolls down, then from the top, to find a row off screen.
+  `input text` right after a dialog opens can swap letters ("htpt"): the
+  scenarios wait 1.5 s first.
+- Rig lesson: an emulator left in USB mode (`check-usb`) keeps its
+  aoa-host relay connected to the fake; a debug build then connects a
+  second time through the bridge and the two fight (disconnected every
+  second, LINK LOST in the HUD). `scripts/emu-start.sh` now labels the
+  container with its mode and restarts one left in the other mode.
+- Flakes seen in the full runs for 0.1.1, all passing when rerun:
+  `app-head-tracking` once (pan -10), `app-lens` once (no headset video),
+  and in one bridge run every scenario from `app-lens` on, with the host's
+  swap full (8 GB) and a scanner on a core: the emulator stalls, the fake
+  reports "mux Too many ping failures" and the app reconnects in a loop.
+  A full run wants a few GB of free memory on the PC.
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf

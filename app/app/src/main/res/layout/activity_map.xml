@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Map: the background, a preview of it, and the area to keep for flying
+     without network. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/map_scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            style="@style/Title"
+            android:text="@string/map_title" />
+
+        <TextView
+            style="@style/Subtitle"
+            android:layout_marginTop="4dp"
+            android:text="@string/map_subtitle" />
+
+        <!-- what the map shows -->
+        <TextView
+            style="@style/Section"
+            android:text="@string/map_section_background" />
+        <Button android:id="@+id/setting_map_tiles" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_tile_url" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_map_file" style="@style/SettingRow" />
+        <TextView
+            android:id="@+id/map_source_note"
+            style="@style/SettingNote" />
+
+        <!-- what it looks like -->
+        <TextView
+            style="@style/Section"
+            android:text="@string/map_section_preview" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="280dp"
+            android:layout_marginTop="4dp">
+
+            <io.github.bitone.discofpv.MapPreviewView
+                android:id="@+id/map_preview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@string/map_section_preview" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end|top"
+                android:layout_margin="8dp"
+                android:orientation="vertical">
+
+                <Button
+                    android:id="@+id/map_zoom_in"
+                    style="@style/MapZoom"
+                    android:contentDescription="@string/map_zoom_in"
+                    android:text="+" />
+
+                <Button
+                    android:id="@+id/map_zoom_out"
+                    style="@style/MapZoom"
+                    android:layout_marginTop="8dp"
+                    android:contentDescription="@string/map_zoom_out"
+                    android:text="−" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/map_center"
+            style="@style/SettingNote"
+            android:textColor="@color/camera" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/map_center_disco"
+                style="@style/MapCenterButton"
+                android:layout_marginEnd="4dp"
+                android:text="@string/map_center_disco" />
+
+            <Button
+                android:id="@+id/map_center_phone"
+                style="@style/MapCenterButton"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:text="@string/map_center_phone" />
+
+            <Button
+                android:id="@+id/map_center_coordinates"
+                style="@style/MapCenterButton"
+                android:layout_marginStart="4dp"
+                android:text="@string/map_center_coordinates" />
+        </LinearLayout>
+
+        <!-- for the field without network -->
+        <TextView
+            style="@style/Section"
+            android:text="@string/section_download" />
+        <TextView
+            style="@style/SettingNote"
+            android:layout_marginTop="0dp"
+            android:text="@string/download_hint" />
+
+        <Button
+            android:id="@+id/map_download"
+            style="@style/Button.Primary"
+            android:layout_marginTop="12dp"
+            android:text="@string/map_download" />
+
+        <TextView
+            android:id="@+id/setting_download_status"
+            style="@style/SettingNote" />
+    </LinearLayout>
+</ScrollView>

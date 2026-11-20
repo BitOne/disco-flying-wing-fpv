@@ -28,12 +28,55 @@
         <item name="android:textColor">#FF6040</item>
     </style>
 
-    <!-- Settings screen rows. -->
-    <style name="SettingRow">
-        <item name="android:layout_width">wrap_content</item>
+    <!-- Settings screen rows: a full-width card, the setting and its value. -->
+    <style name="SettingRow" parent="@android:style/Widget.DeviceDefault.Button.Borderless">
+        <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:gravity">start|center_vertical</item>
+        <item name="android:background">@drawable/bg_row</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">15sp</item>
         <item name="android:textAllCaps">false</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <!-- A note under a setting. -->
+    <style name="SettingNote">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <!-- Map screen: the zoom buttons over the preview, the centre choices under it. -->
+    <style name="MapZoom" parent="@android:style/Widget.DeviceDefault.Button.Borderless">
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:background">@drawable/btn_map_zoom</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <style name="MapCenterButton" parent="Button.Secondary">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:maxLines">1</item>
     </style>
 
     <!-- Lens calibration panel (headset view). -->

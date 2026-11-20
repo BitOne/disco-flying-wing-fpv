@@ -38,6 +38,7 @@ steps:
     timeout: 20000
   - tap_text: Settings
   - expect_texts: ["LAST FIX 45.18", "Map button: B", "Headset HUD size: 60 %"]
+    scroll: true
   - tap_text: "Map button: B"
   - expect_texts: ["Map button: A"]
   - tap_text: "Map shown: press to show, press to hide"

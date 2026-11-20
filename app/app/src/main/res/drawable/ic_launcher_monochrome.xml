@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Disco FPV icon, one colour (Android 13 themed icons): the wing and the horizon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M24,66H44M64,66H84M24,66V70M84,66V70"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M54,28C57.2,28 59.6,31 60.6,35L85,54.5L84.2,58.6L62,54.2L61,62.5L47,62.5L46,54.2L23.8,58.6L23,54.5L47.4,35C48.4,31 50.8,28 54,28Z" />
+</vector>

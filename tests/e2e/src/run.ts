@@ -99,10 +99,12 @@ async function runStep(
     case 'tap_text':
     case 'tap_id': {
       // the element may not be there yet right after a screen change
-      const deadline = Date.now() + 10_000;
+      const start = Date.now();
+      const deadline = start + 10_000;
       for (;;) {
         try {
-          if (step.kind === 'tap_text') await emu.tapText(step.text);
+          // scrolls to look for it only once the screen has settled
+          if (step.kind === 'tap_text') await emu.tapText(step.text, Date.now() - start > 3000 ? 6 : 0);
           else await emu.tapId(step.id, step.times);
           await sleep(800);
           return undefined;

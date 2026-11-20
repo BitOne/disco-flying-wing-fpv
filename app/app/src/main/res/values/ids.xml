@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="setting_tile_url_input" type="id" />
+    <item name="setting_coordinates_input" type="id" />
 </resources>
