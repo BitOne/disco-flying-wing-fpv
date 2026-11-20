@@ -268,6 +268,8 @@ sim-stop: ## Stop the simulated Disco, logs to out/sim-*.log
 	@mkdir -p $(OUT)
 	-for c in $(SIM_NAMES); do docker logs $$c > $(OUT)/sim-$${c#disco-fpv-}.log 2>&1; done
 	docker rm -f $(SIM_NAMES) >/dev/null 2>&1 || true
+	@# the bridge switched the fake's own flight model off: back on
+	-printf 'sim internal\n' | nc -q1 127.0.0.1 $(E2E_CTRL_PORT) >/dev/null 2>&1
 
 .PHONY: apk-check
 apk-check: ## Check out/disco-fpv-debug.apk's arm64 native libraries are 16 KB aligned
@@ -437,6 +439,17 @@ e2e-deps: tests/e2e/node_modules ## Install the e2e runner's npm dependencies (i
 .PHONY: e2e-unit
 e2e-unit: e2e-deps ## Type-check and unit-test the e2e runner (in Docker)
 	$(NODE_RUN) sh -c 'node_modules/.bin/tsc --noEmit && npm test --silent'
+
+# Latency, CPU and memory of the app in front (NOTES.md section 28): start
+# the camera with the clock code first, `make video VIDEO_ENV="-e CLOCK_CODE=1"`
+# (restart the app after: a camera restart freezes the video), open its
+# video view, then `make latency LATENCY_PKG=com.parrot.freeflight3`.
+LATENCY_PKG ?= io.github.bitone.discofpv
+LATENCY_SAMPLES ?= 20
+.PHONY: latency
+latency: e2e-unit ## Video glass-to-glass latency, CPU, memory of LATENCY_PKG (clock-coded camera)
+	node tests/e2e/src/latency.ts --package $(LATENCY_PKG) --samples $(LATENCY_SAMPLES) \
+		--label $(LATENCY_PKG) --out $(OUT)/latency
 
 .PHONY: e2e
 e2e: e2e-unit ## Run end-to-end scenarios (SCENARIOS) against emulator + fake; out/latest

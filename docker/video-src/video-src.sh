@@ -10,8 +10,11 @@
 # still repeated every second (config-interval=1) for receivers joining late.
 # Env: HOST (127.0.0.1), RTP_PORT (55004), RTCP_PORT (55005),
 #      PATTERN (smpte), BITRATE kbit/s (1500), LABEL (FAKE DISCO),
-#      SPEED scroll in pixels per frame (4, 0 for a static pattern).
+#      SPEED scroll in pixels per frame (4, 0 for a static pattern),
+#      CLOCK_CODE=1: the wall clock drawn in each frame (video-clock.py), for
+#      measuring glass-to-glass latency (make latency).
 set -eu
+[ "${CLOCK_CODE:-0}" = 1 ] && exec /usr/local/bin/video-clock
 HOST=${HOST:-127.0.0.1}
 RTP_PORT=${RTP_PORT:-55004}
 RTCP_PORT=${RTCP_PORT:-55005}

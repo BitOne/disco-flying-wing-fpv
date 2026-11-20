@@ -577,6 +577,37 @@ as the real SC2 does (GroundSdk's VideoEnable is a no-op there). Watch.
 - [ ] **T7.3 Signed release APK.**
 - [x] **T7.4 README** with the current state, build and test commands.
 
+## M8. Before the first real flight (risk review, 2026-11-20)
+
+From `NOTES.md` section 29 (ranked risks) and section 28 (measurements).
+
+- [ ] **T8.1 SDK USB permission crash.** `ArsdkUsbMuxBackendController.
+  requestRcPermission` registers its receiver without
+  `RECEIVER_NOT_EXPORTED` (SecurityException on Android 14 and later with
+  target 35; seen in the emulator) and builds its PendingIntent without a
+  mutability flag (IllegalArgumentException from target 31). Reached when
+  the controller is plugged in and the app lacks the permission (launched
+  from the launcher, chooser dismissed, FreeFlight picked once). Patch
+  `patches/packages/groundsdk-android/0003`, a scenario starting the app
+  before the permission on `emu-usb`, and a search of the AARs for other
+  receivers and PendingIntents.
+- [ ] **T8.2 Frozen video watchdog.** No new frame for about 500 ms: a
+  loud HUD alert, then restart the stream. Covers a camera stream restart
+  (timestamps going back freeze pdraw for good, both apps, section 28),
+  the `app-unplug` flake and decoder stalls.
+- [ ] **T8.3 Safe button grabs.** Read the controller's mapping before
+  grabbing B, A and settings; never grab a button mapped to a flight
+  action; check grabs are released when the app dies (bench).
+- [ ] **T8.4 Telemetry delay.** 0.2 to 0.8 s from the fake to our HUD
+  (FreeFlight 0.2 to 0.8 s too), mostly phone side: timestamps in the SDK
+  path (mux read, arsdk decode, Java callback, HUD draw) to find where.
+- [ ] **T8.5 Headset view safety.** Recentre the camera when head
+  tracking stops; head tracking off by default for the first flights;
+  phone temperature and battery soak test (30 minutes, `dumpsys
+  thermalservice`).
+- [ ] **T8.6 Bench session** (propellers off), then the first flight, as
+  listed in `NOTES.md` section 29.
+
 ## M6 and later
 
 See `PLAN.md` section 4.

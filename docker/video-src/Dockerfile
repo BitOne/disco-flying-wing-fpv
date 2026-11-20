@@ -6,11 +6,12 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
         gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-x \
-        fonts-dejavu-core \
+        fonts-dejavu-core python3-gi python3-gst-1.0 gir1.2-gstreamer-1.0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY video-src.sh /usr/local/bin/video-src
-RUN chmod a+rx /usr/local/bin/video-src
+COPY video-clock.py /usr/local/bin/video-clock
+RUN chmod a+rx /usr/local/bin/video-src /usr/local/bin/video-clock
 # fontconfig needs a writable cache: give it /tmp
 ENV XDG_CACHE_HOME=/tmp/cache
 USER nobody

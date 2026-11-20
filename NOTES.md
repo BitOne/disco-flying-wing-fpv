@@ -1542,6 +1542,163 @@ https://www.idee.es/csw-codsi-idee/srv/api/records/spaignwmts_pnoa-ma ,
 https://data.overheid.nl/en/dataset/56588-luchtfoto-beeldmateriaal-2024-7-5cm-rgb-open-data ,
 https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer
 
+## 28. FreeFlight vs our app: latency, CPU, memory (2026-11-20)
+
+Setup: the emulator in USB mode (`make emu-usb`, the fake SkyController 2
+through aoa-host), FreeFlight Pro 5.2.7 and our usb build installed side
+by side, each opened in turn from Android's chooser on the same fake
+Disco, hovering at 50 m. Note: FreeFlight runs through ARM translation on
+the x86_64 emulator (its native code is ARM only), our app natively: that
+inflates FreeFlight's CPU and code memory here, not on a real phone.
+
+How (`tests/e2e/src/latency.ts`, `make latency`):
+- the fake camera can draw the wall clock in each frame
+  (`video-clock.py`, `CLOCK_CODE=1`): 26 blocks, white and black
+  references then the milliseconds modulo 2^24 in 24 bits, stamped when
+  the frame leaves the test source; `clockcode.ts` finds the row by its
+  shape at any scale, orientation or crop and reads it back;
+- screenshots by the emulator's console (`adb emu screenrecord
+  screenshot`), timed in its container on the host clock like the
+  camera: 120 to 170 ms each, the grab first then PNG encoding, so the
+  latency is close to the lower bound ("capture started N ms after the
+  frame left the camera"). Android's own `screencap` takes 260 to 330 ms
+  and runs on the device clock, which was 960 ms behind the host here
+  (measured by pings over a persistent adb shell, within 8 ms);
+- CPU from `top` over 10 s, memory from `dumpsys meminfo`, while
+  streaming.
+
+Video, glass to glass (camera source to screen, lower bound, median):
+
+| view | our app | FreeFlight |
+|---|---|---|
+| flight view / piloting view | 125 to 126 ms (38 frames, 81 to 294) | 127 to 130 ms (60 frames, 73 to 239) |
+| headset view / Cockpitglasses | about 105 ms (24 frames, small centred code: `CLOCK_BLOCK=12 CLOCK_Y=234`) | not readable: its horizon line crosses the code |
+
+The same within noise: the video path (x264 ultrafast, RTP, fake relay,
+emulator network, emulated USB, MediaCodec on the emulator's decoder,
+composition) sets it, and both apps use Parrot's pdraw with MediaCodec.
+
+Telemetry (`tests/e2e/src/telemetry-latency.ts`: the fake's altitude
+changed at a known host time, screenshots back to back until the
+displayed value changes; static test pattern, `SPEED=0`): our app 208 to
+770 ms (median between 381 and 589), FreeFlight 209 to 834 ms (median
+between 615 and 788), 10 changes each. The fake puts the frame on the TCP
+link within 3 to 8 ms (tcpdump in a throwaway container) and aoa-host
+relays without buffering, so most of the half second is on the phone
+side for both (the video crosses the same link in about 125 ms); not
+split further (it would need timestamps inside GroundSdk). Our app is
+about 0.2 s faster.
+
+Inputs: neither app relays the sticks: the SkyController 2 sends piloting
+to the Disco itself, so stick to aircraft latency is the same with any
+app or none; what the pilot sees of it is the video latency above.
+FreeFlight's own commands (return home, settings) suffer its
+acknowledgement lag (section 23); our app sends only the camera
+orientation (head tracking) and button grabs.
+
+CPU and memory while streaming:
+
+| | our app | FreeFlight |
+|---|---|---|
+| CPU, flight / piloting view | 53 % | 71 to 74 % |
+| CPU, headset / Cockpitglasses | 75 % | 128 % |
+| PSS | 71 to 82 MB | 168 to 180 MB (237 MB after a longer session) |
+| RSS | 180 to 191 MB | 320 to 416 MB |
+| native heap | 21 to 25 MB | 54 to 79 MB |
+| Java heap | 12 to 14 MB | 14 to 23 MB |
+| code | 7.5 MB | 36 to 50 MB |
+
+Found on the way: **a camera stream restart freezes the video for good,
+in both apps.** When the stream's timestamps go back (the camera
+pipeline restarted), pdraw logs "timestamp rollback from X to Y,
+incrementing" for every frame and nothing new is shown (still frozen 30 s
+later in both); a new session (reconnect) recovers. If the real Disco's
+encoder restarts in flight (resolution or mode change, a video pipeline
+restart), the picture would freeze: a frozen-video watchdog that restarts
+the stream is needed (T8.2).
+
+Also: after `make sim`, `make sim-stop` now sends `sim internal` to the
+fake so its own flight model runs again (the bridge had switched it off,
+which broke `app-map`).
+
+## 29. What could go wrong with the real Disco (risk review, 2026-11-20)
+
+Facts first. The app sends no piloting, take-off, landing or return home
+command; its only commands are the camera orientation (head tracking) and
+button grabs on the controller. The SkyController 2 flies the Disco
+without a phone, and the Disco's link loss return home depends on the
+controller link, not the phone (Parrot's design, not yet checked by us).
+So a dead app or phone should leave a blind pilot, not an uncontrolled
+aircraft. Everything protocol related was verified only against our
+fakes, built from firmware 1.7.1 (Disco), 1.0.9 (controller) and
+FreeFlight.
+
+Risks, most serious first (likelihood times impact):
+
+1. **Video lost in the headset** (crash, freeze, decoder stall, cable,
+   heat, a system dialog): a blind pilot. Evidence: the `app-unplug`
+   flake (video not back after a replug, 2 in about 25 runs); a camera
+   stream restart freezes the video for good (section 28); a frozen frame
+   is not detected. Mitigation: the frozen video watchdog (T8.2); a
+   procedure (loiter on the controller, headset off, line of sight); a
+   spotter; Do Not Disturb or airplane mode (offline map); our app as the
+   controller's default app.
+2. **Crash on connection on Android 14 and later** (verified in the
+   code): `ArsdkUsbMuxBackendController.requestRcPermission`
+   (sdk/packages/groundsdk-android/sdkcore, around line 217) registers a
+   receiver without an exported flag and makes a PendingIntent without a
+   mutability flag. Our earlier SecurityException in USB mode was this.
+   `check-usb` passed only because Android's accessory launch grants the
+   permission first. Mitigation: T8.1.
+3. **Real hardware differs from the fakes**: the stream through the
+   controller, the AOA handshake with a real controller, unexpected values
+   in the SDK's parsers (precedent: the AnafiMotors index crash, section
+   22), GPU differences for the headset shader. Mitigation: the bench
+   with logcat recorded; harden the motor version parsing; a crash
+   handler that restarts the flight view.
+4. **A button grab swallowing a flight action**: B, A and settings are
+   grabbed assuming the default mapping; a pilot's remapping would be
+   taken silently, and the release of grabs when the app dies is unknown.
+   Mitigation: T8.3, and the bench check.
+5. **A misleading HUD**: tilt range and sign, alarm thresholds and
+   settings ranges are assumed; the fighter horizon adds the tilt; head
+   tracking drifts (no compass in the game rotation vector) and the camera
+   stays off centre when the headset view pauses. Mitigation: compare
+   with the picture and with FreeFlight on the bench; recentre on pause;
+   head tracking last.
+6. **Phone heat and battery in a headset**: decoding, two eyes, sensors,
+   map rendering; tiles on mobile data. Mitigation: a 30 minute soak; maps
+   downloaded ahead or offline, airplane mode.
+7. **Acknowledgement lag like FreeFlight's**: not seen with our app on the
+   emulated link, and we send few acknowledged commands. Bench: watch for
+   retries in logcat.
+8. **Wrong build or Disco settings**: the debug build has the TCP bridge
+   (install the usb build); the app sets none of the Disco's settings
+   (geofence, return home altitude and delay): check them in FreeFlight
+   once.
+
+First real flight checklist:
+1. T8.1 and T8.2 done; usb build installed; Disco settings checked in
+   FreeFlight.
+2. Bench outdoors with a GPS fix, propellers off, logcat recorded:
+   connection, telemetry, video, firmware versions.
+3. Unplug the phone and force stop the app: the sticks still move the
+   surfaces.
+4. With the app in front: take-off/land, return home, loiter and record
+   buttons act on the Disco; map, HUD and recentre buttons work; kill the
+   app: those buttons are back to normal.
+5. Pull and replug the cable 5 times: the video comes back, the HUD
+   flags the outage.
+6. Tilt slider through its range: the horizon and CAM value match the
+   picture; battery, GPS, alarms match FreeFlight.
+7. 30 minutes in the headset view: temperature and battery logged.
+8. Video latency on the real link (film the screen and the Disco, or the
+   clock method with a screen showing a clock in front of the camera).
+9. First flight in the flight view, line of sight, head tracking off,
+   with a spotter; loiter and return home from the controller.
+10. Then the headset, put on at altitude in loiter; rehearse a video loss;
+    head tracking last.
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
