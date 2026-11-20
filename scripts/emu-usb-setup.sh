@@ -27,20 +27,34 @@ wait_boot() {
 	until [ "$($ADB shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do sleep 2; done
 }
 
-$ADB root >/dev/null; sleep 2; $ADB wait-for-device
+# adbd restarts as root; just after a boot it can drop the request
+# ("unable to connect for root: closed"): try again
+as_root() {
+	for _ in 1 2 3 4 5 6; do
+		if $ADB root >/dev/null 2>&1; then
+			sleep 2; $ADB wait-for-device
+			[ "$($ADB shell id -u 2>/dev/null | tr -d '\r')" = "0" ] && return 0
+		fi
+		sleep 3
+	done
+	echo "adb root failed" >&2
+	return 1
+}
+
+as_root
 if ! $ADB shell pm list features | grep -q android.hardware.usb.accessory; then
 	# a feature file is read at boot
 	echo "declaring android.hardware.usb.accessory (remount, reboot)"
 	# the first remount sets up overlayfs and asks for a reboot
 	if $ADB remount 2>&1 | grep -qi reboot; then
-		$ADB reboot; wait_boot; $ADB root >/dev/null; sleep 2; $ADB wait-for-device
+		$ADB reboot; wait_boot; as_root
 		$ADB remount >/dev/null
 	fi
 	docker cp "$(dirname "$0")/../aoa-host/android.hardware.usb.accessory.xml" "$EMU":/tmp/usb-accessory.xml
 	$ADB push /tmp/usb-accessory.xml /system/etc/permissions/android.hardware.usb.accessory.xml >/dev/null
 	$ADB reboot
 	wait_boot
-	$ADB root >/dev/null; sleep 2; $ADB wait-for-device
+	as_root
 	$ADB shell pm list features | grep -q android.hardware.usb.accessory || { echo "feature not declared" >&2; exit 1; }
 fi
 

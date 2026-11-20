@@ -2075,6 +2075,11 @@ https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
   swap full (8 GB) and a scanner on a core: the emulator stalls, the fake
   reports "mux Too many ping failures" and the app reconnects in a loop.
   A full run wants a few GB of free memory on the PC.
+- `check-usb` on 0.1.1 (swap still full): 13 of 15 passed, `app-hud-modes`
+  and `app-lens` failed on headset video contrast and passed when rerun.
+  The run before it stopped in `emu-usb-setup.sh`: `adb root` just after a
+  reboot was dropped ("unable to connect for root: closed"); the script
+  now retries it and checks it is root.
 
 ## Sources
 
