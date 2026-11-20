@@ -3,11 +3,14 @@
  *
  * Writes the Gazebo world of the simulated Disco (sim/gazebo/worlds/
  * disco.sdf): a flying field with the Disco (Zephyr with a nose camera) at
- * the origin, a patchwork of fields (meadow, crops, ploughed and dry
- * ground), a pond, a village of houses along a road, woods, hedgerows and
- * scattered trees: real 3D objects from Gazebo Fuel (Open Robotics,
- * CC-BY 4.0) on textured ground (ambientCG, CC0), placed with a fixed seed
- * so the world is always the same.
+ * the origin, its strip marked in white, about 6 km of countryside to fly
+ * over: a patchwork of fields (meadow, crops, ploughed and dry ground, each
+ * field tinted its own way so they read from altitude), a winding river, a
+ * lake and a pond, two roads crossing with a village and a hamlet, woods
+ * and forests, gentle hills, a red and white radio mast as a landmark,
+ * hedgerows and scattered trees: real 3D objects from Gazebo Fuel (Open
+ * Robotics, CC-BY 4.0) on textured ground (ambientCG, CC0), placed with a
+ * fixed seed so the world is always the same.
  *
  *   node src/gazebo-world.ts ../gazebo
  *
@@ -47,8 +50,6 @@ export const KINDS: Kind[] = [
   { model: 'House 3', version: 3, mesh: 'house_3.dae', scale: 1.5, visuals: [{ albedo: 'House_3_Diffuse.png' }] },
   { model: 'Gas Station', version: 3, mesh: 'gas_station.dae', scale: 1, visuals: [{ albedo: 'GasStation_Diffuse.png' }] },
   { model: 'Lamp Post', version: 3, mesh: 'lamp_post.dae', scale: 3, visuals: [{ albedo: 'Lamp_Post_Diffuse.png' }], trunk: [0.15, 6] },
-  { model: 'Office Building', version: 3, mesh: 'office_building.dae', scale: 1, visuals: [{}] },
-  { model: 'Water Tower', version: 3, mesh: 'water_tower.dae', scale: 1, visuals: [{ albedo: 'water_tower_diffuse.jpg' }] },
   {
     model: 'Oak tree', version: 7, mesh: 'oak_tree.dae', scale: 1, trunk: [0.4, 6],
     visuals: [{ submesh: 'Branch', albedo: 'branch_diffuse.png', cutout: true }, { submesh: 'Bark', albedo: 'bark_diffuse.png' }],
@@ -194,11 +195,21 @@ export const TEXTURES = {
   gravel: 'Gravel043',
 } as const;
 
-export type Surface = keyof typeof TEXTURES | 'water';
+export type Surface = keyof typeof TEXTURES | 'water' | 'paint';
 
-/** A field of the patchwork: its surface and shape. */
+/** Colour multipliers for the fields' textures: each field its own shade. */
+export const TINTS: [number, number, number][] = [
+  [1, 1, 1],
+  [0.82, 0.86, 0.74],
+  [0.95, 0.9, 0.72],
+  [0.74, 0.8, 0.72],
+];
+
+/** A field of the patchwork: its surface, shade and shape. */
 export interface Field {
   surface: Surface;
+  /** index in TINTS */
+  tint: number;
   poly: Poly;
   /** a hedgerow along one of its sides */
   hedge: boolean;
@@ -206,6 +217,74 @@ export interface Field {
 
 /** The pond, south-east of the take-off point: centre and radii (metres). */
 const POND = [170, -170, 38, 24] as const;
+
+/** The lake, north-east: centre and radii (metres). */
+export const LAKE = [1300, 750, 260, 150] as const;
+
+/** The roads: east-west through the village, north-south through the hamlet. */
+export const ROAD_Y = 250;
+export const ROAD_X = 700;
+
+/** The forests (dark ground and trees along their edges): centre, radii. */
+export const FORESTS = [
+  [-1150, 650, 360, 220],
+  [950, -1150, 300, 200],
+] as const;
+
+/** Gentle hills: centre, radius, height (metres); grass, with collision. */
+export const HILLS = [
+  [-1700, -1250, 450, 55],
+  [1900, -1500, 380, 40],
+  [-2100, 1500, 500, 70],
+] as const;
+
+/** The radio mast, a landmark seen from far: position and height. */
+export const MAST = [-600, 950, 60] as const;
+
+/** The strip the Disco is thrown along, northwards: length and width. */
+export const STRIP = [380, 26] as const;
+const STRIP_Y = [-200, 180] as const;
+
+/** The detailed area's half size (metres): fields, roads and river reach it. */
+export const HALF = 3000;
+
+/** The meadow beyond it reaches this far (one quad: free), so its edge isn't seen. */
+export const GROUND_HALF = 10000;
+
+/** The river's centre line: y at x, a slow meander south of the field. */
+export function riverY(x: number): number {
+  return -620 + 130 * Math.sin(x / 420) + 55 * Math.sin(x / 165 + 1);
+}
+
+const RIVER_WIDTH = 26;
+
+/** The river as quads along its course (convex, east to west). */
+export function river(): Poly[] {
+  const out: Poly[] = [];
+  const step = 40;
+  for (let x = -HALF; x < HALF; x += step) {
+    const a = riverY(x);
+    const b = riverY(x + step);
+    const w = RIVER_WIDTH / 2;
+    out.push([[x, a - w], [x + step, b - w], [x + step, b + w], [x, a + w]]);
+  }
+  return out;
+}
+
+function inEllipse(x: number, y: number, e: readonly number[], margin = 0): boolean {
+  const [cx, cy, rx, ry] = e as [number, number, number, number];
+  return ((x - cx) / (rx + margin)) ** 2 + ((y - cy) / (ry + margin)) ** 2 < 1;
+}
+
+/** No trees nor buildings here: water, roads, the strip, the hills' tops. */
+export function blocked(x: number, y: number): boolean {
+  if (Math.abs(x) < STRIP[1] && y > STRIP_Y[0] - 20 && y < STRIP_Y[1] + 20) return true;
+  if (inEllipse(x, y, POND, 4) || inEllipse(x, y, LAKE, 6)) return true;
+  if (Math.abs(y - riverY(x)) < RIVER_WIDTH / 2 + 6) return true;
+  if (Math.abs(y - ROAD_Y) < 9 || Math.abs(x - ROAD_X) < 9) return true;
+  if (Math.hypot(x - FARM[0], y - FARM[1]) < 35) return true;
+  return HILLS.some(([cx, cy, r]) => Math.hypot(x - cx, y - cy) < r);
+}
 
 /** The field pattern turns this much from north (radians). */
 const FIELD_YAW = 0.21;
@@ -222,23 +301,35 @@ export function fields(seed = 77): Field[] {
   const kinds: Surface[] = ['lush', 'dry', 'ploughed', 'stubble', 'ploughed', 'stubble', 'lush', 'mown'];
   const c = Math.cos(FIELD_YAW);
   const s = Math.sin(FIELD_YAW);
-  for (let i = -6; i <= 6; i++) {
-    for (let j = -6; j <= 6; j++) {
+  const half: [number, number] = [FIELD_SIZE[0] / 2 + 10, FIELD_SIZE[1] / 2 + 10];
+  for (let i = -17; i <= 17; i++) {
+    for (let j = -22; j <= 22; j++) {
       const u = i * FIELD_SIZE[0];
       const v = j * FIELD_SIZE[1];
       const x = u * c - v * s;
       const y = u * s + v * c;
       const pick = r();
       const margin = 4 + r() * 6;
+      const surface = kinds[Math.floor(r() * kinds.length)]!;
+      const tint = Math.floor(r() * TINTS.length);
+      const hedge = r() < 0.3;
+      if (Math.abs(x) > HALF - 100 || Math.abs(y) > HALF - 100) continue;
       if (pick < 0.22) continue; // left as meadow
       if (Math.hypot(x, y) < 120) continue; // the take-off meadow
+      if (Math.abs(x) < 110 && y > STRIP_Y[0] - 80 && y < STRIP_Y[1] + 60) continue; // the strip
       if (y > 180 && y < 330 && Math.abs(x) < 380) continue; // the village
       if (Math.hypot(x + 280, y + 200) < 160) continue; // the wood
       if (Math.hypot(x - POND[0], y - POND[1]) < 110) continue;
+      // roads, river, lake, forests and hills cross no field
+      if (Math.abs(y - ROAD_Y) < half[1] || Math.abs(x - ROAD_X) < half[0]) continue;
+      if (Math.abs(y - riverY(x)) < half[1] + RIVER_WIDTH) continue;
+      if (inEllipse(x, y, LAKE, 90) || FORESTS.some((f) => inEllipse(x, y, f, 80))) continue;
+      if (HILLS.some(([cx, cy, rad]) => Math.hypot(x - cx, y - cy) < rad + 60)) continue;
       out.push({
-        surface: kinds[Math.floor(r() * kinds.length)]!,
+        surface,
+        tint,
         poly: rect(x, y, FIELD_SIZE[0] - 2 * margin, FIELD_SIZE[1] - 2 * margin, FIELD_YAW),
-        hedge: r() < 0.3 && Math.hypot(x, y) < 520, // near: few trees to draw
+        hedge: hedge && Math.hypot(x, y) < 520, // near: few trees to draw
       });
     }
   }
@@ -250,7 +341,7 @@ export function layout(seed = 2318): Placed[] {
   const r = rng(seed);
   const out: Placed[] = [];
   const add = (model: string, x: number, y: number, yaw: number) => {
-    if (!clear(x, y)) return;
+    if (!clear(x, y) || blocked(x, y)) return;
     out.push({ name: `${model.toLowerCase().replace(/ /g, '_')}_${out.length}`, model, x, y, yaw });
   };
 
@@ -260,14 +351,33 @@ export function layout(seed = 2318): Placed[] {
     const x = -220 + i * 40 + (r() - 0.5) * 8;
     add(houses[i % 3]!, x, 250 + 18, Math.PI);
     add(houses[(i + 1) % 3]!, x + 10, 250 - 18, 0);
-    if (i % 2 === 0) add('Lamp Post', x + 20, 250 + 7, 0);
+    if (i % 2 === 0) add('Lamp Post', x + 20, 250 + 11, 0);
   }
-  add('Gas Station', 260, 245, 0);
-  add('Office Building', -300, 290, Math.PI / 2);
-  add('Water Tower', 150, 320, 0);
+  add('Gas Station', 260, 232, 0);
+
+  // a hamlet at the crossroads, along the north-south road
+  for (let i = 0; i < 6; i++) {
+    const y = ROAD_Y + 60 + i * 34;
+    add(houses[i % 3]!, ROAD_X + 18, y, -Math.PI / 2);
+    add(houses[(i + 2) % 3]!, ROAD_X - 18, y + 10, Math.PI / 2);
+  }
+  // the forests: trees along their edges (the dark ground reads as wood
+  // from afar; a full forest of meshes would cost too much to draw)
+  for (const [cx, cy, rx, ry] of FORESTS) {
+    for (let i = 0; i < 24; i++) {
+      const a = (2 * Math.PI * i) / 24 + r() * 0.1;
+      const k = 0.9 + r() * 0.12;
+      add(r() < 0.7 ? 'Pine Tree' : 'Oak tree', cx + rx * k * Math.cos(a), cy + ry * k * Math.sin(a), r() * 2 * Math.PI);
+    }
+  }
+  // a row of trees along the river near the field, a line to follow
+  for (let x = -420; x <= 420; x += 30) {
+    if (r() < 0.35) continue;
+    add('Oak tree', x, riverY(x) + RIVER_WIDTH / 2 + 8 + r() * 4, r() * 2 * Math.PI);
+  }
 
   // a wood south-west: dense pines
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 70; i++) {
     const a = r() * 2 * Math.PI;
     const d = Math.sqrt(r()) * 110;
     add('Pine Tree', -280 + d * Math.cos(a), -200 + d * Math.sin(a), r() * 2 * Math.PI);
@@ -277,7 +387,7 @@ export function layout(seed = 2318): Placed[] {
     add('Oak tree', 180 + (r() - 0.5) * 4, -300 + i * 18 + (r() - 0.5) * 6, r() * 2 * Math.PI);
   }
   // scattered trees in the fields
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 30; i++) {
     const model = r() < 0.6 ? 'Oak tree' : 'Pine Tree';
     add(model, (r() - 0.5) * 900, (r() - 0.5) * 900, r() * 2 * Math.PI);
   }
@@ -324,24 +434,53 @@ export interface Layer {
   /** above the ground, so layers do not flicker (metres) */
   z: number;
   polys: Poly[];
+  /** colour multiplier of the texture (default white), or paint's colour */
+  tint?: [number, number, number];
+  /** the texture turned this much (radians): rows along the fields */
+  uvYaw?: number;
 }
 
 /** The ground: the meadow, the fields, the pond, the tracks and the road. */
 export function ground(): Layer[] {
-  const byKind = new Map<Surface, Poly[]>();
-  for (const f of fields()) byKind.set(f.surface, [...(byKind.get(f.surface) ?? []), f.poly]);
-  const fieldLayers: Layer[] = [...byKind].map(([surface, polys]) => ({
-    name: `fields_${surface}`, surface, tile: 10, z: 0.04, polys,
+  const byKind = new Map<string, { surface: Surface; tint: number; polys: Poly[] }>();
+  for (const f of fields()) {
+    const key = `${f.surface}_${f.tint}`;
+    const e = byKind.get(key) ?? { surface: f.surface, tint: f.tint, polys: [] };
+    e.polys.push(f.poly);
+    byKind.set(key, e);
+  }
+  // crops, stubble and ploughed ground in rows along the fields, coarser
+  // than grass so they don't blur to one colour from altitude
+  const tileOf: Partial<Record<Surface, number>> = { stubble: 22, ploughed: 16, dry: 14 };
+  const fieldLayers: Layer[] = [...byKind].map(([key, { surface, tint, polys }]) => ({
+    name: `fields_${key}`, surface, tile: tileOf[surface] ?? 12, z: 0.04, polys, tint: TINTS[tint], uvYaw: FIELD_YAW,
   }));
+  const [len, width] = STRIP;
+  const midY = (STRIP_Y[0] + STRIP_Y[1]) / 2;
+  // the strip's white marks: threshold bars at both ends, centreline dashes
+  const marks: Poly[] = [];
+  for (const end of [STRIP_Y[0] + 6, STRIP_Y[1] - 6]) {
+    for (const dx of [-9, -5, 5, 9]) marks.push(rect(dx, end, 2, 10));
+  }
+  for (let y = STRIP_Y[0] + 30; y < STRIP_Y[1] - 25; y += 30) marks.push(rect(0, y, 1, 10));
   return [
-    { name: 'meadow', surface: 'meadow', tile: 10, z: 0, polys: [rect(0, 0, 4000, 4000)] },
+    { name: 'meadow', surface: 'meadow', tile: 12, z: 0, polys: [rect(0, 0, 2 * GROUND_HALF, 2 * GROUND_HALF)] },
     ...fieldLayers,
+    // dark wood floor under the forests
+    { name: 'forests', surface: 'lush', tile: 20, z: 0.05, polys: FORESTS.map(([x, y, rx, ry]) => ellipse(x, y, rx, ry, 32)), tint: [0.32, 0.45, 0.28] },
     // the mown strip the Disco is thrown along, a track to the road
-    { name: 'strip', surface: 'mown', tile: 6, z: 0.06, polys: [rect(0, 0, 30, 220)] },
-    { name: 'track', surface: 'dirt', tile: 4, z: 0.07, polys: [rect(0, 178, 4, 140), rect(220, 0, 4, 480, 0)] },
-    { name: 'road', surface: 'asphalt', tile: 6, z: 0.08, polys: [rect(0, 250, 1600, 7)] },
-    { name: 'forecourt', surface: 'gravel', tile: 3, z: 0.09, polys: [rect(260, 236, 44, 22)] },
-    { name: 'pond', surface: 'water', tile: 10, z: 0.1, polys: [ellipse(POND[0], POND[1], POND[2], POND[3])] },
+    { name: 'strip', surface: 'mown', tile: 6, z: 0.06, polys: [rect(0, midY, width, len)], tint: [1, 1, 0.95] },
+    { name: 'strip_marks', surface: 'paint', tile: 1, z: 0.07, polys: marks, tint: [0.92, 0.92, 0.9] },
+    { name: 'track', surface: 'dirt', tile: 4, z: 0.07, polys: [rect(0, (STRIP_Y[1] + ROAD_Y) / 2, 4, ROAD_Y - STRIP_Y[1]), rect(220, 0, 4, 480, 0)] },
+    {
+      name: 'road', surface: 'asphalt', tile: 6, z: 0.08,
+      polys: [rect(0, ROAD_Y, 2 * HALF, 7), rect(ROAD_X, 0, 7, 2 * HALF)],
+    },
+    { name: 'forecourt', surface: 'gravel', tile: 3, z: 0.09, polys: [rect(260, 218, 44, 22)] },
+    {
+      name: 'water', surface: 'water', tile: 10, z: 0.06,
+      polys: [ellipse(POND[0], POND[1], POND[2], POND[3]), ellipse(LAKE[0], LAKE[1], LAKE[2], LAKE[3], 40), ...river()],
+    },
   ];
 }
 
@@ -359,8 +498,12 @@ export function layerObj(l: Layer): string {
       return a + x * y2 - x2 * y;
     }, 0);
     const ccw = area < 0 ? [...p].reverse() : p;
+    const c = Math.cos(-(l.uvYaw ?? 0));
+    const s = Math.sin(-(l.uvYaw ?? 0));
     for (const [x, y] of ccw) {
-      lines.push(`v ${x.toFixed(2)} ${y.toFixed(2)} ${l.z}`, `vt ${(x / l.tile).toFixed(4)} ${(y / l.tile).toFixed(4)}`);
+      const u = (x * c - y * s) / l.tile;
+      const v = (x * s + y * c) / l.tile;
+      lines.push(`v ${x.toFixed(2)} ${y.toFixed(2)} ${l.z}`, `vt ${u.toFixed(4)} ${v.toFixed(4)}`);
     }
     for (let k = 1; k < ccw.length - 1; k++) {
       const [a, b, c] = [n + 1, n + k + 1, n + k + 2];
@@ -372,12 +515,17 @@ export function layerObj(l: Layer): string {
 }
 
 function layerVisual(l: Layer): string {
+  const t = (l.tint ?? [1, 1, 1]).map((c) => c.toFixed(2)).join(' ');
   const material = l.surface === 'water'
     ? `<ambient>0.10 0.16 0.20 1</ambient>
           <diffuse>0.10 0.17 0.22 1</diffuse>
           <specular>0.6 0.6 0.6 1</specular>
           <pbr><metal><metalness>0.2</metalness><roughness>0.15</roughness></metal></pbr>`
-    : `<diffuse>1 1 1 1</diffuse>
+    : l.surface === 'paint'
+    ? `<ambient>${t} 1</ambient>
+          <diffuse>${t} 1</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>`
+    : `<diffuse>${t} 1</diffuse>
           <specular>0.05 0.05 0.05 1</specular>
           <pbr>
             <metal>
@@ -395,6 +543,123 @@ function layerVisual(l: Layer): string {
       </visual>`;
 }
 
+/** A hill's height at a distance d from its centre: a smooth bump. */
+export function hillHeight(d: number, radius: number, height: number): number {
+  return d >= radius ? 0 : (height * (1 + Math.cos((Math.PI * d) / radius))) / 2;
+}
+
+/**
+ * A hill as a Wavefront OBJ mesh: a grid over its disc, heights from
+ * hillHeight, normals from the slopes, grass UVs every [tile] metres; also
+ * its collision (the plane can't fly through it).
+ */
+export function hillObj(cx: number, cy: number, radius: number, height: number, tile = 12, n = 24): string {
+  const lines = ['# Generated by sim/bridge/src/gazebo-world.ts'];
+  const h = (x: number, y: number) => hillHeight(Math.hypot(x - cx, y - cy), radius, height);
+  const step = (2 * radius) / n;
+  for (let j = 0; j <= n; j++) {
+    for (let i = 0; i <= n; i++) {
+      const x = cx - radius + i * step;
+      const y = cy - radius + j * step;
+      const dx = (h(x + 1, y) - h(x - 1, y)) / 2;
+      const dy = (h(x, y + 1) - h(x, y - 1)) / 2;
+      const len = Math.hypot(dx, dy, 1);
+      // a hair below the field layers at its foot, so they don't flicker
+      lines.push(`v ${x.toFixed(2)} ${y.toFixed(2)} ${(h(x, y) - 0.02).toFixed(3)}`);
+      lines.push(`vt ${(x / tile).toFixed(4)} ${(y / tile).toFixed(4)}`);
+      lines.push(`vn ${(-dx / len).toFixed(4)} ${(-dy / len).toFixed(4)} ${(1 / len).toFixed(4)}`);
+    }
+  }
+  const at = (i: number, j: number) => j * (n + 1) + i + 1;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const [a, b, c, d] = [at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)];
+      lines.push(`f ${a}/${a}/${a} ${b}/${b}/${b} ${c}/${c}/${c}`, `f ${a}/${a}/${a} ${c}/${c}/${c} ${d}/${d}/${d}`);
+    }
+  }
+  return lines.join('\n') + '\n';
+}
+
+function hillParts(i: number): string {
+  const uri = `model://disco_ground/meshes/hill_${i}.obj`;
+  return `      <collision name="hill_${i}">
+        <geometry><mesh><uri>${uri}</uri></mesh></geometry>
+      </collision>
+      <visual name="hill_${i}">
+        <geometry><mesh><uri>${uri}</uri></mesh></geometry>
+        <material>
+          <diffuse>0.9 0.95 0.85 1</diffuse>
+          <specular>0.05 0.05 0.05 1</specular>
+          <pbr>
+            <metal>
+              <albedo_map>${TEXTURE_DIR}/${TEXTURES.meadow}.jpg</albedo_map>
+              <metalness>0</metalness>
+              <roughness>0.95</roughness>
+            </metal>
+          </pbr>
+        </material>
+      </visual>`;
+}
+
+/** The farm west of the strip: a red barn and a silo, seen on the approach. */
+export const FARM = [-190, 30] as const;
+
+/** The farm from plain shapes (no textures to miss). */
+export function farm(): string {
+  const [x, y] = FARM;
+  const part = (name: string, pose: string, geometry: string, colour: string) => `        <visual name="${name}">
+          <pose>${pose}</pose>
+          <geometry>${geometry}</geometry>
+          <material><ambient>${colour} 1</ambient><diffuse>${colour} 1</diffuse></material>
+        </visual>
+        <collision name="${name}">
+          <pose>${pose}</pose>
+          <geometry>${geometry}</geometry>
+        </collision>`;
+  return `    <model name="farm">
+      <static>true</static>
+      <pose>${x} ${y} 0 0 0 0.3</pose>
+      <link name="link">
+${part('barn', '0 0 3.5 0 0 0', '<box><size>24 12 7</size></box>', '0.62 0.16 0.12')}
+${part('roof_n', '0 3 8.2 0.6 0 0', '<box><size>25 7.6 0.4</size></box>', '0.32 0.32 0.34')}
+${part('roof_s', '0 -3 8.2 -0.6 0 0', '<box><size>25 7.6 0.4</size></box>', '0.32 0.32 0.34')}
+${part('silo', '16 4 7 0 0 0', '<cylinder><radius>3</radius><length>14</length></cylinder>', '0.78 0.78 0.76')}
+${part('silo_top', '16 4 14 0 0 0', '<sphere><radius>3</radius></sphere>', '0.6 0.6 0.62')}
+      </link>
+    </model>`;
+}
+
+/** The radio mast: red and white sections, a landmark seen from far. */
+export function mast(): string {
+  const [x, y, height] = MAST;
+  const n = 6;
+  const sec = height / n;
+  const sections = Array.from({ length: n }, (_, i) => {
+    const c = i % 2 === 0 ? '0.85 0.12 0.10' : '0.95 0.95 0.95';
+    return `      <visual name="section_${i}">
+        <pose>0 0 ${(sec * (i + 0.5)).toFixed(2)} 0 0 0</pose>
+        <geometry><cylinder><radius>${(0.9 - i * 0.08).toFixed(2)}</radius><length>${sec.toFixed(2)}</length></cylinder></geometry>
+        <material><ambient>${c} 1</ambient><diffuse>${c} 1</diffuse></material>
+      </visual>`;
+  }).join('\n');
+  return `    <model name="radio_mast">
+      <static>true</static>
+      <pose>${x} ${y} 0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <pose>0 0 ${height / 2} 0 0 0</pose>
+          <geometry><cylinder><radius>0.9</radius><length>${height}</length></cylinder></geometry>
+        </collision>
+${sections}
+        <visual name="base">
+          <pose>0 0 1 0 0 0</pose>
+          <geometry><box><size>6 6 2</size></box></geometry>
+          <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.55 0.55 0.55 1</diffuse></material>
+        </visual>
+      </link>
+    </model>`;
+}
+
 /** The ground model (models/disco_ground/model.sdf). */
 export function groundModel(): string {
   return `<?xml version="1.0" ?>
@@ -407,10 +672,11 @@ export function groundModel(): string {
       <!-- an infinite plane holds the Disco (a thin box lets it sink);
            low friction, like its foam belly skidding on grass -->
       <collision name="collision">
-        <geometry><plane><normal>0 0 1</normal><size>4000 4000</size></plane></geometry>
+        <geometry><plane><normal>0 0 1</normal><size>${2 * GROUND_HALF} ${2 * GROUND_HALF}</size></plane></geometry>
         <surface><friction><ode><mu>0.2</mu><mu2>0.2</mu2></ode></friction></surface>
       </collision>
 ${ground().map(layerVisual).join('\n')}
+${HILLS.map((_, i) => hillParts(i)).join('\n')}
     </link>
   </model>
 </sdf>
@@ -469,7 +735,7 @@ export function world(lat: number, lon: number, elevation: number): string {
       <pose>0 0 100 0 0 0</pose>
       <diffuse>0.9 0.9 0.85 1</diffuse>
       <specular>0.3 0.3 0.3 1</specular>
-      <direction>-0.4 0.3 -0.85</direction>
+      <direction>-0.55 0.35 -0.75</direction>
     </light>
 
     <include>
@@ -477,6 +743,10 @@ export function world(lat: number, lon: number, elevation: number): string {
     </include>
 
 ${objects}
+
+${mast()}
+
+${farm()}
 
     <!-- the pilot's hand: holds the Disco level, nose north, 1.5 m up
          until the hand launch releases it (docker/gazebo/gz-helper.py);
@@ -502,8 +772,14 @@ ${objects}
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const { mkdirSync, readdirSync, rmSync, writeFileSync } = await import('node:fs');
   const dir = process.argv[2] ?? '../gazebo';
+  // what this generator wrote before: written again below, or gone
+  rmSync(`${dir}/models/disco_ground/meshes`, { recursive: true, force: true });
+  const kept = new Set(KINDS.map((k) => slug(k.model)));
+  for (const d of readdirSync(`${dir}/models`, { withFileTypes: true })) {
+    if (d.isDirectory() && d.name.startsWith('fuel_') && !kept.has(d.name)) rmSync(`${dir}/models/${d.name}`, { recursive: true });
+  }
   const [lat = 21.2665, lon = -157.8205, alt = 3] = (process.env.HOME_LOC ?? '').split(',').filter(Boolean).map(Number);
   mkdirSync(`${dir}/worlds`, { recursive: true });
   writeFileSync(`${dir}/worlds/disco.sdf`, world(lat, lon, alt));
@@ -511,6 +787,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   writeFileSync(`${dir}/models/disco_ground/model.sdf`, groundModel());
   writeFileSync(`${dir}/models/disco_ground/model.config`, groundConfig());
   for (const l of ground()) writeFileSync(`${dir}/models/disco_ground/meshes/${l.name}.obj`, layerObj(l));
+  HILLS.forEach(([cx, cy, rad, h], i) => writeFileSync(`${dir}/models/disco_ground/meshes/hill_${i}.obj`, hillObj(cx, cy, rad, h)));
   for (const k of KINDS) {
     mkdirSync(`${dir}/models/${slug(k.model)}`, { recursive: true });
     writeFileSync(`${dir}/models/${slug(k.model)}/model.sdf`, kindModel(k));

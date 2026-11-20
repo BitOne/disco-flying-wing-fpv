@@ -142,12 +142,33 @@ app-image: ## Build the Docker image used to build the app
 	docker build --build-arg UID=$(UID) --build-arg GID=$(GID) -t $(APP_IMAGE) docker/app-build
 
 .PHONY: app
-app: app-image ## Build the app debug APK (out/disco-fpv-debug.apk); needs sdk-aar
+app: app-image ## Build the app debug APK (out/disco-fpv-debug.apk); DEBUG_BRIDGE=<PC address> for a phone; needs sdk-aar
 	@test -f $(SDK_AAR_DIR)/sdkcore.aar || { echo "run make sdk-aar first" >&2; exit 1; }
 	@mkdir -p $(OUT)
-	$(APP_RUN) gradle --no-daemon --console=plain :app:assembleDebug 2>&1 \
+	$(APP_RUN) gradle --no-daemon --console=plain :app:assembleDebug \
+		$(if $(DEBUG_BRIDGE),-PdebugBridgeAddress=$(DEBUG_BRIDGE)) 2>&1 \
 		| tee $(OUT)/app-build.log; exit $${PIPESTATUS[0]}
 	cp $(APP_DEBUG_APK) $(OUT)/disco-fpv-debug.apk
+
+# Release (T7.3): signed with a key kept outside the repository, in
+# RELEASE_DIR (back it up: updates must be signed with the same key).
+RELEASE_DIR ?= $(HOME)/.config/disco-fpv-release
+APP_VERSION = $(shell sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/app/build.gradle.kts)
+
+.PHONY: release-key
+release-key: app-image ## Create the release signing key in RELEASE_DIR (once; keep a backup)
+	scripts/release-key.sh $(APP_IMAGE) $(RELEASE_DIR)
+
+.PHONY: release
+release: app-image ## Build the signed release APK (out/disco-fpv-<version>.apk); needs sdk-aar and release-key
+	@test -f $(RELEASE_DIR)/release.properties || { echo "no release key: make release-key"; exit 1; }
+	docker run --rm -v "$(ROOT)":/work -v disco-fpv-app-gradle:/home/builder/.gradle \
+		-v $(RELEASE_DIR):/signing:ro -w /work/app $(APP_IMAGE) \
+		gradle --no-daemon --console=plain :app:assembleRelease -PreleaseSigning=/signing/release.properties 2>&1 \
+		| tee $(OUT)/release-build.log; test $${PIPESTATUS[0]} = 0
+	cp app/app/build/outputs/apk/release/app-release.apk $(OUT)/disco-fpv-$(APP_VERSION).apk
+	$(APP_RUN) /opt/android-sdk/build-tools/35.0.0/apksigner verify --print-certs /work/out/disco-fpv-$(APP_VERSION).apk
+	@echo "$(OUT)/disco-fpv-$(APP_VERSION).apk"
 
 .PHONY: app-usb
 app-usb: app-image ## Build the app without the debug bridge (out/disco-fpv-usb.apk): USB accessory only
@@ -167,6 +188,12 @@ aoa-host: ## Build the emulated SkyController's USB side (out/aoa-host, runs in 
 	@mkdir -p $(OUT)
 	docker run --rm -u $(UID):$(GID) -v "$(ROOT)":/work -w /work $(SDK_IMAGE) \
 		$(NDK_CC) -O2 -Wall -Wextra -Wl,-z,max-page-size=16384 -o out/aoa-host aoa-host/aoa_host.c
+
+.PHONY: aoa-host-linux
+aoa-host-linux: ## Build aoa-host for this PC (out/aoa-host-linux): a physical phone on USB talks to the fakes (QUICKSTART.md)
+	@mkdir -p $(OUT)
+	docker run --rm -u $(UID):$(GID) -v "$(ROOT)":/work -w /work $(SDK_IMAGE) \
+		gcc -O2 -Wall -Wextra -static -pthread -o out/aoa-host-linux aoa-host/aoa_host.c
 
 .PHONY: emu-usb
 emu-usb: emu-image aoa-host ## Start the emulator in real USB mode (writable system, accessory feature, aoa-host)

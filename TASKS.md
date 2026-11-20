@@ -574,7 +574,8 @@ as the real SC2 does (GroundSdk's VideoEnable is a no-op there). Watch.
   an arm64 library drops below 16 KB. x86_64 (emulator only) not checked.
   `make check` green with the rebuilt libraries.
 - [ ] **T7.2 CI.** GitHub Actions running `make check` (KVM runner).
-- [ ] **T7.3 Signed release APK.**
+- [x] **T7.3 Signed release APK.** `make release-key`, `make release`
+  (`NOTES.md` section 32); v0.1.0 on GitHub.
 - [x] **T7.4 README** with the current state, build and test commands.
 
 ## M8. Before the first real flight (risk review, 2026-11-20)
@@ -620,7 +621,10 @@ From `NOTES.md` section 29 (ranked risks) and section 28 (measurements).
   bridge detects impacts and slides to a stop: MOTOR CUT OUT, LANDED; a
   hard impact loses the link (LINK LOST, last position shown). `make
   sim-crash` for a nose-in crash.
-- [ ] **T8.9 Headset decoder stall.** After about 4 minutes of
+- [x] **T8.9 Headset decoder stall.** Found and mitigated (section 30):
+  the GL thread blocked in eglSwapBuffers under UI dumps; the runner
+  dumps less, the app recreates the screen. `app-unplug` still fails
+  about once in six. Was: After about 4 minutes of
   `app-lens.yaml` the decoder stalls in the headset view (its output
   buffers all held) and restarts don't recover it there (`NOTES.md`
   section 30); the scenario fails since the watchdog. Find what holds the

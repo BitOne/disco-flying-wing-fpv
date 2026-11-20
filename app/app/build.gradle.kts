@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,6 +9,13 @@ plugins {
 val sdkAarDir = rootProject.file(
     (findProperty("sdkAarDir") as String?) ?: "../out/sdk-aar",
 )
+
+// Release signing (make release): a properties file outside the repository,
+// -PreleaseSigning=<path>, with storeFile, storePassword, keyAlias and
+// keyPassword (make release-key creates one in ~/.config/disco-fpv-release).
+val releaseSigning = (findProperty("releaseSigning") as String?)?.let { path ->
+    Properties().apply { file(path).inputStream().use { load(it) } }
+}
 
 android {
     namespace = "io.github.bitone.discofpv"
@@ -24,9 +33,29 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        releaseSigning?.let { p ->
+            create("release") {
+                storeFile = file(p.getProperty("storeFile"))
+                storePassword = p.getProperty("storePassword")
+                keyAlias = p.getProperty("keyAlias")
+                keyPassword = p.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
+        // the debug bridge's controller: the emulator's host by default; a
+        // phone on the same network as the PC running fake-sc2: its address
+        debug {
+            resValue("string", "arsdk_debug_usb_bridge_address",
+                (findProperty("debugBridgeAddress") as String?) ?: "10.0.2.2")
+            resValue("integer", "arsdk_debug_usb_bridge_port",
+                (findProperty("debugBridgePort") as String?) ?: "4321")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
         // Debug build without the debug USB bridge (src/debug): reaches the
         // controller through Android's USB accessory path only, for the

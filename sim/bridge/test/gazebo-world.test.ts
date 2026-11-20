@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CLEAR_RADIUS, KINDS, fields, ground, groundModel, kindModel, layerObj, layout, rect, rng, slug, world } from '../src/gazebo-world.ts';
+import { CLEAR_RADIUS, HILLS, KINDS, LAKE, MAST, blocked, fields, ground, groundModel, hillHeight, hillObj, kindModel, layerObj, layout, rect, riverY, rng, slug, world } from '../src/gazebo-world.ts';
 
 test('the layout is the same on every run', () => {
   assert.deepEqual(layout(), layout());
@@ -42,8 +42,8 @@ test('the ground is textured layers of flat meshes with repeating UVs', () => {
   const layers = ground();
   const meadow = layers.find((l) => l.name === 'meadow')!;
   const obj = layerObj(meadow);
-  assert.match(obj, /^v -2000.00 -2000.00 0$/m);
-  assert.match(obj, /^vt -200.0000 -200.0000$/m);
+  assert.match(obj, /^v -10000.00 -10000.00 0$/m);
+  assert.match(obj, /^vt -833.3333 -833.3333$/m);
   assert.match(obj, /^f 1\/1\/1 2\/2\/1 3\/3\/1$/m);
   const sdf = groundModel();
   for (const l of layers) assert.match(sdf, new RegExp(`meshes/${l.name}.obj`));
@@ -59,4 +59,37 @@ test('polygons are drawn facing up whatever their winding', () => {
   const v = [...cw.matchAll(/^v (\S+) (\S+)/gm)].map((m) => [Number(m[1]), Number(m[2])]);
   const [a, b, c] = [v[0]!, v[1]!, v[2]!];
   assert.ok((b[0]! - a[0]!) * (c[1]! - a[1]!) - (b[1]! - a[1]!) * (c[0]! - a[0]!) > 0);
+});
+
+test('fields are tinted, their rows run along them, and they avoid roads and water', () => {
+  const f = fields();
+  assert.ok(f.length > 300);
+  assert.ok(new Set(f.map((x) => x.tint)).size >= 3);
+  const stubble = ground().find((l) => l.surface === 'stubble')!;
+  assert.ok(stubble.uvYaw !== undefined && stubble.tile > 12);
+  for (const x of f) {
+    const [cx, cy] = x.poly.reduce(([a, b], [px, py]) => [a + px / 4, b + py / 4], [0, 0]);
+    assert.ok(!blocked(cx, cy), `field at ${cx.toFixed(0)},${cy.toFixed(0)}`);
+  }
+});
+
+test('landmarks: river, lake, strip marks, hills with collision, the mast', () => {
+  const layers = ground();
+  const water = layers.find((l) => l.name === 'water')!;
+  assert.ok(water.polys.length > 100); // pond, lake, the river's quads
+  assert.ok(blocked(LAKE[0], LAKE[1]) && blocked(0, riverY(0)) && blocked(0, 0));
+  assert.ok(!blocked(-150, 0));
+  assert.ok(layers.find((l) => l.name === 'strip_marks')!.polys.length >= 16);
+  assert.equal(hillHeight(0, 400, 50), 50);
+  assert.equal(hillHeight(400, 400, 50), 0);
+  assert.match(hillObj(0, 0, 100, 10, 10, 4), /^f 1\/1\/1 2\/2\/2 7\/7\/7$/m);
+  const ground_ = groundModel();
+  HILLS.forEach((_, i) => assert.match(ground_, new RegExp(`<collision name="hill_${i}">`)));
+  const sdf = world(0, 0, 0);
+  assert.match(sdf, /<model name="radio_mast">/);
+  assert.match(sdf, new RegExp(`<pose>${MAST[0]} ${MAST[1]} 0 0 0 0</pose>`));
+  assert.doesNotMatch(sdf, /water_tower|office_building/);
+  assert.match(sdf, /<model name="farm">/);
+  // the take-off area stays flat and clear
+  for (const [cx, cy, r] of HILLS) assert.ok(Math.hypot(cx, cy) - r > 1000);
 });

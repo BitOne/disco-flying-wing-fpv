@@ -1384,6 +1384,30 @@ Note: after a `make sim`, the fake's own flight model stays off (the
 bridge drove it), so scenarios that rely on it (`app-map`: the Disco
 circling home) fail until the fake is restarted (`make fake`).
 
+### A nicer world to fly in (2026-11-20)
+
+`gazebo-world.ts` now lays out about 6 by 6 km of detailed countryside
+(fields, roads and river within 3 km of the strip, the meadow on to 10 km
+so its edge isn't seen): each field one of four tints so the patchwork
+reads from altitude, crop and stubble textures coarser and turned with the
+fields (rows instead of 10 m stripes), a meandering river with a tree line,
+a lake, two crossing roads with the village and a new hamlet, two dark
+forests with trees on their edges, three gentle hills with mesh collision
+(more than 1 km away; the take-off area stays flat), a 60 m red and white
+radio mast and a red barn with a silo west of the strip as landmarks, and
+the strip itself 380 by 26 m in lighter mown grass with white threshold
+bars and centreline dashes. The water tower (its mesh points at a texture
+that isn't there) and the untextured grey office building are gone,
+replaced by the mast and the farm, built from plain shapes. Objects stay
+off water, roads, the strip and the hills; the generator clears its old
+output first. Trees went from 232 to 274. Flown back to back on the same
+loaded machine, Gazebo used about the same CPU (132 to 147 % against
+134 %), the camera gave 15 to 16 fps against 13, and memory rose from 1.25
+to 1.46 GB. Screenshots: `docs/screenshots/gazebo-onboard.jpg`,
+`gazebo-strip.jpg`, `gazebo-overview.jpg`, `gazebo-chase.jpg`,
+`gazebo-line-of-sight.jpg`. Left: far woods are dark ground with trees on
+their edges only; the GUI views' sky is plain grey.
+
 ## 26. Offline OpenStreetMap maps for the app (2026-11-20)
 
 Question: the app's moving map may not prefetch OpenStreetMap's tiles,
@@ -1767,13 +1791,24 @@ replugs the controller, dismisses the "Open with" prompt, opens the app.
   the pilot knows the video is gone. To look at if a real Disco ever does
   it (an encoder restart): the state kept per connection below pdraw.
 
-Found by the watchdog: in the headset view, after about 4 minutes of the
-lens scenario (many UI dumps), the decoder stalls ("no buffer available";
-the goldfish codec's 4 output buffers all held) and new sessions don't
-recover while the headset view is up; `app-lens.yaml` fails at its stereo
-check (it used to pass on the frozen frame). Not reproduced with a short
-lens session nor in the flight view. To investigate (T8.9): frames not
-released by the HMD rendering path, on a real phone too.
+Found by the watchdog (T8.9): in the headset view, the decoder stalls
+("no buffer available"; the goldfish codec's 4 output buffers all held)
+and new sessions don't recover while the headset view is up;
+`app-lens.yaml` failed at its stereo check (it used to pass on the frozen
+frame). Cause: the headset view's GL thread blocked in eglSwapBuffers
+(three thread dumps seconds apart: always there, the main thread idle),
+so nothing renders and the renderer never gives frames back. Triggered by
+UI dumps (uiautomator, the e2e runner's way to find buttons): 40 dumps in
+a row reproduce it, quick taps without dumps don't; the lens scenario did
+about 100 (one per repeated tap). An emulator (software GL) effect as
+far as seen; a real phone only meets it with an accessibility service
+walking the views, to check on the bench. Done: the runner dumps once for
+repeated taps (`tapId(id, times)`), and `app-lens.yaml` passes again (twice
+in a row, a fresh emulator); in the app, after three stream restarts
+without a frame the screen recreates itself (a new GL surface and thread),
+at most every 30 s. Forcing window redraws did not unblock it.
+`app-unplug.yaml` still fails about once in six (a nearly black picture
+after the replug), likely the same stall.
 
 ### T8.3 Safe button grabs (done)
 
@@ -1936,6 +1971,31 @@ Sources: https://ardupilot.org/plane/docs/airframe-disco.html ,
 https://ardupilot.org/copter/docs/common-CHUCK-overview.html ,
 https://www.modelaviation.com/comment/88127 ,
 https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
+
+## 32. Release, and the app on a physical phone (2026-11-20)
+
+- Release signing (T7.3): `make release-key` creates, once, a PKCS12 key
+  (RSA 4096, alias discofpv, 10000 days) and its properties in
+  `~/.config/disco-fpv-release` (mode 700/600, outside the repository; to
+  back up: every update must be signed with it). `make release` builds
+  `out/disco-fpv-<version>.apk` (release build type: no debug bridge,
+  HTTPS only) with `-PreleaseSigning`, and checks it with apksigner (v2
+  scheme). Parrot's EULA 2.1 and 2.2 allow distributing the app for use
+  with Parrot drones, with the Parrot notice (section 16).
+- Checked on the emulator in USB mode: the release APK connects, shows
+  live video and the HUD in the flight and headset views, and passes
+  `app-rc.yaml` and `app-video-frozen.yaml` (the other scenarios start
+  with `run-as`, which a release build refuses).
+- A physical phone by USB: `aoa-host` now also builds for the PC (`make
+  aoa-host-linux`, static): `--phone <vid:pid>` names the phone (no other
+  USB device is touched), the handshake puts it in accessory mode, it
+  re-enumerates by itself, and the accessory is relayed to fake-sc2; a
+  phone already in accessory mode is reused. Not tried with a real phone.
+- A physical phone over Wi-Fi: the debug bridge's address and port are
+  now build parameters (`make app DEBUG_BRIDGE=<PC address>`, resValue in
+  the debug build type; the emulator's 10.0.2.2 by default); fake-sc2's
+  mux listens on all interfaces (port 4321) and carries the video.
+- `docs/QUICKSTART.md`: the parts and the recipes.
 
 ## Sources
 

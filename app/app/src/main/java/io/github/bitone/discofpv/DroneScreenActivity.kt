@@ -70,6 +70,15 @@ abstract class DroneScreenActivity : Activity() {
             hud?.setVideoAlert(videoWatchdog.alert(now))
             if (++ticks % 4 == 0) hud?.refreshAlerts()
             if (videoWatchdog.shouldRestart(now)) {
+                if (videoWatchdog.restarts > RESTARTS_BEFORE_RECREATE && now - lastRecreate > RECREATE_EVERY_MS) {
+                    // stream restarts don't help: the view itself is stuck
+                    // (a GL thread blocked in eglSwapBuffers was seen in the
+                    // emulator): a new screen gets a new surface and thread
+                    Log.w(TAG, "no video after ${videoWatchdog.restarts - 1} restarts: recreating the screen")
+                    lastRecreate = now
+                    recreate()
+                    return
+                }
                 Log.w(TAG, "no video for a while: restarting the stream (${videoWatchdog.restarts})")
                 restartLive?.invoke()
             }
@@ -231,6 +240,11 @@ abstract class DroneScreenActivity : Activity() {
         private const val TAG = "DroneScreen"
         private const val WATCHDOG_TICK_MS = 250L
         private const val RESTART_GAP_MS = 500L
+        private const val RESTARTS_BEFORE_RECREATE = 3
+        private const val RECREATE_EVERY_MS = 30_000L
+
+        /** When a screen was last recreated for its video (across the recreation). */
+        private var lastRecreate = -RECREATE_EVERY_MS
         const val EXTRA_DRONE_UID = "drone_uid"
 
         fun <T : DroneScreenActivity> intent(context: Context, screen: Class<T>, droneUid: String): Intent =

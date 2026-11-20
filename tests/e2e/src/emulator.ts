@@ -121,13 +121,21 @@ export class Emulator {
     await this.tap((x1 + x2) / 2, (y1 + y2) / 2);
   }
 
-  /** Taps the element whose resource id is `id` or ends with ":id/<id>". */
-  async tapId(id: string): Promise<void> {
+  /**
+   * Taps the element whose resource id is `id` or ends with ":id/<id>",
+   * `times` times: one UI dump, then the taps (a dump takes seconds and
+   * loads the device: a hundred of them stalled the headset view's GL
+   * thread in the emulator).
+   */
+  async tapId(id: string, times = 1): Promise<void> {
     const nodes = await this.dumpUi();
     const node = nodes.find((n) => n.resourceId === id || n.resourceId.endsWith(`:id/${id}`));
     if (!node) throw new Error(`no element with id "${id}" on screen`);
     const { x1, y1, x2, y2 } = node.bounds;
-    await this.tap((x1 + x2) / 2, (y1 + y2) / 2);
+    for (let i = 0; i < times; i++) {
+      await this.tap((x1 + x2) / 2, (y1 + y2) / 2);
+      if (i + 1 < times) await sleep(150);
+    }
   }
 
   async back(): Promise<void> {

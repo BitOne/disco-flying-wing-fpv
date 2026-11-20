@@ -37,7 +37,9 @@ Working in the test rig (not yet tried on the real hardware):
 
 ## Building and testing
 
-Everything runs in Docker (Linux host with KVM for the emulator).
+Everything runs in Docker (Linux host with KVM for the emulator). See
+[docs/QUICKSTART.md](docs/QUICKSTART.md) for the parts and recipes: the app
+with the fakes, flying the simulator, and your own phone by USB or Wi-Fi.
 `make help` lists the targets. The Ground SDK fork is checked out into
 `sdk/` by `make sdk-sync`, at the exact revisions recorded in
 `sdk.lock.xml`, with the fixes in `patches/` applied; building it asks

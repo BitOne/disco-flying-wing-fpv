@@ -103,7 +103,7 @@ async function runStep(
       for (;;) {
         try {
           if (step.kind === 'tap_text') await emu.tapText(step.text);
-          else for (let i = 0; i < step.times; i++) await emu.tapId(step.id);
+          else await emu.tapId(step.id, step.times);
           await sleep(800);
           return undefined;
         } catch (error) {

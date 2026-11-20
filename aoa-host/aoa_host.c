@@ -14,6 +14,14 @@
  * over, which is what a real unplug and replug looks like.
  *
  * Needs root (usbfs). usage: aoa-host [--host 10.0.2.2] [--port 4321]
+ *
+ * Built for a Linux PC (make aoa-host-linux), it plays the SkyController
+ * for a physical phone plugged into the PC by USB: --phone <vid:pid> names
+ * the phone (lsusb; no other device is ever touched), the handshake puts it
+ * in accessory mode, the phone re-enumerates by itself, and the accessory
+ * is relayed to fake-sc2 (--host 127.0.0.1). The phone stays in accessory
+ * mode until unplugged: later sessions reuse it.
+ *   sudo out/aoa-host-linux --phone 18d1:4ee7 --host 127.0.0.1
  */
 #include <arpa/inet.h>
 #include <stdarg.h>
@@ -34,7 +42,9 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#ifdef __ANDROID__
 #include <sys/system_properties.h>
+#endif
 #include <unistd.h>
 
 #define AOA_GET_PROTOCOL 51
@@ -70,9 +80,17 @@ static void logf_(const char *fmt, ...)
 }
 
 
-/* Finds an accessory-mode device (Google VID, PID 2d00/2d01) and returns
+/* Finds an accessory-mode device (Google VID, PID 2d00/2d01), or with
+ * want_vid set, that device (the phone before the handshake), and returns
  * its usbfs path in path. */
+static int find_usb(char *path, size_t size, unsigned want_vid, unsigned want_pid);
+
 static int find_device(char *path, size_t size)
+{
+	return find_usb(path, size, 0, 0);
+}
+
+static int find_usb(char *path, size_t size, unsigned want_vid, unsigned want_pid)
 {
 	DIR *dir = opendir("/sys/bus/usb/devices");
 	struct dirent *e;
@@ -97,7 +115,8 @@ static int find_device(char *path, size_t size)
 				pid = 0;
 			fclose(f);
 		}
-		if (vid != GOOGLE_VID || (pid != 0x2d00 && pid != 0x2d01))
+		if (want_vid != 0 ? (vid != want_vid || pid != want_pid)
+				: (vid != GOOGLE_VID || (pid != 0x2d00 && pid != 0x2d01)))
 			continue;
 		snprintf(p, sizeof(p), "/sys/bus/usb/devices/%s/busnum", e->d_name);
 		if ((f = fopen(p, "r")) != NULL) {
@@ -129,6 +148,10 @@ static int find_device(char *path, size_t size)
  * does it. */
 static void udc_bind(int bind)
 {
+#ifndef __ANDROID__
+	(void)bind; /* a real phone re-enumerates by itself */
+	return;
+#endif
 	FILE *f = fopen(UDC_PATH, "w");
 	if (f == NULL) {
 		logf_("%s: %s", UDC_PATH, strerror(errno));
@@ -142,6 +165,7 @@ static void udc_bind(int bind)
  * (legacy handler: sys.usb.state), at most timeout_ms. */
 static int wait_accessory_state(int timeout_ms)
 {
+#ifdef __ANDROID__
 	char value[PROP_VALUE_MAX];
 	for (; timeout_ms > 0; timeout_ms -= 100) {
 		if (__system_property_get("sys.usb.state", value) > 0
@@ -149,6 +173,15 @@ static int wait_accessory_state(int timeout_ms)
 			return 0;
 		usleep(100 * 1000);
 	}
+#else
+	/* on a PC: the phone comes back as an accessory-mode device */
+	char path[64];
+	for (; timeout_ms > 0; timeout_ms -= 100) {
+		if (find_device(path, sizeof(path)))
+			return 0;
+		usleep(100 * 1000);
+	}
+#endif
 	return -ETIMEDOUT;
 }
 
@@ -357,6 +390,7 @@ int main(int argc, char *argv[])
 	const char *host = "10.0.2.2";
 	int port = 4321;
 	int i;
+	unsigned phone_vid = 0, phone_pid = 0; /* PC build: the phone, before accessory mode */
 
 	trace = getenv("AOA_TRACE") != NULL;
 	for (i = 1; i + 1 < argc; i += 2) {
@@ -364,13 +398,21 @@ int main(int argc, char *argv[])
 			host = argv[i + 1];
 		else if (strcmp(argv[i], "--port") == 0)
 			port = atoi(argv[i + 1]);
+		else if (strcmp(argv[i], "--phone") == 0
+				&& sscanf(argv[i + 1], "%x:%x", &phone_vid, &phone_pid) != 2)
+			phone_vid = phone_pid = 0;
 	}
+#ifndef __ANDROID__
+	if (phone_vid == 0)
+		logf_("no --phone <vid:pid>: waiting for a phone already in accessory mode");
+#endif
 	signal(SIGPIPE, SIG_IGN);
 	setvbuf(stderr, NULL, _IOLBF, 0);
 
 	/* Started from an adb shell, this process lives in adbd's cgroup, and
 	 * Android restarts adbd when the USB functions change (each plug): init
 	 * would kill it with adbd. Move to the root cgroup and a new session. */
+#ifdef __ANDROID__
 	{
 		FILE *f = fopen("/sys/fs/cgroup/cgroup.procs", "w");
 		if (f != NULL) {
@@ -381,6 +423,7 @@ int main(int argc, char *argv[])
 		}
 		setsid();
 	}
+#endif
 
 	for (;;) {
 		char path[64];
@@ -388,10 +431,20 @@ int main(int argc, char *argv[])
 		pthread_t a, b;
 		int iface = 0;
 
+#ifdef __ANDROID__
 		if (!find_device(path, sizeof(path))) {
 			sleep(1);
 			continue;
 		}
+#else
+		/* a phone already in accessory mode (a previous session): use
+		 * it; else the --phone device, for the handshake */
+		if (!find_device(path, sizeof(path))) {
+			if (phone_vid == 0 || !find_usb(path, sizeof(path), phone_vid, phone_pid)) {
+				sleep(1);
+				continue;
+			}
+#endif
 		l.usb = open(path, O_RDWR);
 		if (l.usb < 0) {
 			logf_("open %s: %s", path, strerror(errno));
@@ -414,6 +467,9 @@ int main(int argc, char *argv[])
 		usleep(500 * 1000);
 		udc_bind(1);
 		sleep(1);
+#ifndef __ANDROID__
+		}
+#endif
 		if (!find_device(path, sizeof(path)) || (l.usb = open(path, O_RDWR)) < 0) {
 			logf_("accessory did not come back: %s", strerror(errno));
 			sleep(1);
