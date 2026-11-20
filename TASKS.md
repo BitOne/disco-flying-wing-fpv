@@ -535,14 +535,21 @@ M5 done (2026-11-18): `make check` green with the six app scenarios.
   and trees, the nose camera streamed to fake-sc2, a hand launch; `make
   sim-view`: line-of-sight (or chase) view on the PC's screen. CesiumJS
   probe in `sim/cesium` (real place, not wired to the bridge).
-- [ ] **T6.8 Offline OpenStreetMap map** (`NOTES.md` section 26): a
+- [x] **T6.8 Offline OpenStreetMap map** (`NOTES.md` section 26): a
   Mapsforge TileSource rendering the moving map's tiles from a local
   region .map file (download.mapsforge.org, ODbL), so the map works with no
   network at the field; OSM's tile server forbids prefetching, the data
-  does not.
-- [ ] **T6.7 Gazebo follow-ups**: the camera tilt and pan (FlightGear's
-  view offsets have no Gazebo equivalent yet: a gimbal joint driven by
-  gz-helper); a world generated from a real place (OSM buildings and IGN
+  does not. Done: "offline map file" background, the file picked in the
+  settings; `make map-test`, `tests/scenarios/map-offline.yaml`. Later:
+  download a region from the app; hillshading.
+- [x] **T6.9 Satellite view worldwide** (`NOTES.md` section 27): the
+  "satellite (best available)" background: national orthophotos (France,
+  Switzerland, Spain, Netherlands, USA) else Sentinel-2 cloudless 2016,
+  per tile, downloadable ahead. Later: more countries (Austria, Belgium,
+  German states).
+- [ ] **T6.7 Gazebo follow-ups**: ~~the camera tilt and pan~~ (done: a
+  gimbal driven by gz-helper; a textured ground with fields, a pond,
+  hedgerows); a world generated from a real place (OSM buildings and IGN
   photos as the ground, the CesiumJS probe's data, with the Fuel trees and
   houses); a model closer to the Disco (750 g, 1.15 m) than the Zephyr
   (1.9 kg); `make e2e` against the Gazebo camera.

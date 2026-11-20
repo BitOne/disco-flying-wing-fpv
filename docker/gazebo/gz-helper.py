@@ -9,14 +9,19 @@
 #                         the hand holding it (DetachableJoint), pushes it forward
 #                         along the heading (and a little up) for 0.3 s,
 #                         to about 13 m/s, like the real Disco is thrown
+#   cam <tilt> <pan>      the camera's tilt (degrees, positive up) and pan
+#                         (degrees, positive right), from the controller:
+#                         targets of the nose camera's gimbal joints
 #
-# Uses Gazebo's ApplyLinkWrench system (in the world).
+# Uses Gazebo's ApplyLinkWrench system (in the world) and the Disco model's
+# JointPositionController systems (sim/gazebo/models/disco_zephyr).
 import math
 import os
 import socket
 import time
 
 from gz.msgs10.entity_pb2 import Entity
+from gz.msgs10.double_pb2 import Double
 from gz.msgs10.empty_pb2 import Empty
 from gz.msgs10.entity_wrench_pb2 import EntityWrench
 from gz.transport13 import Node
@@ -32,6 +37,8 @@ node = Node()
 push = node.advertise(f"/world/{WORLD}/wrench/persistent", EntityWrench)
 clear = node.advertise(f"/world/{WORLD}/wrench/clear", Entity)
 release = node.advertise("/disco/release", Empty)
+cam_tilt = node.advertise("/disco/camera/tilt", Double)
+cam_pan = node.advertise("/disco/camera/pan", Double)
 
 
 def link() -> Entity:
@@ -58,6 +65,23 @@ def throw(heading_deg: float) -> None:
     print(f"thrown: heading {heading_deg:.0f}, {THROW_SPEED:.0f} m/s", flush=True)
 
 
+last_cam = None
+
+
+def cam(tilt_deg: float, pan_deg: float) -> None:
+    global last_cam
+    # the gimbal turns positive about its y (down) and z (left)
+    tilt = Double()
+    tilt.data = -math.radians(max(-85.0, min(85.0, tilt_deg)))
+    pan = Double()
+    pan.data = -math.radians(max(-90.0, min(90.0, pan_deg)))
+    cam_tilt.publish(tilt)
+    cam_pan.publish(pan)
+    if (tilt_deg, pan_deg) != last_cam:
+        last_cam = (tilt_deg, pan_deg)
+        print(f"camera: tilt {tilt_deg:.0f}, pan {pan_deg:.0f}", flush=True)
+
+
 def main() -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("127.0.0.1", int(os.environ.get("HELPER_PORT", "5410"))))
@@ -67,6 +91,8 @@ def main() -> None:
         try:
             if words and words[0] == "throw":
                 throw(float(words[1]) if len(words) > 1 else 0.0)
+            elif words and words[0] == "cam":
+                cam(float(words[1]), float(words[2]))
             elif words:
                 print(f"gz-helper: unknown command {words}", flush=True)
         except (ValueError, IndexError) as e:

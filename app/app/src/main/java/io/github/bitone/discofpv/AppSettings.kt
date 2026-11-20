@@ -13,7 +13,8 @@ import android.content.Context
  *   the Disco after a loss;
  * - [headsetHudPercent]: size of the HUD area in the headset, in percent of
  *   the video: only the middle of the picture is seen through the lenses;
- * - [mapTiles], [customTileUrl]: what the moving map shows under its trail;
+ * - [mapTiles], [customTileUrl], [offlineMapUri]: what the moving map shows
+ *   under its trail (the last one a Mapsforge map file, for no network);
  * - [headTracking]: in the headset, the head points the (digital) camera;
  *   [recenterButton] brings the centred view back in front of the eyes.
  */
@@ -24,6 +25,7 @@ data class AppSettings(
     val headsetHudPercent: Int = DEFAULT_HUD_PERCENT,
     val mapTiles: MapTiles = MapTiles.NONE,
     val customTileUrl: String = "",
+    val offlineMapUri: String = "",
     val headTracking: Boolean = true,
     val recenterButton: MapButton = MapButton.A,
 ) {
@@ -32,7 +34,9 @@ data class AppSettings(
         NONE("none"),
         OSM("OpenStreetMap"),
         IGN_PHOTO("IGN aerial photos (France)"),
-        CUSTOM("custom URL");
+        CUSTOM("custom URL"),
+        OFFLINE("offline map file"),
+        SATELLITE("satellite (best available)");
 
         fun next(): MapTiles = entries[(ordinal + 1) % entries.size]
     }
@@ -42,6 +46,8 @@ data class AppSettings(
         MapTiles.NONE -> null
         MapTiles.OSM -> TileSource.OSM
         MapTiles.IGN_PHOTO -> TileSource.IGN_PHOTO
+        MapTiles.SATELLITE -> TileSource.SATELLITE
+        MapTiles.OFFLINE -> offlineMapUri.takeIf { it.isNotEmpty() }?.let { TileSource.offline(it) }
         MapTiles.CUSTOM -> customTileUrl.takeIf { it.contains("{z}") }?.let { TileSource.custom(it) }
     }
 
@@ -75,6 +81,7 @@ data class AppSettings(
                     .coerceIn(MIN_HUD_PERCENT, MAX_HUD_PERCENT),
                 mapTiles = MapTiles.entries.firstOrNull { it.name == p.getString("map_tiles", null) } ?: MapTiles.NONE,
                 customTileUrl = p.getString("custom_tile_url", "") ?: "",
+                offlineMapUri = p.getString("offline_map_uri", "") ?: "",
                 headTracking = p.getBoolean("head_tracking", true),
                 recenterButton = MapButton.entries.firstOrNull { it.name == p.getString("recenter_button", null) }
                     ?: MapButton.A,
@@ -89,6 +96,7 @@ data class AppSettings(
                 .putInt("headset_hud_percent", s.headsetHudPercent)
                 .putString("map_tiles", s.mapTiles.name)
                 .putString("custom_tile_url", s.customTileUrl)
+                .putString("offline_map_uri", s.offlineMapUri)
                 .putBoolean("head_tracking", s.headTracking)
                 .putString("recenter_button", s.recenterButton.name)
                 .apply()

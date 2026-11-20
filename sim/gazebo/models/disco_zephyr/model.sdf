@@ -563,12 +563,41 @@
       <detach_topic>/disco/release</detach_topic>
     </plugin>
 
-    <!-- nose camera: the Zephyr is x left, y back, z up; a camera looks
-         along its +x, turned to -y (forward), tilted 5 degrees down -->
-    <link name="camera_link">
-      <pose relative_to="wing">0 -0.32 0.04 0 0.087 -1.5708</pose>
+    <!-- nose camera on a gimbal, like the Disco's digitally tilted and
+         panned view: the Zephyr is x left, y back, z up; the gimbal's
+         frame is turned to look forward (x forward, y left, z up). Pan
+         turns about its z, tilt about its y; their targets come from the
+         controller through the bridge and gz-helper.py ("cam <tilt> <pan>"),
+         on /disco/camera/pan and /disco/camera/tilt (radians, positive
+         left and down). Tiny masses: the flight is not disturbed. -->
+    <link name="camera_pan_link">
+      <pose relative_to="wing">0 -0.32 0.04 0 0 -1.5708</pose>
       <inertial>
-        <mass>0.01</mass>
+        <mass>0.005</mass>
+        <inertia>
+          <ixx>0.000001</ixx><iyy>0.000001</iyy><izz>0.000001</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+    </link>
+    <joint name="camera_pan_joint" type="revolute">
+      <parent>wing</parent>
+      <child>camera_pan_link</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-1.6</lower>
+          <upper>1.6</upper>
+          <effort>1000</effort>
+          <velocity>4</velocity>
+        </limit>
+      </axis>
+    </joint>
+    <!-- the camera itself, 5 degrees down at tilt 0 -->
+    <link name="camera_link">
+      <pose relative_to="camera_pan_link">0 0 0 0 0.087 0</pose>
+      <inertial>
+        <mass>0.005</mass>
         <inertia>
           <ixx>0.000001</ixx><iyy>0.000001</iyy><izz>0.000001</izz>
           <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
@@ -596,10 +625,39 @@
         </plugin>
       </sensor>
     </link>
-    <joint name="camera_joint" type="fixed">
-      <parent>wing</parent>
+    <joint name="camera_tilt_joint" type="revolute">
+      <parent>camera_pan_link</parent>
       <child>camera_link</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <lower>-1.5</lower>
+          <upper>1.6</upper>
+          <effort>1000</effort>
+          <velocity>4</velocity>
+        </limit>
+      </axis>
     </joint>
+    <!-- kinematic: the joints are moved at the velocity reaching the
+         target, no springiness, so the image does not wobble -->
+    <plugin filename="gz-sim-joint-position-controller-system"
+        name="gz::sim::systems::JointPositionController">
+      <joint_name>camera_pan_joint</joint_name>
+      <topic>/disco/camera/pan</topic>
+      <use_velocity_commands>true</use_velocity_commands>
+      <p_gain>10</p_gain>
+      <cmd_max>4</cmd_max>
+      <cmd_min>-4</cmd_min>
+    </plugin>
+    <plugin filename="gz-sim-joint-position-controller-system"
+        name="gz::sim::systems::JointPositionController">
+      <joint_name>camera_tilt_joint</joint_name>
+      <topic>/disco/camera/tilt</topic>
+      <use_velocity_commands>true</use_velocity_commands>
+      <p_gain>10</p_gain>
+      <cmd_max>4</cmd_max>
+      <cmd_min>-4</cmd_min>
+    </plugin>
 
   </model>
 </sdf>

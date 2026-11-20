@@ -5,6 +5,7 @@ import {
   actionFor,
   approachPoint,
   batteryPercent,
+  cameraCommand,
   circlingParams,
   flyingState,
   Mode,
@@ -138,8 +139,9 @@ test('PARAM_SET and RC_CHANNELS_OVERRIDE encode as MAVLink frames', () => {
   assert.throws(() => mav.paramSet('A_VERY_LONG_PARAMETER', 1));
 });
 
-test('the camera tilt reaches FlightGear', () => {
+test('the camera tilt and pan reach FlightGear and Gazebo', () => {
   assert.equal(parseCameraTilt('ok name=X tilt=-35 wifi=1,1'), -35);
   assert.equal(parseCameraTilt('ok name=X'), null);
   assert.equal(parseCameraPan('ok tilt=-35 pan=20 wifi=1,1'), 20);
+  assert.equal(cameraCommand(-35, 20), 'cam -35 20');
 });

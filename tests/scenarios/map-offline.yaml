@@ -1,0 +1,35 @@
+name: Disco FPV moving map over an offline Mapsforge file
+description: >
+  Needs `make fake`, `make video`, `make emu` and `make map-test`, which
+  pushes rhone-alpes.map (download.mapsforge.org, 343 MB) to the app's
+  files; not in the default scenarios for that reason. Run with
+  SCENARIOS=tests/scenarios/map-offline.yaml. The settings are written
+  directly (choosing the file goes through Android's document picker);
+  the moving map then draws the file's roads, water and buildings around
+  the Disco, near Grenoble, with no network.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -rf shared_prefs/hud.xml shared_prefs/settings.xml shared_prefs/last_fix.xml
+  - shell: >-
+      run-as io.github.bitone.discofpv sh -c 'mkdir -p shared_prefs && echo
+      "<map><string name=\"map_tiles\">OFFLINE</string><string name=\"offline_map_uri\">file:///sdcard/Android/data/io.github.bitone.discofpv/files/rhone-alpes.map</string></map>"
+      > shared_prefs/settings.xml'
+  - send: [drone_link ok, fail gps off, battery 64, home 45.1885 5.7245 300, gps 45.1890 5.7250 350,
+      satellites 12, circle]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Settings
+  - expect_texts: ["Map background: offline map file", "Offline map file: file:///sdcard/Android/data/io.github.bitone.discofpv/files/rhone-alpes.map"]
+  - back
+  - tap_text: Flight view
+  - expect_texts: [CIRCLING]
+  - send: [button b]
+  - expect_texts: ["HUD MAP"]
+  - wait: 3000
+  - screenshot: map-offline
+  - send: [button b]
+  - back
+  - shell: run-as io.github.bitone.discofpv rm -rf shared_prefs/settings.xml shared_prefs/last_fix.xml

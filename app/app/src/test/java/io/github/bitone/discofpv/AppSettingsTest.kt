@@ -25,6 +25,16 @@ class AppSettingsTest {
     }
 
     @Test
+    fun offlineMapNeedsAFile() {
+        val s = AppSettings(mapTiles = AppSettings.MapTiles.OFFLINE)
+        assertEquals(null, s.tileSource())
+        val src = s.copy(offlineMapUri = "content://x/rhone-alpes.map").tileSource()!!
+        assertEquals("content://x/rhone-alpes.map", src.mapFile)
+        assertEquals(false, src.prefetch)
+        assertEquals("© OpenStreetMap contributors", src.attribution)
+    }
+
+    @Test
     fun viewPitchAddsTheCameraTilt() {
         assertEquals(-15.0, HudModel(pitch = 5.0, cameraTilt = -20.0).viewPitch!!, 0.0)
         assertEquals(5.0, HudModel(pitch = 5.0).viewPitch!!, 0.0)

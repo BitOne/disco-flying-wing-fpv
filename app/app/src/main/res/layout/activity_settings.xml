@@ -24,6 +24,13 @@
         <Button android:id="@+id/setting_recenter_button" style="@style/SettingRow" />
         <Button android:id="@+id/setting_map_tiles" style="@style/SettingRow" />
         <Button android:id="@+id/setting_tile_url" style="@style/SettingRow" />
+        <Button android:id="@+id/setting_map_file" style="@style/SettingRow" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/map_file_hint"
+            android:textSize="14sp" />
         <Button
             android:id="@+id/setting_download_tiles"
             style="@style/SettingRow"

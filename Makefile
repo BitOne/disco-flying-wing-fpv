@@ -225,7 +225,7 @@ sim-image: ## Build the simulator images (ArduPilot SITL, FlightGear, Gazebo)
 	docker build -t $(GZ_IMAGE) docker/gazebo
 
 .PHONY: sim-world
-sim-world: sim/bridge/node_modules ## Regenerate the Gazebo world (sim/gazebo/worlds, models/fuel_*)
+sim-world: sim/bridge/node_modules ## Regenerate the Gazebo world (sim/gazebo/worlds, models/fuel_* and disco_ground)
 	docker run --rm -u $(UID):$(GID) -v "$(ROOT)/sim":/s -w /s/bridge $(NODE_IMAGE) \
 		node src/gazebo-world.ts ../gazebo
 
@@ -280,6 +280,26 @@ app-install: ## Install out/disco-fpv-debug.apk on the emulator
 	docker exec $(EMU_NAME) adb -s emulator-5554 install -r -g /tmp/disco-fpv.apk \
 		|| { docker exec $(EMU_NAME) adb -s emulator-5554 uninstall io.github.bitone.discofpv; \
 		docker exec $(EMU_NAME) adb -s emulator-5554 install -r -g /tmp/disco-fpv.apk; }
+
+.PHONY: map-test
+MAP_FILE ?= $(OUT)/maps/rhone-alpes.map
+MAP_DIR  := /sdcard/Android/data/io.github.bitone.discofpv/files
+map-test: app-image ## Render tiles from a Mapsforge file on the emulator (MAP_FILE, default rhone-alpes.map from download.mapsforge.org)
+	test -f $(MAP_FILE) || { mkdir -p $(OUT)/maps && curl -fL -o $(MAP_FILE) \
+		https://download.mapsforge.org/maps/v5/europe/france/rhone-alpes.map; }
+	$(APP_RUN) gradle --no-daemon --console=plain :app:assembleDebug :app:assembleDebugAndroidTest 2>&1 \
+		| tee $(OUT)/map-test-build.log; test $${PIPESTATUS[0]} = 0
+	docker cp $(APP_DEBUG_APK) $(EMU_NAME):/tmp/disco-fpv.apk
+	docker cp app/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk $(EMU_NAME):/tmp/disco-fpv-test.apk
+	$(ADB) install -r -g /tmp/disco-fpv.apk && $(ADB) install -r -g /tmp/disco-fpv-test.apk
+	$(ADB) shell mkdir -p $(MAP_DIR)
+	$(ADB) shell test -f $(MAP_DIR)/rhone-alpes.map || { docker cp $(MAP_FILE) $(EMU_NAME):/tmp/rhone-alpes.map \
+		&& $(ADB) push /tmp/rhone-alpes.map $(MAP_DIR)/; }
+	$(ADB) shell am instrument -w -e class io.github.bitone.discofpv.MapsforgeTilesTest \
+		io.github.bitone.discofpv.test/androidx.test.runner.AndroidJUnitRunner | tee $(OUT)/map-test.log
+	grep -q "^OK (1 test)" $(OUT)/map-test.log
+	mkdir -p $(OUT)/map-tiles && for f in $$($(ADB) shell ls $(MAP_DIR) | grep png); do \
+		$(ADB) pull $(MAP_DIR)/$$f /tmp/$$f >/dev/null && docker cp $(EMU_NAME):/tmp/$$f $(OUT)/map-tiles/; done
 
 .PHONY: unit
 unit: app-image ## Run the app's JVM unit tests

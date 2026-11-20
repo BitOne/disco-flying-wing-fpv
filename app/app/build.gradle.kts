@@ -64,6 +64,10 @@ dependencies {
     implementation("org.conscrypt:conscrypt-android:2.2.1")
     implementation("com.google.firebase:firebase-crashlytics:17.1.0")
 
+    // Offline maps: Mapsforge (LGPL-3.0, see NOTICE) renders .map files.
+    implementation("org.mapsforge:mapsforge-map-android:0.25.0")
+    implementation("org.mapsforge:mapsforge-themes:0.25.0")
+
     testImplementation("junit:junit:4.13.2")
 
     androidTestImplementation(files(sdkAarDir.resolve("sdkcore-testing.aar")))
@@ -71,4 +75,10 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
+}
+
+// junit 4.13 brings hamcrest-core 1.3, merged into hamcrest 2.1 (the SDK's
+// testing AAR): keep only the latter in instrumented tests.
+configurations.named("androidTestImplementation") {
+    exclude(group = "org.hamcrest", module = "hamcrest-core")
 }

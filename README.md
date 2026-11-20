@@ -55,7 +55,9 @@ scenarios in `tests/scenarios/` (TypeScript runner in `tests/e2e/`). Its
 exit code is the verdict; screenshots and results go to `out/latest/`.
 
 The app: flight view and side-by-side headset view with a HUD in four
-modes (classic, minimal, jet fighter, moving map over map tiles), the
+modes (classic, minimal, jet fighter, moving map over map tiles,
+satellite photos worldwide or an offline OpenStreetMap file from
+download.mapsforge.org), the
 controller's buttons to cycle them and bring up the map, warnings from the
 Disco's alarms, the last GPS position kept after a loss, the camera tilt,
 and a settings screen.

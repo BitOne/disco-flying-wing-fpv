@@ -20,7 +20,8 @@ import kotlin.math.sin
  * home (on the edge with its distance when beyond the range ring), north,
  * and a range ring sized to keep home in view. Without a GPS position it is
  * centred on the last fix, drawn as a cross with its coordinates and age.
- * No map tiles: it works offline, over the video, in a dark disc.
+ * Over the video in a dark disc, optionally on map tiles ([tiles]: web
+ * tiles, or an offline map file drawn on the phone).
  */
 class MapHudView @JvmOverloads constructor(
     context: Context,
@@ -86,12 +87,15 @@ class MapHudView @JvmOverloads constructor(
             }
         }
         canvas.restore()
-        if (layer.source.attribution.isNotEmpty()) {
+        // whose picture is under the Disco (several sources for satellite)
+        val (tx, ty) = TileMath.tileOf(gx, gy)
+        val attribution = layer.attribution(z, tx, ty)
+        if (attribution.isNotEmpty()) {
             val small = text.textSize
             text.textSize = small * 0.55f
             text.color = HUD_COLOR
             text.textAlign = Paint.Align.CENTER
-            canvas.drawText(layer.source.attribution, cx, cy + r * 0.95f, text)
+            canvas.drawText(attribution, cx, cy + r * 0.95f, text)
             text.textSize = small
         }
     }
@@ -130,7 +134,7 @@ class MapHudView @JvmOverloads constructor(
         canvas.drawText("N", cx + (north.first / nd * r).toFloat(),
             cy + (north.second / nd * r).toFloat() + text.textSize / 3, text)
 
-        // trail
+        // trail, within the disc (old points can be far away)
         if (m.trail.size >= 2) {
             path.reset()
             m.trail.forEachIndexed { i, p ->
@@ -138,7 +142,12 @@ class MapHudView @JvmOverloads constructor(
                 if (i == 0) path.moveTo(cx + x.toFloat(), cy + y.toFloat())
                 else path.lineTo(cx + x.toFloat(), cy + y.toFloat())
             }
+            canvas.save()
+            clip.reset()
+            clip.addCircle(cx, cy, r * 1.08f, Path.Direction.CW)
+            canvas.clipPath(clip)
             canvas.drawPath(path, line)
+            canvas.restore()
         }
 
         // home, clamped to the ring

@@ -37,6 +37,18 @@ ENV GZ_VERSION=harmonic \
     GZ_PARTITION=disco-fpv \
     GZ_SIM_SYSTEM_PLUGIN_PATH=/opt/ardupilot_gazebo/build \
     GZ_SIM_RESOURCE_PATH=/opt/ardupilot_gazebo/models:/opt/ardupilot_gazebo/worlds:/sim/gazebo/models:/sim/gazebo/worlds
+# the ground's textures (ambientCG, ambientcg.com, CC0): 1K colour maps,
+# as sim/bridge/src/gazebo-world.ts's TEXTURES names them
+RUN apt-get update && apt-get install -y --no-install-recommends unzip \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/disco-textures && cd /tmp \
+    && for t in Grass004 Grass005 Grass001 Ground037 Ground048 Ground109 \
+        Ground103 Asphalt031 Gravel043; do \
+        curl -fsSL -o t.zip "https://ambientcg.com/get?file=${t}_1K-JPG.zip" || exit 1; \
+        unzip -p t.zip "${t}_1K-JPG_Color.jpg" > /opt/disco-textures/$t.jpg || exit 1; \
+        rm t.zip; \
+    done \
+    && chmod -R a+rX /opt/disco-textures
 RUN useradd -m gz
 USER gz
 WORKDIR /home/gz

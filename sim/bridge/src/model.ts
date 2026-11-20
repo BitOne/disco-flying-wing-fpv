@@ -161,3 +161,11 @@ export function parseCameraPan(reply: string): number | null {
   const m = /\bpan=(-?\d+)/.exec(reply);
   return m ? Number(m[1]) : null;
 }
+
+/**
+ * The command moving Gazebo's camera gimbal (docker/gazebo/gz-helper.py)
+ * to the controller's tilt and pan (degrees, positive up and right).
+ */
+export function cameraCommand(tilt: number, pan: number): string {
+  return `cam ${tilt} ${pan}`;
+}

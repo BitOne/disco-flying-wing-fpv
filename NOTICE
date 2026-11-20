@@ -8,6 +8,18 @@ open-source components (Ground SDK Mobile, PDrAW, Olympe) are released
 under the BSD 3-Clause license. The Parrot notice above is required by
 section 2.2 of that agreement.
 
+The app's offline maps use Mapsforge (https://github.com/mapsforge/mapsforge),
+released under the GNU Lesser General Public License v3.0 with the
+constraints of sections 4(d) and 4(e) waived (its README), and
+AndroidSVG (Apache License 2.0). Map data from map files is
+(c) OpenStreetMap contributors, under the Open Database License.
+
+The satellite map background shows imagery from IGN (France, Licence
+Ouverte), swisstopo, IGN España PNOA (CC BY 4.0), Beeldmateriaal
+Nederland via PDOK (CC BY 4.0), the USGS (public domain) and Sentinel-2
+cloudless 2016 by EOX IT Services GmbH (CC BY 4.0, contains modified
+Copernicus Sentinel data 2016), credited on the map.
+
 "Parrot", "Disco", "SkyController" and "FreeFlight" are trademarks of
 Parrot Drones SAS. This project is not affiliated with or endorsed by
 Parrot.

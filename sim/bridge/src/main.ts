@@ -25,7 +25,7 @@ import { createSocket } from 'node:dgram';
 import { Socket } from 'node:net';
 import { Control } from './control.ts';
 import * as mav from './mavlink.ts';
-import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState, parseSticks, sticksToRc, parseCircling, circlingParams, parseCameraTilt, parseCameraPan, type Circling } from './model.ts';
+import { actionFor, approachPoint, batteryPercent, flyingState, Mode, returningHome, type PlaneState, parseSticks, sticksToRc, parseCircling, circlingParams, parseCameraTilt, parseCameraPan, cameraCommand, type Circling } from './model.ts';
 
 const args = process.argv.slice(2);
 const opt = (name: string, def: string): string => {
@@ -344,20 +344,23 @@ async function main(): Promise<void> {
         sendMav(mav.MSG.RC_CHANNELS_OVERRIDE, mav.rcOverride([0, 0, 0, 0]));
       }
       // the Disco's circling settings: altitude and direction; its camera
-      // tilt (the controller's slider) tilts FlightGear's view
+      // tilt and pan (the controller's slider and stick) turn FlightGear's
+      // view, or Gazebo's camera gimbal
       if (tick % 5 === 0) {
         const status = await ctrl.send('disco');
         const tilt = parseCameraTilt(status);
+        const pan = parseCameraPan(status);
         if (tilt !== null && tilt !== cameraTilt) {
           cameraTilt = tilt;
           setFlightGearProperty('/sim/current-view/pitch-offset-deg', tilt);
         }
         // pan right; FlightGear's heading offset turns the view left
-        const pan = parseCameraPan(status);
         if (pan !== null && pan !== cameraPan) {
           cameraPan = pan;
           setFlightGearProperty('/sim/current-view/heading-offset-deg', -pan);
         }
+        // every time: Gazebo may have restarted, and a lost datagram heals
+        gazebo(cameraCommand(cameraTilt, cameraPan));
       }
       if (tick % 20 === 0) {
         const c = parseCircling(await ctrl.send('disco'));

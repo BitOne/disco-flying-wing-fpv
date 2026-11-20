@@ -1,0 +1,39 @@
+name: Disco FPV moving map over satellite photos, worldwide
+description: >
+  Needs `make fake`, `make video`, `make emu` and the network: it uses the
+  real imagery services, so it is not in the default scenarios. Run with
+  SCENARIOS=tests/scenarios/map-satellite.yaml. The "satellite (best
+  available)" background takes each tile from the national orthophotos
+  where there are some (here IGN near Grenoble, then USGS in Honolulu)
+  and from the Sentinel-2 cloudless mosaic elsewhere (Sydney).
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -rf shared_prefs/hud.xml shared_prefs/settings.xml shared_prefs/last_fix.xml files/tiles/satellite
+  - shell: >-
+      run-as io.github.bitone.discofpv sh -c 'mkdir -p shared_prefs && echo
+      "<map><string name=\"map_tiles\">SATELLITE</string></map>" > shared_prefs/settings.xml'
+  - send: [drone_link ok, fail gps off, battery 64, home 45.1885 5.7245 300, gps 45.1890 5.7250 350,
+      satellites 12, circle]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Settings
+  - expect_texts: ["Map background: satellite (best available)"]
+  - back
+  - tap_text: Flight view
+  - expect_texts: [CIRCLING]
+  - send: [button b]
+  - expect_texts: ["HUD MAP"]
+  - wait: 5000
+  - screenshot: satellite-grenoble
+  - send: [home 21.2665 -157.8205 3, gps 21.2670 -157.8200 60]
+  - wait: 6000
+  - screenshot: satellite-honolulu
+  - send: [home -33.8568 151.2153 5, gps -33.8560 151.2160 60]
+  - wait: 6000
+  - screenshot: satellite-sydney
+  - send: [button b]
+  - back
+  - shell: run-as io.github.bitone.discofpv rm -rf shared_prefs/settings.xml shared_prefs/last_fix.xml

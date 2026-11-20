@@ -28,6 +28,10 @@
     <string name="download_no_source">Choose a map background first</string>
     <string name="download_not_allowed">This map\'s terms don\'t allow downloading ahead</string>
     <string name="download_progress">Downloaded %1$d of %2$d tiles</string>
+    <string name="setting_map_file">Offline map file: %1$s</string>
+    <string name="map_file_hint">Offline map files (Mapsforge .map, OpenStreetMap data): download your region once from download.mapsforge.org, e.g. maps/v5/europe/france/rhone-alpes.map, then choose it here and pick \"offline map file\" as the map background.</string>
+    <string name="map_file_unreadable">(no longer readable, choose it again)</string>
+    <string name="download_offline">The offline map file needs no download</string>
     <string name="setting_head_tracking">Head tracking in the headset: %1$s</string>
     <string name="setting_recenter_button">Recentre view button: %1$s</string>
 </resources>

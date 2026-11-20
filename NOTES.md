@@ -1349,6 +1349,41 @@ https://ardupilot.org/dev/docs/sitl-with-gazebo.html ,
 https://cesium.com/learn/cesiumjs/ref-doc/WebMapTileServiceImageryProvider.html ,
 https://wiki.openstreetmap.org/wiki/Overpass_API
 
+### Camera tilt and pan, textured world (2026-11-20)
+
+Camera tilt and pan in Gazebo: the nose camera sits on a gimbal of two
+revolute joints (pan about the wing's up axis, tilt carrying
+`camera_link`, 5 g links, the 5 degree nose down offset kept), each driven
+by a JointPositionController in velocity mode so it moves straight to its
+target without springiness (Gazebo asks for an effort limit on such joints
+or it ignores their range). The bridge sends `cam <tilt> <pan>` (degrees,
+positive up and right) to `gz-helper.py` every 0.5 s, so a restarted
+Gazebo or a lost datagram catches up; the helper publishes the joint
+targets on `/disco/camera/tilt` and `/disco/camera/pan`. Checked in
+flight: the controller's tilt slider (fake `axis left_slider`) took the
+view straight down; pan was checked with `cam -10 70` sent to the helper
+directly, since the fake's control socket cannot set it.
+
+The ground is now textured: `gazebo-world.ts` writes `models/disco_ground`
+with flat OBJ meshes whose UVs are world coordinates, so ambientCG
+textures (CC0, 1K colour maps, downloaded into the image under
+`/opt/disco-textures`) repeat every 4 to 10 m (a plain SDF plane stretches
+one texture over all of it). There is a meadow, a patchwork of fields
+turned 12 degrees (lush, dry, ploughed, stubble, mown) with grass margins
+and oak hedgerows near the field, the mown take-off strip, dirt tracks, an
+asphalt road, a gravel forecourt and a pond with trees, at heights of 4 to
+10 cm so layers do not flicker. Cost: 232 trees instead of 155; Gazebo
+231 % CPU and 1.16 GB (was 220 % and 1.0 GB), camera 23.8 fps,
+real-time factor mostly 0.95 to 1.0. Seen from 50 m the textures blur to
+an even colour and the stubble texture shows 10 m stripes (a large-scale
+colour variation would help); the water tower's texture still fails to
+load. Screenshots: `docs/screenshots/gazebo-onboard*.jpg`,
+`gazebo-chase.jpg`.
+
+Note: after a `make sim`, the fake's own flight model stays off (the
+bridge drove it), so scenarios that rely on it (`app-map`: the Disco
+circling home) fail until the fake is restarted (`make fake`).
+
 ## 26. Offline OpenStreetMap maps for the app (2026-11-20)
 
 Question: the app's moving map may not prefetch OpenStreetMap's tiles,
@@ -1397,6 +1432,39 @@ Recommendation: a Mapsforge TileSource (T4.x): pick a .map file (or
 download a region), render tiles on the tile threads, keep the disk cache;
 attribution on the map.
 
+### Built (T6.8)
+
+- `MapsforgeTiles` (app): Mapsforge 0.25.0 (`mapsforge-map-android`,
+  `mapsforge-themes`, plus AndroidSVG; NOTICE updated) opens the picked
+  file in place through its document URI (`openFileDescriptor`, then
+  `MapFile(FileInputStream, 0, null)`), so a 343 MB file is not copied.
+  `DatabaseRenderer.executeJob` renders one 256 px tile with the built-in
+  default theme; the bitmap is copied and the renderer's released.
+- Drawn without labels and symbols, at scale 1: `AndroidGraphicFactory.
+  createInstance` sets the device scale to the screen density (2.6 on the
+  emulator), which drew POI icons and street names about 3 times too big
+  in 256 px tiles; and on a small disc that turns with the track, text
+  can't be read anyway. Roads, water, woods, fields and buildings remain.
+  The default theme has no style menu to switch POIs off selectively.
+- In `TileLayer`, a source with a `mapFile` renders on a single thread
+  (the renderer isn't thread-safe), memory cache only (no disk cache,
+  rendering is fast enough), no prefetch (nothing to download). Outside
+  the file's area a tile is simply empty. Max zoom 18.
+- Settings: "Map background" gains "offline map file" (after custom URL,
+  so the existing scenario's cycle still holds); "Offline map file"
+  opens Android's document picker (`ACTION_OPEN_DOCUMENT`, persistable
+  read permission) and selects it.
+- Measured on the emulator (`make map-test`, Lyon, rhone-alpes.map):
+  the first tile 316 ms (theme and file index loading), then 54 ms at zoom
+  15 and 26 ms at zoom 17.
+- Tests: a JVM unit test for the setting; `make map-test` (an
+  instrumented test: renders zooms 13, 15, 17 in Lyon from the real file,
+  checks Paris is outside it, pulls the PNGs to out/map-tiles); the
+  scenario `tests/scenarios/map-offline.yaml` (not in the default set, it
+  needs the 343 MB file on the emulator) shows the moving map near
+  Grenoble over the file. The androidTest build needed hamcrest-core
+  excluded (duplicate classes with the SDK testing AAR's hamcrest 2.1).
+
 Sources: https://operations.osmfoundation.org/policies/tiles/ ,
 https://wiki.openstreetmap.org/wiki/OsmAndMapCreator ,
 https://f-droid.org/en/packages/net.osmand.plus/ ,
@@ -1404,6 +1472,75 @@ https://download.mapsforge.org/ , https://download.mapsforge.org/maps/v5/europe/
 https://github.com/mapsforge/mapsforge ,
 https://docs.protomaps.com/basemaps/downloads ,
 https://maplibre.org/maplibre-native/android/examples/data/PMTiles/
+
+## 27. Satellite view for the moving map, worldwide (2026-11-20)
+
+Goal: satellite or aerial photos under the moving map anywhere, usable
+offline (downloaded ahead), with terms that allow it in this app.
+
+Ruled out:
+- **Esri World Imagery**: offline use only through Esri content packages
+  with Esri software, otherwise an ArcGIS subscription; Gaia GPS had to
+  set its offline download limit to 0 tiles from 2025. Online it also
+  wants an ArcGIS account. Still possible as the custom URL with your own
+  key, online only.
+- **Google, Bing, Mapbox, MapTiler**: keys, and offline caching needs a
+  paid licence or their own SDK.
+- **EOX Sentinel-2 cloudless 2017 to 2025**: CC BY-NC-SA 4.0
+  (non-commercial); the 2016 layer is CC BY 4.0, which is what we use.
+
+Chosen: open national orthophotos where they exist, the Sentinel-2
+cloudless 2016 mosaic (10 m, global) elsewhere, picked per tile:
+
+| provider | area | detail | terms | max zoom served |
+|---|---|---|---|---|
+| IGN Géoplateforme BD ORTHO | France | 20 cm | Licence Ouverte | 19 |
+| swisstopo SWISSIMAGE (wmts.geo.admin.ch) | Switzerland | 10 cm | OGD, free use, "© swisstopo"; fair use limits (FSDI terms) | 19 |
+| IGN España PNOA-MA (ign.es WMTS) | Spain, Balearics, Canaries | 25 cm | CC BY 4.0, "PNOA cedido por © Instituto Geográfico Nacional" | 19 |
+| PDOK luchtfoto Actueel_orthoHR | Netherlands | 8 cm | CC BY 4.0 (Beeldmateriaal Nederland) | 19 |
+| USGS The National Map, USGSImageryOnly | USA (contiguous, Hawaii) | about 1 m | public domain | 16 |
+| EOX s2cloudless_3857 (2016) | world | 10 m | CC BY 4.0 | 18 served, 15 used |
+
+How (app, `Imagery.kt`, `TileLayer`): `TileSource.SATELLITE` lists the
+providers, finest first. For a tile, the providers whose box contains the
+tile's centre are tried in order; one is taken when it gives a picture.
+Outside its country a service answers 404 (IGN), 400 (swisstopo, USGS
+404) or a blank JPEG (PDOK one colour, PNOA almost: luminance spread 0 and
+9 out of 255 on 64 samples, against 60 to 150 for photos), so boxes can be
+rough: a 400/404 is kept as an empty file (not asked again), a blank tile
+is skipped, and the next provider is used. Beyond a provider's maximum
+zoom its deepest tile is cropped and enlarged on the phone (Sentinel-2
+from zoom 15, its 10 m pixels gain nothing from the server's upscaled
+16 to 18; USGS from 16). Each provider has its own cache folder. The
+attribution under the map is the one of the tile under the Disco. "Download
+the map around the last GPS position" works for it (each tile from its
+provider, up to 2000).
+
+Probed on 2026-11-20 (zoom 15 to 19 tiles in Lyon, Madrid, Amsterdam,
+Bern, Honolulu; border answers in Bern, Geneva, Barcelona, Brussels,
+Antwerp). swisstopo also serves pictures outside Switzerland (Lyon), but
+its box keeps it to Switzerland, after IGN. basemap.at (Austria, CC BY
+4.0) timed out from here: left out for now. Other open national
+orthophotos could be added the same way (Belgium, German states, Austria,
+Denmark with a token, Japan GSI).
+
+Tests: JVM unit tests (provider order at Lyon, Bern, Madrid, Amsterdam,
+Honolulu, Sydney; blank detection); `tests/scenarios/map-satellite.yaml`
+(real services, not in the default set) shows Grenoble, Honolulu and
+Sydney. Screenshot: `docs/screenshots/app-maps-offline-satellite.jpg`
+(offline file and IGN near Grenoble, USGS in Honolulu, Sentinel-2 in
+Sydney).
+
+Sources: https://www.esri.com/content/dam/arcgisonline/docs/tou_summary.pdf ,
+https://blog.gaiagps.com/esriupdate ,
+https://tiles.maps.eox.at/wmts/1.0.0/WMTSCapabilities.xml ,
+https://cloudless.eox.at/license-non-commercial ,
+https://www.swisstopo.admin.ch/en/conditions-geodata ,
+https://www.geo.admin.ch/en/general-terms-of-use-fsdi ,
+https://www.ign.es/resources/licencia/Condiciones_licenciaUso_IGN.pdf ,
+https://www.idee.es/csw-codsi-idee/srv/api/records/spaignwmts_pnoa-ma ,
+https://data.overheid.nl/en/dataset/56588-luchtfoto-beeldmateriaal-2024-7-5cm-rgb-open-data ,
+https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer
 
 ## Sources
 
