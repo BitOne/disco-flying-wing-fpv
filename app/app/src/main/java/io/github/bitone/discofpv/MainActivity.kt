@@ -30,6 +30,10 @@ class MainActivity : Activity() {
     private lateinit var headsetButton: Button
     private lateinit var rcButton: Button
     private var connectedDroneUid: String? = null
+    private lateinit var guard: ConnectionGuard
+    private lateinit var wifiButton: Button
+    /** A Disco on Wi-Fi waiting for the pilot's tap, if any. */
+    private var wifiDrone: ConnectionGuard.WifiDrone? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,6 +64,16 @@ class MainActivity : Activity() {
             startActivity(android.content.Intent(this, SettingsActivity::class.java))
         }
 
+        wifiButton = findViewById(R.id.wifi_connect)
+        wifiButton.setOnClickListener { wifiDrone?.let { guard.allow(it.uid) } }
+        guard = ConnectionGuard(this)
+        guard.onWifiDrones = { list ->
+            wifiDrone = list.firstOrNull()
+            wifiButton.visibility = if (wifiDrone == null) View.GONE else View.VISIBLE
+            wifiDrone?.let { wifiButton.text = getString(R.string.wifi_connect, it.name) }
+            updateHint()
+        }
+
         groundSdk = ManagedGroundSdk.obtainSession(this)
         groundSdk.getRemoteControlList({ true }) { list ->
             val rcs = list.orEmpty()
@@ -82,13 +96,20 @@ class MainActivity : Activity() {
         }
     }
 
+    override fun onDestroy() {
+        guard.close()
+        super.onDestroy()
+    }
+
     /** What to do next, from what is connected. */
     private fun updateHint() {
-        hint.setText(when {
-            connectedDroneUid != null -> R.string.main_hint_ready
-            rcConnected -> R.string.main_hint_drone
-            else -> R.string.main_hint
-        })
+        val waiting = wifiDrone
+        hint.text = when {
+            connectedDroneUid != null -> getString(R.string.main_hint_ready)
+            rcConnected -> getString(R.string.main_hint_drone)
+            waiting != null -> getString(R.string.main_hint_wifi, waiting.name)
+            else -> getString(R.string.main_hint)
+        }
     }
 
     /** Green when connected, amber while connecting, grey otherwise. */

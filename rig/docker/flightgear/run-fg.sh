@@ -13,6 +13,8 @@ HOST=${HOST:-127.0.0.1}
 RTP_PORT=${RTP_PORT:-55004}
 RTCP_PORT=${RTCP_PORT:-55005}
 export DISPLAY=:99
+# every socket on loopback (loopback-bind.c), VirtualGL's own preload kept
+export LD_PRELOAD=/usr/local/lib/loopback-bind.so${LD_PRELOAD:+:$LD_PRELOAD}
 
 Xvfb :99 -screen 0 ${WIDTH}x${HEIGHT}x24 -nolisten tcp &
 sleep 2
@@ -35,7 +37,7 @@ else
 	echo "no GPU: software rendering (very slow with FlightGear's scenery)"
 fi
 
-$GL_WRAP fgfs --fdm=external --native-fdm=socket,in,${FPS},,${FDM_PORT:-5504},udp \
+$GL_WRAP fgfs --fdm=external --native-fdm=socket,in,${FPS},127.0.0.1,${FDM_PORT:-5504},udp \
 	--aircraft=ufo ${START_POS} \
 	--geometry=${WIDTH}x${HEIGHT} --bpp=24 --disable-fullscreen \
 	--timeofday=noon --disable-sound --disable-hud --disable-hud-3d \
@@ -54,7 +56,7 @@ $GL_WRAP fgfs --fdm=external --native-fdm=socket,in,${FPS},,${FDM_PORT:-5504},ud
 	--prop:/sim/current-view/field-of-view=${FOV:-80} \
 	--prop:/sim/frame-rate-throttle-hz=${FPS} \
 	--prop:/sim/menubar/visibility=false \
-	--telnet=${PROPS_PORT:-5401} \
+	--props=socket,bi,10,127.0.0.1,${PROPS_PORT:-5401},tcp \
 	${FG_ARGS:-} &
 FG=$!
 

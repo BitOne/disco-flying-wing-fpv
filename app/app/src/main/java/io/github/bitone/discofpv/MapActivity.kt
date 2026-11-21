@@ -171,7 +171,8 @@ class MapActivity : Activity() {
         findViewById<Button>(R.id.setting_map_tiles).text = getString(R.string.setting_map_tiles, s.mapTiles.label)
         findViewById<Button>(R.id.setting_tile_url).apply {
             visibility = if (s.mapTiles == AppSettings.MapTiles.CUSTOM) View.VISIBLE else View.GONE
-            text = getString(R.string.setting_tile_url, s.customTileUrl.ifEmpty { getString(R.string.none) })
+            // its key stays off the screen (screenshots, screen sharing); the edit dialog has it
+            text = getString(R.string.setting_tile_url, s.customTileUrl.ifEmpty { null }?.let { TileMath.redact(it) } ?: getString(R.string.none))
         }
         findViewById<Button>(R.id.setting_map_file).apply {
             visibility = if (s.mapTiles == AppSettings.MapTiles.OFFLINE) View.VISIBLE else View.GONE

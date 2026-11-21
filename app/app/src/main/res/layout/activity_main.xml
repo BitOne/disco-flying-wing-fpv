@@ -102,6 +102,13 @@
             android:paddingStart="4dp"
             android:text="@string/main_hint" />
 
+        <!-- a Disco on the phone's own Wi-Fi: connected once allowed (ConnectionGuard) -->
+        <Button
+            android:id="@+id/wifi_connect"
+            style="@style/Button.Primary"
+            android:layout_marginTop="12dp"
+            android:visibility="gone" />
+
         <!-- where to go -->
         <Button
             android:id="@+id/flight_button"

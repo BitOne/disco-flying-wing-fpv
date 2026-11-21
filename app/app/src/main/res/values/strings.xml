@@ -5,6 +5,10 @@
     <string name="tagline">FPV for the Parrot Disco</string>
     <string name="main_hint">Plug this phone into the SkyController 2 and turn it on.</string>
     <string name="main_hint_drone">Controller connected: turn the Disco on.</string>
+    <string name="main_hint_wifi">%1$s is on this phone\'s Wi-Fi. Connect to it only if it is your Disco: from then on it connects by itself.</string>
+    <string name="wifi_connect">Connect to %1$s</string>
+    <string name="forget_wifi_discos">Forget the Discos allowed over Wi-Fi (%1$d)</string>
+    <string name="section_wifi">Wi-Fi</string>
     <string name="main_hint_ready">Ready. The SkyController flies the Disco: keep it in hand.</string>
     <string name="drone">Drone</string>
     <string name="none">none</string>

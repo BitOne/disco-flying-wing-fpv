@@ -28,7 +28,10 @@ send Rc.Start_calibration NEUTRAL INVALID INVALID
 expect Calibration_state | Calibration_type=NEUTRAL
 expect Calibration_type=NONE | Channel_action=INVALID | Required=ROLL|PITCH|GAZ|TAKE_CONTROL | Calibrated=0 | Neutral_calibrated=1
 mark
-# roll on channel 1, pitch on 2, gaz on 3, take control on 5: each by its travel
+# roll on channel 1, pitch on 2, gaz on 3, take control on 5: each by its travel.
+# The stick moves go through the control socket, faster than the command
+# over the link: wait for the calibration to have started first, or the
+# moves can land before it and never count.
 send Rc.Start_calibration MIN_MAX ROLL SIGNED_AXIS
 expect Calibration_state | Calibration_type=MIN_MAX | Channel_action=ROLL
 ctrl rc ch 1 -90
@@ -36,16 +39,19 @@ ctrl rc ch 1 95
 expect Calibration_state | Calibration_type=NONE
 ctrl rc ch 1 0
 send Rc.Start_calibration MIN_MAX PITCH SIGNED_AXIS
+expect Calibration_state | Calibration_type=MIN_MAX | Channel_action=PITCH
 ctrl rc ch 2 90
 ctrl rc ch 2 -90
 expect Calibration_state | Calibration_type=NONE
 ctrl rc ch 2 0
 send Rc.Start_calibration MIN_MAX GAZ SIGNED_AXIS
+expect Calibration_state | Calibration_type=MIN_MAX | Channel_action=GAZ
 ctrl rc ch 3 -100
 ctrl rc ch 3 100
 expect Calibration_state | Calibration_type=NONE
 ctrl rc ch 3 0
 send Rc.Start_calibration MIN_MAX TAKE_CONTROL BISTABLE_BUTTON
+expect Calibration_state | Calibration_type=MIN_MAX | Channel_action=TAKE_CONTROL
 ctrl rc ch 5 100
 expect Calibration_state | Calibration_type=NONE
 expect Channel_action_item | Action=TAKE_CONTROL

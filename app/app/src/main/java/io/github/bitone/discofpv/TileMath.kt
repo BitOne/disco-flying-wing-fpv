@@ -63,6 +63,19 @@ object TileMath {
         template.replace("{z}", z.toString()).replace("{x}", x.toString()).replace("{y}", y.toString())
             .replace("{s}", "abc"[Math.floorMod(x + y, 3)].toString())
 
+    /**
+     * [url] without its query string's values (an API key, a token), for
+     * logs and the screen: `?key=abc&style=x` becomes `?key=…&style=…`.
+     */
+    fun redact(url: String): String {
+        val q = url.indexOf('?')
+        if (q < 0) return url
+        return url.substring(0, q + 1) + url.substring(q + 1).split('&').joinToString("&") {
+            val eq = it.indexOf('=')
+            if (eq < 0) it else it.substring(0, eq + 1) + "…"
+        }
+    }
+
     /** Tiles of [zoom] covering a disc of [radiusMetres] around [center]. */
     fun tilesAround(center: GeoPoint, radiusMetres: Double, zoom: Int): List<Triple<Int, Int, Int>> {
         val (cx, cy) = pixel(center, zoom)

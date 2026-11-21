@@ -52,6 +52,18 @@ steps:
   - tap_id: map_zoom_out
   - wait: 2000
   - screenshot: map-preview
+  # a broken or hostile tile server (an image decoding to 256 MB, then no
+  # image at all): nothing drawn there, the app stays up (crashes fail the run)
+  - expect_http: { url: "http://127.0.0.1:8091/mode/huge", matches: "mode huge" }
+  - tap_id: map_zoom_out
+  - wait: 4000
+  - expect_http: { url: "http://127.0.0.1:8091/mode/junk", matches: "mode junk" }
+  - tap_id: map_zoom_out
+  - wait: 4000
+  - expect_texts: ["Around the Disco's last position: 45.18"]
+  - expect_http: { url: "http://127.0.0.1:8091/mode/normal", matches: "mode normal" }
+  - tap_id: map_zoom_in
+  - tap_id: map_zoom_in
   - tap_text: Download this area
   - expect_texts: ["of 2000 tiles around 45.18"]
     timeout: 30000

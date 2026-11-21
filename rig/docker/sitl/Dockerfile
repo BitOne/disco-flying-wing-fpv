@@ -1,5 +1,8 @@
 # ArduPilot SITL, ArduPlane: flight dynamics and autopilot of the simulated
-# Disco (flying wing, elevons). Built from a pinned release.
+# Disco (flying wing, elevons). Built from a pinned release. Its sockets
+# (MAVLink TCP 5760-5763, simulated RC input UDP 5501, ...) are bound to
+# 127.0.0.1 by loopback-bind.so (the container shares the host's network):
+# nobody on the LAN flies the simulated Disco.
 # ArduPilot is GPLv3; it runs here as a separate program, not linked into
 # the app.
 FROM ubuntu:22.04
@@ -20,6 +23,9 @@ RUN git clone --depth 1 --branch ${ARDUPILOT_TAG} --recurse-submodules --shallow
     && ./waf plane \
     && rm -rf .git modules/*/.git
 
+COPY --from=loopback loopback-bind.c /tmp/
+RUN gcc -shared -fPIC -O2 -o /usr/local/lib/loopback-bind.so /tmp/loopback-bind.c -ldl
+ENV LD_PRELOAD=/usr/local/lib/loopback-bind.so
 COPY run-sitl.sh /usr/local/bin/run-sitl
 RUN chmod a+rx /usr/local/bin/run-sitl
 CMD ["run-sitl"]

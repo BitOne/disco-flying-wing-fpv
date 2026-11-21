@@ -155,9 +155,9 @@ SIM_GPU     = $(if $(filter-out none,$(SIM_CARD)),--device $(SIM_CARD) --device 
 
 .PHONY: sim-image
 sim-image: ## Build the simulator images (ArduPilot SITL, FlightGear, Gazebo)
-	docker build -t $(SITL_IMAGE) rig/docker/sitl
-	docker build -t $(FG_IMAGE) rig/docker/flightgear
-	docker build -t $(GZ_IMAGE) rig/docker/gazebo
+	docker build --build-context loopback=rig/docker/loopback-bind -t $(SITL_IMAGE) rig/docker/sitl
+	docker build --build-context loopback=rig/docker/loopback-bind -t $(FG_IMAGE) rig/docker/flightgear
+	docker build --build-context loopback=rig/docker/loopback-bind -t $(GZ_IMAGE) rig/docker/gazebo
 
 .PHONY: sim-world
 sim-world: rig/sim/bridge/node_modules ## Regenerate the Gazebo world (rig/sim/gazebo/worlds, models/fuel_* and disco_ground)
@@ -241,6 +241,12 @@ freeflight-helper: app-image ## Build the mDNS helper app (out/fakedisco-debug.a
 freeflight: fake-android freeflight-helper ## Run FreeFlight against the fake Disco (FREEFLIGHT_APK=...); needs make emu
 	$(MAKE) --no-print-directory video VIDEO_ENV="-e RTP_PORT=56004 -e RTCP_PORT=56005"
 	rig/scripts/freeflight-setup.sh $(EMU_NAME) $(OUT) $(FREEFLIGHT_APK)
+
+.PHONY: wifi-disco
+wifi-disco: fake-android freeflight-helper ## The fake Disco on the emulator's Wi-Fi (mDNS), for our app without a controller; needs make emu
+	$(MAKE) --no-print-directory fake-stop
+	$(MAKE) --no-print-directory video VIDEO_ENV="-e RTP_PORT=56004 -e RTCP_PORT=56005"
+	rig/scripts/freeflight-setup.sh $(EMU_NAME) $(OUT) none
 
 .PHONY: freeflight-stop
 freeflight-stop: ## Stop FreeFlight, the in-emulator fake Disco and its mDNS announce

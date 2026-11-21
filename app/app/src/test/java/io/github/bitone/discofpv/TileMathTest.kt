@@ -52,4 +52,12 @@ class TileMathTest {
         assertNull(AppSettings(mapTiles = AppSettings.MapTiles.CUSTOM, customTileUrl = "http://x").tileSource())
         assertEquals(TileSource.OSM, AppSettings(mapTiles = AppSettings.MapTiles.OSM).tileSource())
     }
+
+    @Test
+    fun redactHidesQueryValues() {
+        assertEquals("https://t.example/{z}/{x}/{y}.jpg?key=…&style=…",
+            TileMath.redact("https://t.example/{z}/{x}/{y}.jpg?key=s3cr3t&style=sat"))
+        assertEquals("https://t.example/a.png?flag", TileMath.redact("https://t.example/a.png?flag"))
+        assertEquals("http://10.0.2.2:8091/{z}/{x}/{y}.png", TileMath.redact("http://10.0.2.2:8091/{z}/{x}/{y}.png"))
+    }
 }

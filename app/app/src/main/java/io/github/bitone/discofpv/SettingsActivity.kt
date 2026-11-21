@@ -34,10 +34,24 @@ class SettingsActivity : Activity() {
             LastFixStore(this).clear()
             findViewById<TextView>(R.id.setting_last_fix_value).text = getString(R.string.last_fix_none)
         }
+        findViewById<Button>(R.id.setting_forget_wifi).setOnClickListener {
+            TrustedDrones(this).clear()
+            showTrusted()
+        }
+    }
+
+    /** How many Discos connect by themselves over Wi-Fi ([ConnectionGuard]). */
+    private fun showTrusted() {
+        findViewById<Button>(R.id.setting_forget_wifi).apply {
+            val n = TrustedDrones(this@SettingsActivity).all().size
+            text = getString(R.string.forget_wifi_discos, n)
+            isEnabled = n > 0
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        showTrusted()
         // back from the map screen: its choice shows here
         settings = AppSettings.load(this)
         refresh()

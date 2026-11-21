@@ -2230,6 +2230,66 @@ Build and tooling:
   checksum, base images pinned by tag not digest; passwordless sudo in the
   SDK build image; the sim bridge uses `npm install`, not `npm ci`.
 
+Fixes (same day):
+- Wi-Fi drones (`ConnectionGuard`): flying on the Disco's own Wi-Fi had to
+  stay easy (short range, or with an RC transmitter), so Wi-Fi stays on.
+  GroundSdk's auto-connection now runs only while a SkyController is
+  visible (`gsdk_auto_connection_at_startup` false, started and stopped by
+  the guard). Without one, a Disco on the phone's Wi-Fi is offered on the
+  main screen ("Connect to DISCO-xxxxxx"); one tap connects it and keeps
+  its uid (`trusted_drones` preferences), and from then on it connects by
+  itself, also when back in range; any other drone seen on Wi-Fi is
+  listed, never connected (disconnected if it was). Settings > Wi-Fi
+  forgets them. `gsdk_supported_devices`: DISCO, SKY_CONTROLLER_2,
+  SKY_CONTROLLER_2P. Scenario `wifi-disco` (`make wifi-disco`: the fake
+  Disco inside the emulator on its Wi-Fi, announced over mDNS, as for
+  FreeFlight; then `E2E_CTRL_PORT=4422`).
+- Tiles: at most 2 MB read (`readAtMost`; `readNBytes` is Android 13+),
+  dimensions read before decoding (64 to 1024 px square, scaled to 256),
+  every worker wrapped in `catch (Throwable)`. The test tile server's
+  `/mode/huge` (8192 x 8192, decodes to 256 MB) and `/mode/junk` in
+  `app-map-tiles`: 33 tiles refused in the log, the app stays up.
+- A custom URL's query values are shown and logged as `…`
+  (`TileMath.redact`, unit test); the edit dialog keeps the full URL.
+- fake-sc2: `--mux-bind`, default 127.0.0.1 (the emulator reaches it at
+  10.0.2.2, its view of the host's loopback); the Wi-Fi recipe in
+  QUICKSTART passes `FAKE_ARGS="--mux-bind 0.0.0.0"`. Test tile server on
+  127.0.0.1 too.
+- Simulator: measured with `ss` while `make sim` ran: FlightGear's
+  property server (TCP 5401), SITL's MAVLink (TCP 5760, 5762, 5763) and
+  simulated RC input (UDP 5501), Gazebo's camera input (UDP 5600) were on
+  0.0.0.0. FlightGear ignores the host in `--props=socket,...`, SITL has
+  no option (its code binds INADDR_ANY), so `rig/docker/loopback-bind`
+  is an LD_PRELOAD `bind()` wrapper in the three images turning 0.0.0.0
+  and :: into loopback, except the ports in `LOOPBACK_BIND_KEEP`
+  (Gazebo's multicast discovery 10317, 10318). Left: ephemeral ports
+  opened without a bind (SITL's JSON link to Gazebo), which an attacker
+  would have to guess. Both engines fly (`sim-flight`).
+- Not done: aoa-host's sudo and device matching, the 1 to 2 byte read in
+  its descriptor parsing, keytool's password on the command line, checksums
+  and digests for downloads and base images, sudo in the SDK image.
+
+## 39. The disco-rc probe flake (2026-11-21)
+
+`make check` failed once on `disco-rc` ("no 'Calibration_state |
+Calibration_type=NONE' within 5000 ms", the pitch calibration), then
+passed alone. A race in the script, not the fake: the probe sends
+`Rc.Start_calibration MIN_MAX PITCH` over the ARSDK link, then moves the
+radio's channel through the control socket right away. The control socket
+is a direct, synchronous path; the command goes through mux, ARSDK
+framing and the fake's event loop. Under load the moves arrive first, the
+fake is not calibrating yet (`calibration_watch` only runs during a
+min/max calibration), the travel is never seen and the calibration never
+ends. The roll step already waited for "calibration started"; pitch, gaz
+and take-control did not. They now wait for `Calibration_state |
+Calibration_type=MIN_MAX | Channel_action=<action>` before moving. No
+other probe sends a command and then drives the control socket without
+waiting for its answer.
+
+Measured with every core busy (one shell loop per core): the old script
+failed 1 of 20 runs (at the gaz step, the same race), the fixed one passed
+70 of 70.
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf

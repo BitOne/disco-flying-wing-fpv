@@ -16,6 +16,14 @@ FROM debian:bookworm-slim AS scenery
 RUN apt-get update && apt-get install -y --no-install-recommends flightgear-data-base \
     && rm -rf /var/lib/apt/lists/*
 
+# sockets bound to every interface go to loopback instead (the container
+# shares the host's network; FlightGear's property server can run scripts)
+FROM debian:trixie-slim AS shim
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=loopback loopback-bind.c /tmp/
+RUN gcc -shared -fPIC -O2 -o /tmp/loopback-bind.so /tmp/loopback-bind.c -ldl
+
 FROM debian:trixie-slim
 
 ARG VIRTUALGL_VERSION=3.1.3
@@ -37,6 +45,7 @@ ENV PATH=/usr/games:/opt/VirtualGL/bin:$PATH
 # no session bus in the container: FlightGear asks D-Bus to inhibit the
 # screensaver, which asserts without one; keep that non-fatal
 ENV DBUS_FATAL_WARNINGS=0
+COPY --from=shim /tmp/loopback-bind.so /usr/local/lib/loopback-bind.so
 COPY run-fg.sh /usr/local/bin/run-fg
 RUN chmod a+rx /usr/local/bin/run-fg
 USER fg

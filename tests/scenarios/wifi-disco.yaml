@@ -1,0 +1,39 @@
+name: Disco FPV on the Disco's own Wi-Fi, connected once allowed
+description: >
+  A Disco on the phone's Wi-Fi, no SkyController (short range flying, or
+  with an RC transmitter). The app never connects a drone it sees on Wi-Fi
+  by itself (any hotspot could announce one): the main screen offers it,
+  one tap connects it, and from then on it connects by itself; the
+  settings forget it. Needs `make emu` then `make wifi-disco` (the fake
+  Disco inside the emulator, announced over mDNS; the host fake stopped,
+  so no controller is seen). Run with
+  `make e2e SCENARIOS=tests/scenarios/wifi-disco.yaml E2E_CTRL_PORT=4422`.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/trusted_drones.xml
+  - restart_app
+  # seen, offered, not connected
+  - expect_texts: ["DISCO-FAKE01 is on this phone's Wi-Fi", "Connect to DISCO-FAKE01", "DISCO-FAKE01 (DISCO): DISCONNECTED"]
+    timeout: 30000
+  - wait: 5000
+  - expect_texts: ["DISCO-FAKE01 (DISCO): DISCONNECTED"]
+  - screenshot: wifi-offered
+  # one tap
+  - tap_text: Connect to DISCO-FAKE01
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED", "Ready."]
+    timeout: 30000
+  - screenshot: wifi-connected
+  # next time: by itself
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 30000
+  # forgotten: offered again
+  - tap_text: Settings
+  - tap_text: "Forget the Discos allowed over Wi-Fi (1)"
+  - expect_texts: ["Forget the Discos allowed over Wi-Fi (0)"]
+  - restart_app
+  - expect_texts: ["Connect to DISCO-FAKE01"]
+    timeout: 30000
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/trusted_drones.xml

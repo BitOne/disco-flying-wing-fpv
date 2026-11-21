@@ -57,7 +57,14 @@ class TileLayer(context: Context, val source: TileSource, private val onTile: ()
             pending += k
         }
         io.execute {
-            val bitmap = load(z, x, y)
+            // a broken or hostile tile (huge, tiny, not an image) must not
+            // take the app down in flight: nothing drawn there instead
+            val bitmap = try {
+                load(z, x, y)
+            } catch (t: Throwable) {
+                Log.w(TAG, "tile $k: $t")
+                null
+            }
             synchronized(pending) {
                 pending -= k
                 if (bitmap == null) failed[k] = System.currentTimeMillis()
@@ -76,7 +83,26 @@ class TileLayer(context: Context, val source: TileSource, private val onTile: ()
         if (source.imagery.isNotEmpty()) return loadImagery(z, x, y)
         val f = file(z, x, y)
         if (!f.exists() && !download(TileMath.url(source.url, z, x, y), f)) return null
-        return BitmapFactory.decodeFile(f.path)
+        return decodeTile(f)
+    }
+
+    /**
+     * A cached tile as a [TileMath.TILE_PX] square bitmap (512 px tiles are
+     * scaled down); null if it isn't an image of a sensible size, checked
+     * before decoding it.
+     */
+    private fun decodeTile(f: File): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(f.path, bounds)
+        val w = bounds.outWidth
+        val h = bounds.outHeight
+        if (w != h || w < MIN_TILE_PX || w > MAX_TILE_PX) {
+            Log.w(TAG, "tile ${f.name}: ${w}x$h, not a map tile")
+            return null
+        }
+        val bmp = BitmapFactory.decodeFile(f.path) ?: return null
+        return if (bmp.width == TileMath.TILE_PX) bmp
+        else Bitmap.createScaledBitmap(bmp, TileMath.TILE_PX, TileMath.TILE_PX, true)
     }
 
     /** The tile from the first provider with data there. Background thread. */
@@ -105,7 +131,7 @@ class TileLayer(context: Context, val source: TileSource, private val onTile: ()
         val f = File(dir, "${im.id}/$z/$x/$y.tile")
         if (!f.exists() && !download(TileMath.url(im.url, z, x, y), f, keepMissing = true)) return null
         if (f.length() == 0L) return null
-        val bmp = BitmapFactory.decodeFile(f.path) ?: return null
+        val bmp = decodeTile(f) ?: return null
         return if (Imagery.isBlank(bmp)) null else bmp
     }
 
@@ -139,7 +165,7 @@ class TileLayer(context: Context, val source: TileSource, private val onTile: ()
             c.setRequestProperty("User-Agent", USER_AGENT)
             val code = c.responseCode
             if (code != 200) {
-                Log.w(TAG, "tile $url: HTTP $code")
+                Log.w(TAG, "tile ${TileMath.redact(url)}: HTTP $code")
                 c.disconnect()
                 if (keepMissing && (code == 400 || code == 404)) {
                     f.parentFile?.mkdirs()
@@ -147,14 +173,19 @@ class TileLayer(context: Context, val source: TileSource, private val onTile: ()
                 }
                 return false
             }
-            val bytes = c.inputStream.use { it.readBytes() }
+            // a map tile is tens of kB: a server sending more is cut off
+            val bytes = c.inputStream.use { readAtMost(it, MAX_TILE_BYTES + 1) }
             c.disconnect()
+            if (bytes.size > MAX_TILE_BYTES) {
+                Log.w(TAG, "tile ${TileMath.redact(url)}: over $MAX_TILE_BYTES bytes")
+                return false
+            }
             f.parentFile?.mkdirs()
             val tmp = File(f.path + ".part")
             tmp.writeBytes(bytes)
             tmp.renameTo(f)
         } catch (e: Exception) {
-            Log.w(TAG, "tile $url: ${e.message}")
+            Log.w(TAG, "tile ${TileMath.redact(url)}: ${e.message}")
             false
         }
     }
@@ -188,11 +219,15 @@ class TileLayer(context: Context, val source: TileSource, private val onTile: ()
             var done = 0
             for ((z, x, y) in tiles) {
                 if (job.cancelled) break
-                if (source.imagery.isNotEmpty()) {
-                    loadImagery(z, x, y)
-                } else {
-                    val f = file(z, x, y)
-                    if (!f.exists()) download(TileMath.url(source.url, z, x, y), f)
+                try {
+                    if (source.imagery.isNotEmpty()) {
+                        loadImagery(z, x, y)
+                    } else {
+                        val f = file(z, x, y)
+                        if (!f.exists()) download(TileMath.url(source.url, z, x, y), f)
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "prefetch $z/$x/$y: $t")
                 }
                 done++
                 if (done % 10 == 0 && done < tiles.size) {
@@ -205,6 +240,18 @@ class TileLayer(context: Context, val source: TileSource, private val onTile: ()
         }
         worker.shutdown()
         return job
+    }
+
+    /** Up to [max] bytes of [input] (InputStream.readNBytes is Android 13+). */
+    private fun readAtMost(input: java.io.InputStream, max: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(16 * 1024)
+        while (out.size() < max) {
+            val n = input.read(buf, 0, minOf(buf.size, max - out.size()))
+            if (n < 0) break
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
     }
 
     fun close() {
@@ -221,6 +268,10 @@ class TileLayer(context: Context, val source: TileSource, private val onTile: ()
         private const val MEMORY_TILES = 48
         private const val RETRY_MS = 15_000L
         private const val PREFETCH_MIN_ZOOM = 12
+        /** Larger answers are not map tiles (they are tens of kB). */
+        const val MAX_TILE_BYTES = 2 * 1024 * 1024
+        private const val MIN_TILE_PX = 64
+        private const val MAX_TILE_PX = 1024
         const val MAX_PREFETCH = 2000
         const val USER_AGENT = "DiscoFPV/0.1 (+https://github.com/BitOne/disco-flying-wing-fpv)"
     }

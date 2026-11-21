@@ -62,6 +62,11 @@ RUN for m in "Oak tree" "Pine Tree" "House 1" "House 2" "House 3" "Lamp Post" \
 USER root
 RUN chmod -R a+rX /home/gz
 ENV GZ_FUEL_CACHE_PATH=/home/gz/.gz/fuel
+# sockets bound to every interface go to loopback (the container shares
+# the host's network), except Gazebo's multicast discovery
+COPY --from=loopback loopback-bind.c /tmp/
+RUN gcc -shared -fPIC -O2 -o /usr/local/lib/loopback-bind.so /tmp/loopback-bind.c -ldl
+ENV LD_PRELOAD=/usr/local/lib/loopback-bind.so LOOPBACK_BIND_KEEP=10317,10318
 COPY --chmod=755 run-gazebo.sh /usr/local/bin/run-gazebo
 COPY --chmod=755 sim-view.sh /usr/local/bin/sim-view
 COPY --chmod=755 gz-helper.py /usr/local/bin/gz-helper

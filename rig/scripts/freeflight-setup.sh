@@ -6,7 +6,8 @@
 # usage: freeflight-setup.sh <emu-container> <out-dir> [freeflight.apk]
 #
 # The FreeFlight APK is not redistributed: pass the path of your own copy
-# (FREEFLIGHT_APK). Without it, an already installed FreeFlight is used.
+# (FREEFLIGHT_APK). Without it, an already installed FreeFlight is used;
+# "none" stops before FreeFlight (make wifi-disco: our app on Wi-Fi).
 set -euo pipefail
 
 EMU=$1
@@ -64,6 +65,11 @@ $ADB emu geo fix 5.7245 45.1885 >/dev/null
 docker cp "$HELPER_APK" "$EMU":/tmp/fakedisco.apk
 $ADB install -r -g /tmp/fakedisco.apk >/dev/null
 $ADB shell am start -n io.github.bitone.discofpv.fakedisco/.PublishActivity >/dev/null
+
+if [ "$FF_APK" = none ]; then
+	echo "fake Disco in emulator on Wi-Fi, video expected on host UDP $VIDEO_RTP/$VIDEO_RTCP, control on tcp:4422"
+	exit 0
+fi
 
 # FreeFlight
 if [ -n "$FF_APK" ]; then

@@ -104,6 +104,9 @@ struct app {
 		int               sockfd_server;
 		int               sockfd;
 		uint16_t          port;
+		/* address the listener binds (network order): loopback unless
+		 * --mux-bind, since anyone reaching it takes over the session */
+		in_addr_t         bind_addr;
 		uint64_t          unplugged_until_ms; /* refuse phones until */
 	} mux;
 
@@ -1938,7 +1941,7 @@ static void mux_server_create(struct app *app)
 	/* Setup address */
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	addr.sin_addr.s_addr = app->mux.bind_addr;
 	addr.sin_port = htons(app->mux.port);
 	addrlen = sizeof(addr);
 
@@ -2592,6 +2595,9 @@ static void usage(const char *progname)
 		"  --no-publisher-net\n"
 		"  --mux\n"
 		"  --mux-port <port>  : TCP port of the mux listener (default 4321)\n"
+		"  --mux-bind <addr>  : address it listens on (default 127.0.0.1; 0.0.0.0\n"
+		"                       for a phone over Wi-Fi: anyone on the network can then\n"
+		"                       take the session over)\n"
 		"  --disco            : be a Disco over Wi-Fi (net backend, TCP 44444)\n"
 		"                       instead of a SkyController 2 over mux\n"
 		"  --ctrl-port <port> : TCP port of the control socket on 127.0.0.1 (default 4322)\n"
@@ -2613,6 +2619,7 @@ int main(int argc, char *argv[])
 	signal(SIGPIPE, SIG_IGN);
 
 	s_app.backend_type = ARSDK_BACKEND_TYPE_NET;
+	s_app.mux.bind_addr = htonl(INADDR_LOOPBACK);
 	for (argidx = 1; argidx < argc; argidx++) {
 		if (argv[argidx][0] != '-') {
 			/* End of options */
@@ -2641,6 +2648,14 @@ int main(int argc, char *argv[])
 			s_app.backend_type = ARSDK_BACKEND_TYPE_NET;
 			s_app.use_publisher_avahi = 0;
 			s_app.use_publisher_net = 0;
+		} else if (strcmp(argv[argidx], "--mux-bind") == 0) {
+			if (argidx + 1 >= argc
+					|| inet_pton(AF_INET, argv[argidx + 1], &s_app.mux.bind_addr) != 1) {
+				fprintf(stderr, "Missing or bad mux bind address\n");
+				usage(argv[0]);
+				return -1;
+			}
+			argidx++;
 		} else if (strcmp(argv[argidx], "--mux-port") == 0) {
 			if (argidx + 1 >= argc) {
 				fprintf(stderr, "Missing mux port\n");

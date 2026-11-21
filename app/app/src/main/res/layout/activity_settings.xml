@@ -53,5 +53,10 @@
             android:id="@+id/setting_forget_fix"
             style="@style/SettingRow"
             android:text="@string/forget_last_fix" />
+
+        <TextView
+            style="@style/Section"
+            android:text="@string/section_wifi" />
+        <Button android:id="@+id/setting_forget_wifi" style="@style/SettingRow" />
     </LinearLayout>
 </ScrollView>

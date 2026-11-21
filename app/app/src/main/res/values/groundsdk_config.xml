@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- GroundSdk configuration overrides (app resources take precedence over the SDK's). -->
 <resources>
-    <!-- Connect to the SkyController as soon as it is plugged in. -->
-    <bool name="gsdk_auto_connection_at_startup">true</bool>
+    <!-- Auto-connection is started by ConnectionGuard, only while a
+         SkyController is plugged in: alone, it connected any drone announced
+         on the phone's Wi-Fi. A Disco on its own Wi-Fi connects once the
+         pilot allowed it (main screen). -->
+    <bool name="gsdk_auto_connection_at_startup">false</bool>
+    <!-- Only what the app flies: no other drone or controller model is seen. -->
+    <string-array name="gsdk_supported_devices">
+        <item>DISCO</item>
+        <item>SKY_CONTROLLER_2</item>
+        <item>SKY_CONTROLLER_2P</item>
+    </string-array>
 </resources>

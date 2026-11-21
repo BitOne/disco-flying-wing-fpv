@@ -115,12 +115,15 @@ The debug build can reach the fake over the network (the SDK's debug
 bridge), with the phone and the PC on the same network:
 
 ```sh
-make fake                         # listens on TCP 4321 on all interfaces
+make fake FAKE_ARGS="--mux-bind 0.0.0.0"   # TCP 4321 on all interfaces
 make app DEBUG_BRIDGE=192.168.1.20  # your PC's address on that network
 adb install -r out/disco-fpv-debug.apk
 ```
 
-Let TCP 4321 through the PC's firewall. Open the app: it connects to the
+By default the fake listens on this PC only (127.0.0.1): whoever connects
+to it takes the session over, so open it to the network only for this, on
+a network you trust, and let TCP 4321 through the PC's firewall for the
+phone's address only. Open the app: it connects to the
 fake controller over Wi-Fi, video included (the mux carries it). Rebuild
 with plain `make app` for the emulator (10.0.2.2).
 

@@ -5,6 +5,9 @@
  * service involved. /stats answers "served <n> tiles". /delay/<ms> makes
  * every tile wait that long from then on (a slow network: time for a test
  * to stop a download half way); /delay/0 is back to full speed.
+ * /mode/<normal|huge|junk> serves good tiles, an 8192 x 8192 image (a
+ * small file that decodes to 256 MB) or bytes that are no image: a
+ * broken or hostile tile server, which the app must survive.
  */
 import { createServer, type Server } from 'node:http';
 import { deflateSync } from 'node:zlib';
@@ -70,16 +73,27 @@ export function tile(z: number, x: number, y: number): Buffer {
 export function startTileServer(port: number): { server: Server; served: () => number } {
   let served = 0;
   let delayMs = 0;
+  let mode = 'normal';
+  let huge: Buffer | undefined;
   const server = createServer((req, res) => {
     const m = /^\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(req.url ?? '');
     const d = /^\/delay\/(\d+)$/.exec(req.url ?? '');
+    const mm = /^\/mode\/(normal|huge|junk)$/.exec(req.url ?? '');
     if (m) {
-      const body = tile(Number(m[1]), Number(m[2]), Number(m[3]));
+      const body = mode === 'huge'
+        ? (huge ??= encodePng(8192, 8192, () => [40, 40, 40]))
+        : mode === 'junk'
+          ? Buffer.from('<html>not a tile</html>')
+          : tile(Number(m[1]), Number(m[2]), Number(m[3]));
       setTimeout(() => {
         served++;
         res.writeHead(200, { 'Content-Type': 'image/png' });
         res.end(body);
       }, delayMs);
+    } else if (mm) {
+      mode = mm[1] as string;
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(`mode ${mode}`);
     } else if (d) {
       delayMs = Number(d[1]);
       res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -93,6 +107,7 @@ export function startTileServer(port: number): { server: Server; served: () => n
     }
   });
   server.on('error', () => {}); // port taken: another runner serves tiles
-  server.listen(port, '0.0.0.0');
+  // the emulator reaches it at 10.0.2.2, its view of this PC's loopback
+  server.listen(port, '127.0.0.1');
   return { server, served: () => served };
 }
