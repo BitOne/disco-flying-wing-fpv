@@ -2381,6 +2381,34 @@ flushed each line. A link loss keeps the flight open. The Flights screen
 exports GPX (height above take-off as elevation), KML (relative to the
 ground) or CSV through the system file picker (no FileProvider).
 
+### FTP through the controller, media (T9.5, T9.6)
+
+- GroundSdk's FTP (a Java commons-net fork) asks the controller's mux for a
+  TCP proxy to host "drone" on 21 (media), 61 (flight plan), 51 (update)
+  and on each PASV data port. fake-sc2 now registers "drone" with
+  `mux_add_host` (host byte order: libmux converts) at 127.0.0.2, where
+  `rig/disco-ftp` listens (TypeScript, run as root in its container to
+  bind 21, files given back to the rig user). Its PASV replies give
+  192.168.42.1 like a Disco: commons-net's NAT workaround then uses the
+  control connection's peer (the phone's local proxy); with 127.0.0.2 the
+  phone connected to itself and hung.
+- Trees: `out/disco-fs/data` (the Disco's /data/ftp: internal_000/Disco/
+  media, thumb, academy, internal_000/gps_data where GroundSdk uploads GPS
+  ephemeris), `update`, `flightplan`.
+- SDK patch 0007: the Bebop media store served its connection-time
+  listing forever and never told the watched lists about changes; it now
+  drops the cache and notifies when the Disco's media counts change and
+  after a deletion.
+- Media names: `Disco_<date>T<time>+0000_<run id>.<ext>`; FTP listings
+  date to the minute, so the app sorts by date then name.
+- Downloads: GroundSdk's "platform media store" writes into DCIM directly,
+  which scoped storage refuses; the app downloads into its own folder and
+  copies each file into MediaStore (DCIM/Disco FPV) on Android 10+.
+  A download in progress cannot be cut mid-file (the Bebop backend has no
+  cancel): Stop ends it after the current file.
+- The Bebop flight data downloader (PUD) uses HTTP, which the Disco does
+  not serve: our phone-side flight log stays the record.
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf

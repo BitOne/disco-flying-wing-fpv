@@ -16,6 +16,10 @@ export interface FtpOptions {
   port: number;
   /** Directory served as "/". */
   root: string;
+  /** Address given in PASV replies (default: host). The Disco's own, a
+   * private one: the client then uses its control connection's peer (its
+   * proxy through the controller), as with the real Disco. */
+  pasvAddress?: string;
   /** Owner given to created files and directories (the rig user, not root). */
   owner?: { uid: number; gid: number };
   log?: (line: string) => void;
@@ -167,7 +171,7 @@ class Session {
       }
       case 'PASV': {
         const port = await this.openPassive();
-        const h = this.opts.host.split('.').join(',');
+        const h = (this.opts.pasvAddress ?? this.opts.host).split('.').join(',');
         return this.reply(227, `Entering Passive Mode (${h},${port >> 8},${port & 255})`);
       }
       case 'EPSV': {

@@ -28,6 +28,18 @@ object HudFormat {
     fun battery(label: String, percent: Int?): String =
         "$label " + (percent?.takeIf { it in 0..100 }?.let { "$it %" } ?: UNKNOWN)
 
+    /** Recording: "REC 1:05"; otherwise the Disco's free storage: "SD 29.4 GB". */
+    fun record(sinceMs: Long?, nowMs: Long, freeBytes: Long?): String {
+        if (sinceMs != null) {
+            val s = ((nowMs - sinceMs) / 1000).coerceAtLeast(0)
+            return String.format(Locale.US, "REC %d:%02d", s / 60, s % 60)
+        }
+        return "SD " + (freeBytes?.let { String.format(Locale.US, "%.1f GB", it / 1e9) } ?: UNKNOWN)
+    }
+
+    /** Below this the Disco's storage is nearly full (about 5 min of video). */
+    const val LOW_STORAGE_BYTES = 1_000_000_000L
+
     /** The Disco's Wi-Fi signal: "LINK -62 dBm". */
     fun link(rssi: Int?): String = "LINK " + (rssi?.let { "$it dBm" } ?: UNKNOWN)
 

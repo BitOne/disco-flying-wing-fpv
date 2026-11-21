@@ -24,6 +24,8 @@ data class HudModel(
     val battery: Int? = null,          // %
     val rcBattery: Int? = null,        // %
     val rssi: Int? = null,             // dBm, the Disco's Wi-Fi signal
+    val recordingSinceMs: Long? = null, // video recording started at (epoch ms), null when not recording
+    val storageFree: Long? = null,     // bytes free on the Disco
     val gpsFixed: Boolean? = null,
     val satellites: Int? = null,
     val roll: Double? = null,          // degrees, right wing down positive

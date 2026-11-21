@@ -1953,9 +1953,10 @@ static void mux_server_fd_event_cb(int fd, uint32_t revents, void *userdata)
 	app->mux.ctx = mux_new(app->mux.sockfd, app->loop, &ops,
 			MUX_FLAG_FD_NOT_POLLABLE);
 	/* media (21), firmware update (51) and flight plan (61) FTP, and
-	 * their data ports: GroundSdk asks the controller for "drone" */
+	 * their data ports: GroundSdk asks the controller for "drone"
+	 * (mux_add_host takes the address in host byte order) */
 	if (app->mux.ctx != NULL)
-		mux_add_host(app->mux.ctx, "drone", app->mux.drone_addr);
+		mux_add_host(app->mux.ctx, "drone", ntohl(app->mux.drone_addr));
 
 	backend_create(app);
 	video_channels_open(app);
@@ -2190,6 +2191,7 @@ static int fail(struct app *app, const char *name, int on)
  *                                almost_empty_battery too_much_angle; auto =
  *                                from the battery level
  *   disco                        "ok <settings and states>" (disco.c)
+ *   media_clear                  deletes the Disco's photos and videos
  *   settings_reset               the Disco's settings back to their
  *                                defaults (name kept)
  *   factory_country <CC|none>    the Disco's factory country: CA, IL and
@@ -2272,6 +2274,8 @@ static int ctrl_handle_line(struct app *app, char *line,
 		char buf[512];
 		disco_status(&app->disco, buf, sizeof(buf));
 		return snprintf(reply, reply_size, "ok %s\n", buf);
+	} else if (strcmp(word, "media_clear") == 0 && n == 1) {
+		disco_media_clear(&app->disco);
 	} else if (strcmp(word, "settings_reset") == 0 && n == 1) {
 		/* back to default-dragon.conf, name kept (tests) */
 		char name[sizeof(app->disco.s.name)];

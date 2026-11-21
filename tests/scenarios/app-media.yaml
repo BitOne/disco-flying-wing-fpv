@@ -1,0 +1,59 @@
+name: Disco FPV lists, downloads and deletes the Disco's photos and videos
+description: >
+  Needs `make fake` (with its FTP server, rig/disco-ftp), `make video` and
+  `make emu`. A video and a photo taken with the controller's buttons are
+  written by the fake Disco to its storage; the Media screen lists them
+  (SDK patch 0007: the list follows the Disco's media), downloads both to
+  the phone's gallery (DCIM/Disco FPV, checked on the device) and deletes
+  the photo from the Disco; the HUD shows the free storage and the
+  recording time (T9.6).
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - send: [media_clear, drone_link ok, flying_state landed]
+  - shell: rm -rf "/sdcard/DCIM/Disco FPV"
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Media
+  - expect_texts: ["No photo or video on the Disco.", "Disco storage: "]
+    timeout: 15000
+  # a short video, then a photo, with the controller's buttons
+  - send: [button rear_right]
+  - wait: 1500
+  - send: [button rear_right]
+  - wait: 1000
+  - send: [button rear_left]
+  - expect_texts: ["Video, ", "Photo, "]
+    timeout: 20000
+  - screenshot: media
+  - tap_text: Download all to this phone
+  - expect_texts: ["2 downloaded to the gallery, album Disco FPV."]
+    timeout: 30000
+  - expect_shell: ".mp4"
+    command: ls "/sdcard/DCIM/Disco FPV"
+  - expect_shell: ".jpg"
+    command: ls "/sdcard/DCIM/Disco FPV"
+  # the newest first: the photo
+  - tap_text: Delete
+  - tap_text: Yes, delete
+  - expect_texts: ["Deleted from the Disco."]
+    timeout: 15000
+  - expect_gone: ["Photo, "]
+    timeout: 15000
+  - expect_texts: ["Video, "]
+  # the HUD: the Disco's free storage, then the recording time
+  - back
+  - tap_text: Flight view
+  - expect_texts: ["SD 29."]
+    timeout: 15000
+  - send: [button rear_right]
+  - expect_texts: ["REC 0:0"]
+    timeout: 10000
+  - screenshot: hud-recording
+  - send: [button rear_right]
+  - expect_texts: ["SD 29."]
+    timeout: 10000
+  - send: [media_clear]
+  - shell: rm -rf "/sdcard/DCIM/Disco FPV"

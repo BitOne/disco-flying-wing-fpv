@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var headsetButton: Button
     private lateinit var rcButton: Button
     private lateinit var discoSettingsButton: Button
+    private lateinit var mediaButton: Button
     private var connectedDroneUid: String? = null
     private lateinit var guard: ConnectionGuard
     private lateinit var recorder: FlightRecorder
@@ -66,6 +67,14 @@ class MainActivity : Activity() {
         discoSettingsButton.setOnClickListener {
             connectedDroneUid?.let {
                 startActivity(android.content.Intent(this, DiscoSettingsActivity::class.java)
+                    .putExtra(DroneScreenActivity.EXTRA_DRONE_UID, it))
+            }
+        }
+
+        mediaButton = findViewById(R.id.media_button)
+        mediaButton.setOnClickListener {
+            connectedDroneUid?.let {
+                startActivity(android.content.Intent(this, MediaActivity::class.java)
                     .putExtra(DroneScreenActivity.EXTRA_DRONE_UID, it))
             }
         }
@@ -108,6 +117,7 @@ class MainActivity : Activity() {
             headsetButton.isEnabled = connectedDroneUid != null
             rcButton.isEnabled = connectedDroneUid != null
             discoSettingsButton.isEnabled = connectedDroneUid != null
+            mediaButton.isEnabled = connectedDroneUid != null
             updateHint()
         }
     }

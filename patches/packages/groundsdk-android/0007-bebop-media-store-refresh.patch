@@ -1,0 +1,63 @@
+From: disco-flying-wing-fpv
+Subject: [PATCH] BebopMediaStore: list the drone again when its media change
+
+The Bebop media store cached the listing made at connection and served
+it to every browse while non-empty, and never told the media lists
+being watched that the content changed: photos and videos taken
+afterwards, or deleted, never showed. When the drone reports different
+media counts (MassStorageContent), or after a deletion, drop the cache
+and notify the observers, whose lists browse again.
+---
+diff --git a/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/peripheral/bebop/media/BebopMediaStore.java b/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/peripheral/bebop/media/BebopMediaStore.java
+--- a/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/peripheral/bebop/media/BebopMediaStore.java
++++ b/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/peripheral/bebop/media/BebopMediaStore.java
+@@ -72,6 +72,12 @@
+     @Nullable
+     private List<MediaItemImpl> mCachedMediaList = null;
+ 
++    /** Disco FPV: the media counts last reported by the drone. */
++    private int mLastPhotos = -1;
++
++    /** Disco FPV: the media counts last reported by the drone. */
++    private int mLastVideos = -1;
++
+     /**
+      * Constructor.
+      *
+@@ -186,11 +192,23 @@
+                                 + nbvideos + ", nbrawphotos: " + nbrawphotos + "]");
+             }
+ 
++            // Disco FPV: new or deleted media, the cached listing is stale;
++            // the browse that follows the update lists the drone again
++            boolean changed = nbphotos + nbrawphotos != mLastPhotos || nbvideos != mLastVideos;
++            if (changed) {
++                mCachedMediaList = null;
++            }
++            mLastPhotos = nbphotos + nbrawphotos;
++            mLastVideos = nbvideos;
+             mMediaStore.updatePhotoMediaCount(nbphotos + nbrawphotos)
+                     .updateVideoMediaCount(nbvideos)
+                     .updatePhotoResourceCount(nbphotos + nbrawphotos)
+                     .updateVideoResourceCount(nbvideos)
+                     .notifyUpdated();
++            if (changed) {
++                // the media lists being watched browse again
++                mMediaStore.notifyObservers();
++            }
+         }
+     };
+ 
+@@ -312,7 +330,11 @@
+                     @Override
+                     public void onTransferCompleted(boolean successful, @Nullable Object data) {
+                         if (mCachedMediaList != null) mCachedMediaList.clear();
+-                        new Handler(Looper.getMainLooper()).post(() -> callback.onRequestComplete(successful ? MediaRequest.Status.SUCCESS : MediaRequest.Status.FAILED));
++                        new Handler(Looper.getMainLooper()).post(() -> {
++                            callback.onRequestComplete(successful ? MediaRequest.Status.SUCCESS : MediaRequest.Status.FAILED);
++                            // Disco FPV: the media lists being watched browse again
++                            mMediaStore.notifyObservers();
++                        });
+                     }
+                     @Override
+                     public void onTransferProgress(int percent) {

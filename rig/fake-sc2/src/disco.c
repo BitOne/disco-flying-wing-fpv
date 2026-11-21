@@ -491,7 +491,7 @@ static void count_media(struct disco *d)
 	uint16_t photos = 0, videos = 0;
 	if (d->fs[0] == '\0')
 		return;
-	snprintf(dir, sizeof(dir), "%s/internal_000/Disco/media", d->fs);
+	snprintf(dir, sizeof(dir), "%s/data/internal_000/Disco/media", d->fs);
 	dp = opendir(dir);
 	if (dp == NULL)
 		return;
@@ -509,6 +509,32 @@ static void count_media(struct disco *d)
 	d->videos = videos;
 }
 
+/** Empties media/ and thumb/ (tests). */
+void disco_media_clear(struct disco *d)
+{
+	static const char *const dirs[] = { "media", "thumb" };
+	char dir[512], path[800];
+	size_t i;
+	for (i = 0; i < 2 && d->fs[0] != '\0'; i++) {
+		DIR *dp;
+		struct dirent *e;
+		snprintf(dir, sizeof(dir), "%s/data/internal_000/Disco/%s", d->fs, dirs[i]);
+		dp = opendir(dir);
+		if (dp == NULL)
+			continue;
+		while ((e = readdir(dp)) != NULL) {
+			if (e->d_name[0] == '.')
+				continue;
+			snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
+			unlink(path);
+		}
+		closedir(dp);
+	}
+	d->photos = d->videos = 0;
+	if (d->itf != NULL)
+		send_storage(d);
+}
+
 /** A photo or video on the Disco's storage, named like the firmware's:
  * Disco_<local date>_<run id>.<ext>, with its thumbnail. */
 static void media_file(struct disco *d, const char *ext)
@@ -522,11 +548,11 @@ static void media_file(struct disco *d, const char *ext)
 	gmtime_r(&now, &tm);
 	strftime(date, sizeof(date), "%Y-%m-%dT%H%M%S+0000", &tm);
 	snprintf(name, sizeof(name), "Disco_%s_%s.%s", date, d->run_id, ext);
-	snprintf(media, sizeof(media), "%s/internal_000/Disco/media", d->fs);
-	snprintf(thumb, sizeof(thumb), "%s/internal_000/Disco/thumb", d->fs);
+	snprintf(media, sizeof(media), "%s/data/internal_000/Disco/media", d->fs);
+	snprintf(thumb, sizeof(thumb), "%s/data/internal_000/Disco/thumb", d->fs);
 	mkdirs(d, media);
 	mkdirs(d, thumb);
-	snprintf(media, sizeof(media), "%s/internal_000/Disco/media/%s", d->fs, name);
+	snprintf(media, sizeof(media), "%s/data/internal_000/Disco/media/%s", d->fs, name);
 	snprintf(from, sizeof(from), "%s/sample.%s", d->samples, ext);
 	res = copy_file(d, from, media);
 	if (res < 0) {
@@ -534,7 +560,7 @@ static void media_file(struct disco *d, const char *ext)
 		return;
 	}
 	/* GroundSdk: thumb/<name>.jpg for a video, thumb/<name> for a photo */
-	snprintf(thumb, sizeof(thumb), "%s/internal_000/Disco/thumb/%s%s", d->fs, name,
+	snprintf(thumb, sizeof(thumb), "%s/data/internal_000/Disco/thumb/%s%s", d->fs, name,
 			strcmp(ext, "mp4") == 0 ? ".jpg" : "");
 	snprintf(from, sizeof(from), "%s/thumb.jpg", d->samples);
 	copy_file(d, from, thumb);

@@ -52,6 +52,13 @@ class HudFormatTest {
         assertEquals(false, HudFormat.isWeakLink(null))
     }
 
+    @Test fun record() {
+        assertEquals("REC 1:05", HudFormat.record(1000, 66_000, null))
+        assertEquals("REC 0:00", HudFormat.record(5000, 1000, null))
+        assertEquals("SD 29.4 GB", HudFormat.record(null, 0, 29_400_000_000))
+        assertEquals("SD --", HudFormat.record(null, 0, null))
+    }
+
     @Test fun flyingState() {
         assertEquals("FLYING", HudFormat.flyingState("FLYING"))
         assertEquals("TAKING OFF", HudFormat.flyingState("TAKING_OFF"))

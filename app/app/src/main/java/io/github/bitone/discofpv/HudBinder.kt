@@ -15,6 +15,9 @@ import com.parrot.drone.groundsdk.device.instrument.Compass
 import com.parrot.drone.groundsdk.device.instrument.FlyingIndicators
 import com.parrot.drone.groundsdk.device.instrument.Gps
 import com.parrot.drone.groundsdk.device.instrument.Radio
+import com.parrot.drone.groundsdk.device.peripheral.MainCamera
+import com.parrot.drone.groundsdk.device.peripheral.RemovableUserStorage
+import com.parrot.drone.groundsdk.device.peripheral.camera.CameraRecording
 import com.parrot.drone.groundsdk.device.instrument.Speedometer
 import com.parrot.drone.groundsdk.device.peripheral.Gimbal
 import com.parrot.drone.groundsdk.device.peripheral.Magnetometer
@@ -135,6 +138,18 @@ class HudBinder(
         }
         drone.getPeripheral(Pitot::class.java) { pitot ->
             updateAlerts { it.copy(pitotCalibrated = pitot?.isCalibrated) }
+        }
+        drone.getPeripheral(MainCamera::class.java) { c ->
+            val state = c?.recordingState()
+            val since = if (state?.get() == CameraRecording.State.FunctionState.STARTED) {
+                state.recordStartTime()?.time ?: System.currentTimeMillis()
+            } else {
+                null
+            }
+            update { it.copy(recordingSinceMs = since) }
+        }
+        drone.getPeripheral(RemovableUserStorage::class.java) { s ->
+            update { it.copy(storageFree = s?.availableSpace?.takeIf { v -> v >= 0 && s.mediaInfo != null }) }
         }
         drone.getInstrument(Radio::class.java) { r ->
             val rssi = r?.rssi?.takeIf { v -> v < 0 }

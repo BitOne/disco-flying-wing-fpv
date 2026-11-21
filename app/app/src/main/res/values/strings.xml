@@ -151,4 +151,26 @@
     <string name="flights_delete_confirm">Delete this flight from the phone?</string>
     <string name="flights_exported">%1$s file saved.</string>
     <string name="flights_export_failed">The %1$s file could not be saved.</string>
+    <!-- the Disco's photos and videos (MediaActivity) -->
+    <string name="media_button">Media</string>
+    <string name="media_title">Photos and videos</string>
+    <string name="media_storage">Disco storage: %1$s free of %2$s</string>
+    <string name="media_storage_unknown">Disco storage: unknown</string>
+    <string name="media_none">No photo or video on the Disco.</string>
+    <string name="media_photo">Photo, %1$s\n%2$s</string>
+    <string name="media_video">Video, %1$s\n%2$s</string>
+    <string name="media_download">Download</string>
+    <string name="media_download_all">Download all to this phone</string>
+    <string name="media_stop">Stop the download</string>
+    <string name="media_downloading">Downloading %1$d of %2$d: %3$d %%</string>
+    <string name="media_downloaded">%1$d downloaded to the gallery, album %2$s.</string>
+    <string name="media_downloaded_app">%1$d downloaded to %2$s.</string>
+    <string name="media_stopped">Download stopped.</string>
+    <string name="media_download_failed">The download failed: check the link and try again.</string>
+    <string name="media_no_space">Not enough space on this phone: %1$s needed, %2$s free.</string>
+    <string name="media_delete">Delete</string>
+    <string name="media_delete_yes">Yes, delete</string>
+    <string name="media_delete_confirm">Delete %1$s from the Disco?</string>
+    <string name="media_deleted">Deleted from the Disco.</string>
+    <string name="media_delete_failed">The Disco did not delete it.</string>
 </resources>

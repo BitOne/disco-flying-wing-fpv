@@ -679,11 +679,11 @@ From `NOTES.md` section 40 (web research) and the user's go-ahead.
   Wi-Fi link quality on the HUD.
 - [x] **T9.4 Flight log on the phone**: telemetry recorded per flight,
   flight list and total time, GPX/KML/CSV export (share sheet).
-- [ ] **T9.5 The fake Disco's FTP**: the "drone" mux host, an FTP server
+- [x] **T9.5 The fake Disco's FTP**: the "drone" mux host, an FTP server
   (TypeScript) on a shared directory, the privileged ports mapped; then
   media, PUD flight data, flight plan upload and firmware upload can be
   tested.
-- [ ] **T9.6 Recording and media**: recording state and SD space on the
+- [x] **T9.6 Recording and media**: recording state and SD space on the
   HUD; browse, download (progress, cancel), delete; free space checked.
 - [ ] **T9.7 Wind estimate and battery to get home** on the HUD.
 - [ ] **T9.8 Flight plan editor** (free): waypoints on the offline map,
