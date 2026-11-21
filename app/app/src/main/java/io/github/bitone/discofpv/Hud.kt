@@ -126,6 +126,8 @@ class Hud(private val root: View, mode: HudMode) {
         text(R.id.hud_record, HudFormat.record(m.recordingSinceMs, System.currentTimeMillis(), m.storageFree),
             m.recordingSinceMs != null || (m.storageFree ?: Long.MAX_VALUE) < HudFormat.LOW_STORAGE_BYTES)
         text(R.id.hud_gps, HudFormat.gps(m.gpsFixed, m.satellites))
+        text(R.id.hud_wind, FlightEstimator.windText(m.estimate.windSpeed, m.estimate.windFrom))
+        text(R.id.hud_home_eta, FlightEstimator.homeText(m.estimate.homeSeconds, m.estimate.homeBattery), m.estimate.goHome)
         text(R.id.hud_camera, HudAlerts.camera(m.cameraTilt, m.cameraPan) ?: "")
         renderAlerts(m)
     }

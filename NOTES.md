@@ -2409,6 +2409,20 @@ ground) or CSV through the system file picker (no FileProvider).
 - The Bebop flight data downloader (PUD) uses HTTP, which the Disco does
   not serve: our phone-side flight log stays the record.
 
+### Wind and the way home (T9.7)
+
+`FlightEstimator` (pure, unit-tested): wind = GPS ground velocity minus
+the airspeed along the heading, smoothed over about 20 s, only in flight
+with a pitot airspeed over 3 m/s. Time home = distance / (cruise airspeed,
+smoothed from the measured one, 12 m/s at first, plus the wind along the
+way home), at least 3 m/s. Battery drain = percent lost per second over
+the last 3 minutes of this flight (needs a minute and a 1 % drop). Battery
+for home = drain x (time home + 60 s to circle down and land); the HUD
+warns "BATTERY: GO HOME" within 10 % of it. Classic HUD: WIND and HOME
+lines; the headset keeps HOME (and LINK) only, to stay readable. Bench and
+flight to check: the drain at cruise versus climbing, and the pitot's
+airspeed against the GPS on a calm day.
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf

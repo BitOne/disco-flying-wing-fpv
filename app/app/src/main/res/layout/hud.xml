@@ -39,6 +39,8 @@
             <TextView android:id="@+id/hud_rc_battery" style="@style/Hud" />
             <TextView android:id="@+id/hud_link" style="@style/Hud" />
             <TextView android:id="@+id/hud_record" style="@style/Hud" />
+            <TextView android:id="@+id/hud_wind" style="@style/Hud" />
+            <TextView android:id="@+id/hud_home_eta" style="@style/Hud" />
             <TextView android:id="@+id/hud_gps" style="@style/Hud" />
             <TextView android:id="@+id/hud_camera" style="@style/Hud" />
         </LinearLayout>

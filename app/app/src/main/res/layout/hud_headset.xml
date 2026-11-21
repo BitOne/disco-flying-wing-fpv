@@ -42,7 +42,7 @@
             <TextView android:id="@+id/hud_battery" style="@style/HudHeadset" />
             <TextView android:id="@+id/hud_rc_battery" style="@style/HudHeadset" />
             <TextView android:id="@+id/hud_link" style="@style/HudHeadset" />
-            <TextView android:id="@+id/hud_record" style="@style/HudHeadset" />
+            <TextView android:id="@+id/hud_home_eta" style="@style/HudHeadset" />
             <TextView android:id="@+id/hud_gps" style="@style/HudHeadset" />
             <TextView android:id="@+id/hud_ground_speed" style="@style/HudHeadset" />
         </LinearLayout>

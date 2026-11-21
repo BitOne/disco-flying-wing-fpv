@@ -42,11 +42,21 @@ class HudBinder(
     private var alertInputs = HudAlerts.Inputs()
     private var hadFix = false
 
+    private val estimator = FlightEstimator()
+
     private fun update(change: (HudModel) -> HudModel) {
         model = change(model)
+        val m = model
+        val flying = m.connected && m.flyingState != null && m.flyingState != "LANDED"
+        val estimate = estimator.update(
+            System.currentTimeMillis(), flying, m.heading, m.airSpeed, m.northSpeed, m.eastSpeed, m.battery,
+            m.homeDistance, if (m.position != null && m.home != null) Geo.bearing(m.position, m.home) else null,
+        )
+        model = m.copy(estimate = estimate)
         alertInputs = alertInputs.copy(
             connected = model.connected,
             gpsLost = hadFix && model.gpsFixed == false,
+            goHome = estimate.goHome,
         )
         model = model.copy(alerts = HudAlerts.of(alertInputs))
         onModel(model)
@@ -82,7 +92,8 @@ class HudBinder(
         drone.getInstrument(Speedometer::class.java) { s ->
             val air = s?.airSpeed
             update {
-                it.copy(groundSpeed = s?.groundSpeed, airSpeed = if (air != null && air.isAvailable) air.value else null)
+                it.copy(groundSpeed = s?.groundSpeed, airSpeed = if (air != null && air.isAvailable) air.value else null,
+                    northSpeed = s?.northSpeed, eastSpeed = s?.eastSpeed)
             }
         }
         drone.getInstrument(BatteryInfo::class.java) { b ->

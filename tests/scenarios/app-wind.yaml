@@ -1,0 +1,22 @@
+name: Disco FPV estimates the wind and the way home
+description: >
+  Needs `make fake`, `make video` and `make emu`. The fake Disco flies north
+  at 12 m/s air speed while the GPS shows it drifting east at 5 m/s: the
+  HUD shows a 5 m/s wind from the west, and the time to get home (2 km
+  south, wind across). The battery needed shows once the drain is measured
+  (a minute of flight, unit-tested in FlightEstimatorTest) (T9.7).
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/hud.xml
+  - send: [drone_link ok, home 45.1700 5.7245 250, gps 45.1885 5.7245 300, satellites 10, attitude 0 0 0,
+      airspeed 12, speed 12 5 0, battery 80, flying_state flying]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flight view
+  - expect_texts: ["WIND 5 m/s from W", "HOME 3 min"]
+    timeout: 20000
+  - screenshot: wind
+  - send: [flying_state landed, speed 0 0 0, airspeed 0]

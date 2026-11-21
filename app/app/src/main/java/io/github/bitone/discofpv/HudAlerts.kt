@@ -26,6 +26,8 @@ object HudAlerts {
         /** A hobby radio on the Disco's receiver is on (RcReceiver), and its receiver connected. */
         val radioEnabled: Boolean = false,
         val radioConnected: Boolean = false,
+        /** The battery left is close to what the way home needs (FlightEstimator). */
+        val goHome: Boolean = false,
     )
 
     /** Signal below which the link is shown as weak, dBm. */
@@ -61,6 +63,7 @@ object HudAlerts {
         // applies, the pilot must know at once; on and there: a reminder
         // that the radio's take-control switch decides who flies
         if (i.radioEnabled && !i.radioConnected) out.add(0, "RADIO LOST")
+        if (i.goHome) out += "BATTERY: GO HOME"
         if (i.gpsLost) out += "GPS LOST"
         if (i.rssi != null && i.rssi < WEAK_RSSI) out += "WEAK LINK"
         if (i.magnetometerCalibrated == false) out += "CALIBRATE COMPASS"

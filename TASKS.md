@@ -685,7 +685,7 @@ From `NOTES.md` section 40 (web research) and the user's go-ahead.
   tested.
 - [x] **T9.6 Recording and media**: recording state and SD space on the
   HUD; browse, download (progress, cancel), delete; free space checked.
-- [ ] **T9.7 Wind estimate and battery to get home** on the HUD.
+- [x] **T9.7 Wind estimate and battery to get home** on the HUD.
 - [ ] **T9.8 Flight plan editor** (free): waypoints on the offline map,
   MAVLink file upload, start/pause/stop; fake and SITL scenarios.
 - [ ] **T9.9 Firmware update from a local file**, checksum checked.

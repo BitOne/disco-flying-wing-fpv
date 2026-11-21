@@ -26,6 +26,10 @@ data class HudModel(
     val rssi: Int? = null,             // dBm, the Disco's Wi-Fi signal
     val recordingSinceMs: Long? = null, // video recording started at (epoch ms), null when not recording
     val storageFree: Long? = null,     // bytes free on the Disco
+    val northSpeed: Double? = null,    // m/s, ground velocity
+    val eastSpeed: Double? = null,     // m/s
+    /** Wind and the way home, estimated on the phone (FlightEstimator). */
+    val estimate: FlightEstimator.Estimate = FlightEstimator.Estimate(),
     val gpsFixed: Boolean? = null,
     val satellites: Int? = null,
     val roll: Double? = null,          // degrees, right wing down positive
