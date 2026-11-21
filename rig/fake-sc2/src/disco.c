@@ -13,6 +13,10 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <dirent.h>
 
 #include "disco.h"
 
@@ -132,9 +136,13 @@ void disco_reset_settings(struct disco_settings *s, const char *name)
 /* Sending                                                             */
 /* ------------------------------------------------------------------ */
 
+static void count_media(struct disco *d);
+
 static void send_storage(struct disco *d)
 {
-	uint32_t used = 120 + d->videos * 350u + d->photos * 4u;
+	uint32_t used;
+	count_media(d);
+	used = 120 + d->videos * 350u + d->photos * 4u;
 	SEND(arsdk_cmd_send_Common_CommonState_MassStorageStateListChanged(ITF,
 			STORAGE_ID, "internal_000"));
 	SEND(arsdk_cmd_send_Common_CommonState_MassStorageInfoStateListChanged(ITF,
@@ -417,6 +425,123 @@ void disco_send_states(struct disco *d)
 /* Media                                                               */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Files: what the Disco's FTP server shows (rig/disco-ftp)            */
+/* ------------------------------------------------------------------ */
+
+void disco_set_fs(struct disco *d, const char *fs, const char *samples)
+{
+	snprintf(d->fs, sizeof(d->fs), "%s", fs ? fs : "");
+	snprintf(d->samples, sizeof(d->samples), "%s", samples ? samples : "");
+}
+
+/** The rig user owns the shared files, not root (the fake runs as root). */
+static void own(const struct disco *d, const char *path)
+{
+	struct stat st;
+	if (stat(d->fs, &st) == 0 && chown(path, st.st_uid, st.st_gid) < 0)
+		LOGW("chown %s: %s", path, strerror(errno));
+}
+
+static void mkdirs(const struct disco *d, const char *dir)
+{
+	char path[512];
+	size_t i;
+	snprintf(path, sizeof(path), "%s", dir);
+	for (i = 1; path[i] != '\0'; i++) {
+		if (path[i] != '/')
+			continue;
+		path[i] = '\0';
+		if (mkdir(path, 0755) == 0)
+			own(d, path);
+		path[i] = '/';
+	}
+	if (mkdir(path, 0755) == 0)
+		own(d, path);
+}
+
+static int copy_file(const struct disco *d, const char *from, const char *to)
+{
+	char buf[16384];
+	size_t n;
+	int ok = 1;
+	FILE *in = fopen(from, "rb"), *out;
+	if (in == NULL)
+		return -errno;
+	out = fopen(to, "wb");
+	if (out == NULL) {
+		fclose(in);
+		return -errno;
+	}
+	while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
+		ok &= fwrite(buf, 1, n, out) == n;
+	fclose(in);
+	ok &= fclose(out) == 0;
+	own(d, to);
+	return ok ? 0 : -EIO;
+}
+
+/** With shared files, the media counts are the files there (the app may
+ * have deleted some over FTP). */
+static void count_media(struct disco *d)
+{
+	char dir[512];
+	DIR *dp;
+	struct dirent *e;
+	uint16_t photos = 0, videos = 0;
+	if (d->fs[0] == '\0')
+		return;
+	snprintf(dir, sizeof(dir), "%s/internal_000/Disco/media", d->fs);
+	dp = opendir(dir);
+	if (dp == NULL)
+		return;
+	while ((e = readdir(dp)) != NULL) {
+		const char *dot = strrchr(e->d_name, '.');
+		if (dot == NULL)
+			continue;
+		if (strcmp(dot, ".mp4") == 0)
+			videos++;
+		else if (strcmp(dot, ".jpg") == 0 || strcmp(dot, ".dng") == 0)
+			photos++;
+	}
+	closedir(dp);
+	d->photos = photos;
+	d->videos = videos;
+}
+
+/** A photo or video on the Disco's storage, named like the firmware's:
+ * Disco_<local date>_<run id>.<ext>, with its thumbnail. */
+static void media_file(struct disco *d, const char *ext)
+{
+	char media[512], thumb[512], name[128], date[32], from[300];
+	time_t now = time(NULL);
+	struct tm tm;
+	int res;
+	if (d->fs[0] == '\0')
+		return;
+	gmtime_r(&now, &tm);
+	strftime(date, sizeof(date), "%Y-%m-%dT%H%M%S+0000", &tm);
+	snprintf(name, sizeof(name), "Disco_%s_%s.%s", date, d->run_id, ext);
+	snprintf(media, sizeof(media), "%s/internal_000/Disco/media", d->fs);
+	snprintf(thumb, sizeof(thumb), "%s/internal_000/Disco/thumb", d->fs);
+	mkdirs(d, media);
+	mkdirs(d, thumb);
+	snprintf(media, sizeof(media), "%s/internal_000/Disco/media/%s", d->fs, name);
+	snprintf(from, sizeof(from), "%s/sample.%s", d->samples, ext);
+	res = copy_file(d, from, media);
+	if (res < 0) {
+		LOGW("media %s: %s", media, strerror(-res));
+		return;
+	}
+	/* GroundSdk: thumb/<name>.jpg for a video, thumb/<name> for a photo */
+	snprintf(thumb, sizeof(thumb), "%s/internal_000/Disco/thumb/%s%s", d->fs, name,
+			strcmp(ext, "mp4") == 0 ? ".jpg" : "");
+	snprintf(from, sizeof(from), "%s/thumb.jpg", d->samples);
+	copy_file(d, from, thumb);
+	LOGI("media file %s", name);
+}
+
+
 static void video_record(struct disco *d, int start)
 {
 	if (start == d->recording)
@@ -431,10 +556,12 @@ static void video_record(struct disco *d, int start)
 		return;
 	}
 	d->recording = start;
-	if (start)
+	if (start) {
 		d->recording_start_ms = epoch_ms();
-	else
+	} else {
 		d->videos++;
+		media_file(d, "mp4");
+	}
 	LOGI("video recording %s", start ? "started" : "stopped");
 	if (d->itf == NULL)
 		return;
@@ -457,6 +584,7 @@ static void picture_done(struct pomp_timer *timer, void *userdata)
 	struct disco *d = userdata;
 	d->picture_busy = 0;
 	d->photos++;
+	media_file(d, "jpg");
 	LOGI("picture taken (%u)", d->photos);
 	if (d->itf == NULL)
 		return;

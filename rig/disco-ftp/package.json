@@ -1,0 +1,8 @@
+{
+  "name": "disco-ftp",
+  "private": true,
+  "type": "module",
+  "description": "The fake Disco's FTP servers (media, firmware update, flight plan)",
+  "scripts": { "test": "node --test test/*.test.ts" },
+  "devDependencies": { "typescript": "5.9.3", "@types/node": "22.18.0" }
+}

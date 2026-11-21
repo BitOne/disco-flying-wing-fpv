@@ -56,6 +56,11 @@ struct disco {
 	/* Wi-Fi: the factory country (the firmware's /factory/country_setting.txt;
 	 * CA, IL, US lock the automatic choice), and a restart to apply a change */
 	char       factory_country[3];
+
+	/* the Disco's files (shared with rig/disco-ftp): media written there,
+	 * flight plans read from there; empty: none */
+	char       fs[256];
+	char       samples[256];        /* sample.mp4, sample.jpg, thumb.jpg */
 	int        wifi_restart;        /* set when a change needs the Wi-Fi restarted */
 
 	/* media */
@@ -122,6 +127,8 @@ enum {
 enum { DISCO_FP_NONE, DISCO_FP_START, DISCO_FP_PAUSE, DISCO_FP_STOP };
 
 void disco_init(struct disco *d, struct pomp_loop *loop, const char *name);
+/* where the Disco's files go (rig/disco-ftp's root) and the sample media */
+void disco_set_fs(struct disco *d, const char *fs, const char *samples);
 void disco_clear(struct disco *d);
 void disco_reset_settings(struct disco_settings *s, const char *name);
 

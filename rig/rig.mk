@@ -20,6 +20,12 @@ FAKE_MODULES ?= fake-sc2 disco-probe arsdk-ng-controller
 # (acknowledgement timeout towards the phone; the real SkyController 2 uses 150)
 FAKE_ENV ?=
 FAKE_NAME    := disco-fpv-fake
+# The Disco's FTP servers (rig/disco-ftp): media, flight data, flight plans,
+# firmware, on the "drone" address fake-sc2 gives GroundSdk; files shared
+# with the fake in FAKE_FS.
+FTP_NAME     := disco-fpv-ftp
+FAKE_FS      := $(OUT)/disco-fs
+DRONE_ADDR   ?= 127.0.0.2
 FAKE_BIN_DIR := /work/sdk/out/olympe-linux/staging/usr/bin
 FAKE_LIB_DIR := /work/sdk/out/olympe-linux/staging/usr/lib
 FAKE_PORT    ?= 4321
@@ -38,10 +44,17 @@ fake-build: ## Build the fake controller (and Parrot's C examples) for Linux x86
 .PHONY: fake
 fake: fake-build ## Build and start the fake SkyController 2 + Disco (container disco-fpv-fake)
 	docker rm -f $(FAKE_NAME) >/dev/null 2>&1 || true
+	docker rm -f $(FTP_NAME) >/dev/null 2>&1 || true
+	@mkdir -p $(FAKE_FS)
+	# as root, to bind the Disco's port 21; files handed to the rig user
+	docker run -d --name $(FTP_NAME) --network host \
+		-v "$(ROOT)/rig/disco-ftp":/f:ro -v "$(FAKE_FS)":/fs -w /f $(NODE_IMAGE) \
+		node src/main.ts --root /fs --host $(DRONE_ADDR) >/dev/null
 	docker run -d --name $(FAKE_NAME) --network host \
 		-v "$(ROOT)":/work -e LD_LIBRARY_PATH=$(FAKE_LIB_DIR) \
 		-e ULOG_LEVEL=D -e ULOG_STDERR=y $(FAKE_ENV) $(SDK_IMAGE) \
 		$(FAKE_BIN_DIR)/fake-sc2 --mux --mux-port $(FAKE_PORT) \
+		--drone-addr $(DRONE_ADDR) --fs /work/out/disco-fs \
 		--no-publisher-avahi --no-publisher-net $(FAKE_ARGS) >/dev/null
 	@sleep 1; docker ps --format '{{.Names}}' | grep -qx $(FAKE_NAME) \
 		|| { docker logs $(FAKE_NAME); exit 1; }
@@ -51,7 +64,8 @@ fake: fake-build ## Build and start the fake SkyController 2 + Disco (container 
 fake-stop: ## Stop the fake controller and save its log to out/fake-sc2.log
 	@mkdir -p $(OUT)
 	-docker logs $(FAKE_NAME) > $(OUT)/fake-sc2.log 2>&1
-	docker rm -f $(FAKE_NAME) >/dev/null 2>&1 || true
+	-docker logs $(FTP_NAME) > $(OUT)/disco-ftp.log 2>&1
+	docker rm -f $(FAKE_NAME) $(FTP_NAME) >/dev/null 2>&1 || true
 
 # Fake Disco camera (GStreamer): RTP H.264 to fake-sc2 on 127.0.0.1:55004/55005.
 VIDEO_IMAGE := disco-fpv/video-src:1
@@ -172,6 +186,16 @@ rig/sim/bridge/node_modules: rig/sim/bridge/package.json
 .PHONY: sim-unit
 sim-unit: rig/sim/bridge/node_modules ## Type-check and unit-test the simulator bridge (in Docker)
 	docker run --rm -u $(UID):$(GID) -v "$(ROOT)/rig/sim/bridge":/b -w /b $(NODE_IMAGE) \
+		sh -c 'node_modules/.bin/tsc --noEmit -p . && node --test test/*.test.ts'
+
+rig/disco-ftp/node_modules: rig/disco-ftp/package.json
+	docker run --rm -u $(UID):$(GID) -e npm_config_cache=/tmp/npm -v "$(ROOT)/rig/disco-ftp":/b -w /b \
+		$(NODE_IMAGE) npm install --ignore-scripts --no-audit --no-fund
+	@touch $@
+
+.PHONY: ftp-unit
+ftp-unit: rig/disco-ftp/node_modules ## Type-check and unit-test the fake Disco's FTP server (in Docker)
+	docker run --rm -u $(UID):$(GID) -v "$(ROOT)/rig/disco-ftp":/b -w /b $(NODE_IMAGE) \
 		sh -c 'node_modules/.bin/tsc --noEmit -p . && node --test test/*.test.ts'
 
 .PHONY: sim

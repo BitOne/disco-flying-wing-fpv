@@ -107,6 +107,9 @@ struct app {
 		/* address the listener binds (network order): loopback unless
 		 * --mux-bind, since anyone reaching it takes over the session */
 		in_addr_t         bind_addr;
+		/* where the Disco's FTP servers are (disco-ftp): the controller
+		 * proxies the app's TCP connections to host "drone" there */
+		in_addr_t         drone_addr;
 		uint64_t          unplugged_until_ms; /* refuse phones until */
 	} mux;
 
@@ -213,6 +216,10 @@ struct app {
 };
 
 /** */
+/* --fs and --samples (disco.c) */
+static char s_fs[256];
+static char s_samples[256] = "/work/rig/fake-sc2/data";
+
 static struct app s_app = {
 	.stopped = 0,
 	.backend_type = ARSDK_BACKEND_TYPE_UNKNOWN,
@@ -1945,6 +1952,10 @@ static void mux_server_fd_event_cb(int fd, uint32_t revents, void *userdata)
 	app->mux.sockfd = sockfd;
 	app->mux.ctx = mux_new(app->mux.sockfd, app->loop, &ops,
 			MUX_FLAG_FD_NOT_POLLABLE);
+	/* media (21), firmware update (51) and flight plan (61) FTP, and
+	 * their data ports: GroundSdk asks the controller for "drone" */
+	if (app->mux.ctx != NULL)
+		mux_add_host(app->mux.ctx, "drone", app->mux.drone_addr);
 
 	backend_create(app);
 	video_channels_open(app);
@@ -2650,6 +2661,12 @@ static void usage(const char *progname)
 		"  --mux-bind <addr>  : address it listens on (default 127.0.0.1; 0.0.0.0\n"
 		"                       for a phone over Wi-Fi: anyone on the network can then\n"
 		"                       take the session over)\n"
+		"  --fs <dir>         : the Disco's files (rig/disco-ftp's root): media\n"
+		"                       written there, flight plans read from there\n"
+		"  --samples <dir>    : sample.mp4, sample.jpg, thumb.jpg for the media\n"
+		"                       (default /work/rig/fake-sc2/data)\n"
+		"  --drone-addr <addr>: the Disco's address behind the controller, for its\n"
+		"                       FTP servers (default 127.0.0.2, rig/disco-ftp)\n"
 		"  --disco            : be a Disco over Wi-Fi (net backend, TCP 44444)\n"
 		"                       instead of a SkyController 2 over mux\n"
 		"  --ctrl-port <port> : TCP port of the control socket on 127.0.0.1 (default 4322)\n"
@@ -2672,6 +2689,7 @@ int main(int argc, char *argv[])
 
 	s_app.backend_type = ARSDK_BACKEND_TYPE_NET;
 	s_app.mux.bind_addr = htonl(INADDR_LOOPBACK);
+	s_app.mux.drone_addr = htonl(INADDR_LOOPBACK + 1);
 	for (argidx = 1; argidx < argc; argidx++) {
 		if (argv[argidx][0] != '-') {
 			/* End of options */
@@ -2704,6 +2722,24 @@ int main(int argc, char *argv[])
 			if (argidx + 1 >= argc
 					|| inet_pton(AF_INET, argv[argidx + 1], &s_app.mux.bind_addr) != 1) {
 				fprintf(stderr, "Missing or bad mux bind address\n");
+				usage(argv[0]);
+				return -1;
+			}
+			argidx++;
+		} else if (strcmp(argv[argidx], "--fs") == 0
+				|| strcmp(argv[argidx], "--samples") == 0) {
+			if (argidx + 1 >= argc) {
+				fprintf(stderr, "Missing directory\n");
+				usage(argv[0]);
+				return -1;
+			}
+			snprintf(strcmp(argv[argidx], "--fs") == 0 ? s_fs : s_samples,
+					sizeof(s_fs), "%s", argv[argidx + 1]);
+			argidx++;
+		} else if (strcmp(argv[argidx], "--drone-addr") == 0) {
+			if (argidx + 1 >= argc
+					|| inet_pton(AF_INET, argv[argidx + 1], &s_app.mux.drone_addr) != 1) {
+				fprintf(stderr, "Missing or bad drone address\n");
 				usage(argv[0]);
 				return -1;
 			}
@@ -2752,6 +2788,7 @@ int main(int argc, char *argv[])
 	video_udp_create(&s_app);
 	s_app.button_timer = pomp_timer_new(s_app.loop, &button_release_cb, &s_app);
 	disco_init(&s_app.disco, s_app.loop, FAKE_DRONE_NAME);
+	disco_set_fs(&s_app.disco, s_fs, s_samples);
 	{
 		struct sc2_ops ops = {
 			.button_action = &sc2_button_action,
