@@ -93,7 +93,7 @@ phone: tell us how it goes.
 make fake            # and make video, or make sim for the simulator
 make aoa-host-linux
 lsusb                # find your phone: e.g. "ID 18d1:4ee7 Google Pixel"
-adb install out/disco-fpv-0.1.2.apk   # or a GitHub release; or out/disco-fpv-usb.apk
+adb install out/disco-fpv-0.2.0.apk   # or a GitHub release; or out/disco-fpv-usb.apk
 sudo out/aoa-host-linux --phone 18d1:4ee7 --host 127.0.0.1
 ```
 

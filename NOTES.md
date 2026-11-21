@@ -2516,6 +2516,20 @@ airspeed against the GPS on a calm day.
   20 of 21 app scenarios pass, app-lens failed once at a lens panel
   reading and passed twice alone (a known load flake, TASKS.md T8).
 
+### Release 0.2.0 (2026-11-21)
+
+Built with `make release` (same signing certificate as 0.1.x, SHA-256
+1ef591703516315a4083909cae2328cfe1b3ab0140dfd2f29700658bf28c7d0c), checked
+on the emulator through the emulated USB accessory (the release has no
+debug bridge): connect, Disco settings, flight HUD, flight plan, flights,
+media and wind pass, no crash. The scenarios' `run-as` cleanups need a
+debuggable build: the release was checked from fresh installs instead.
+The firmware upload did not finish there: the emulated USB link moves
+about 60 KB/s, and the fake controller's ARSDK keep-alive (1 s pings, 3
+misses) dropped the link after 1 MiB of the 41 MB file. Over the TCP debug
+link the same scenario passes. To check on the bench: a firmware update
+through the real SkyController 2 (USB 2.0).
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf

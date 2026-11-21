@@ -26,8 +26,8 @@ android {
         applicationId = "io.github.bitone.discofpv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.2.0"
         // libsdkcore.so exists for these ABIs only (emulator, phones).
         ndk { abiFilters += listOf("x86_64", "arm64-v8a") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
