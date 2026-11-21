@@ -2,7 +2,7 @@
  * Disco FPV. Copyright (c) 2026, Benoit Jacquemont. BSD-3-Clause.
  *
  * Reads the clock code that the fake camera draws in each frame
- * (docker/video-src/video-clock.py, CLOCK_CODE=1) back from a screenshot:
+ * (rig/docker/video-src/video-clock.py, CLOCK_CODE=1) back from a screenshot:
  * a row of 26 equal square blocks, a white and a black reference, then the
  * wall clock in milliseconds modulo 2^24, most significant bit first, white
  * for 1. The app may scale and crop the video anyhow: the row is found by

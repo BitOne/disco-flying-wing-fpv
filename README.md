@@ -6,86 +6,89 @@ Open-source Android app for the Parrot Disco flying wing flown with a
 SkyController 2: live video in a side-by-side headset view (FPV) with a
 HUD, on modern Android phones. Built on the community
 [Unified GroundSdk](https://github.com/UnifiedGroundSdk/groundsdk-manifest)
-fork of Parrot's GroundSDK, and developed against a fake SkyController 2 +
-Disco so it can be tested entirely in software.
+fork of Parrot's GroundSDK.
 
 Not affiliated with or endorsed by Parrot. "Parrot", "Disco",
 "SkyController" and "FreeFlight" are trademarks of Parrot Drones SAS.
 
-## Licence
+## Installing
 
-BSD-3-Clause, see `LICENSE` and `NOTICE`. The app uses Parrot's Ground SDK, distributed
-under the PARROT GROUND SDK End User License Agreement (`EULA.md` in the
-SDK manifest), whose open-source components are BSD-3-Clause.
+Download the APK from the
+[releases](https://github.com/BitOne/disco-flying-wing-fpv/releases) and
+install it on the phone (Android 7 or newer; allow installing from that
+source when asked). Plug the phone into the SkyController 2 by USB and
+open the app. Nothing is installed on the Disco or the controller.
 
-Portions copyright (c) 2019–Present PARROT DRONES SAS. All rights reserved.
+Not yet tried on the real hardware: every feature below works against
+the fake SkyController 2 and Disco of the test rig, and the simulator.
 
-## Status
-
-Working in the test rig (not yet tried on the real hardware):
+## What it does
 
 - Connection to the SkyController 2 and the Disco, flight view with live
   video and a HUD (flying state, altitude, air and ground speed, drone
   and controller battery, GPS).
 - Headset view: side-by-side, lens-corrected video with the HUD above and
   below the picture in each eye; lens offsets and height set from a
-  calibration panel (tap the view) and saved.
+  calibration panel (tap the view) and saved; head tracking for the
+  camera.
+- HUD modes cycled with the controller's buttons: classic text, minimal
+  (battery and an arrow pointing home), jet fighter (artificial horizon,
+  speed and altitude tapes, heading with a home marker), moving map.
+- Moving map over map tiles: aerial photos (IGN, France), satellite
+  photos worldwide, any XYZ tile URL, or an offline OpenStreetMap file
+  from download.mapsforge.org. The map screen previews it and downloads
+  the area around the Disco's last position, the phone's position or
+  typed coordinates, for flying without network.
+- Warnings from the Disco's alarms, the last GPS position kept after a
+  loss, the camera tilt.
 - Robustness: Disco out of range (LINK LOST, video cleared, everything
   back by itself), controller unplugged and plugged back, app in the
-  background, rotation; low battery shown as a warning.
-- HUD modes cycled with the controller's SETTINGS button: classic text,
-  minimal (battery and an arrow pointing home), fighter (artificial
-  horizon, speed and altitude tapes, heading with a home marker).
+  background, rotation.
+
+## Licence
+
+BSD-3-Clause, see `LICENSE` and `NOTICE`. The app uses Parrot's Ground
+SDK, distributed under the PARROT GROUND SDK End User License Agreement
+(`EULA.md` in the SDK manifest), whose open-source components are
+BSD-3-Clause.
+
+Portions copyright (c) 2019–Present PARROT DRONES SAS. All rights reserved.
+
+## The repository
+
+| Directory | What |
+|---|---|
+| `app/` | the Android app (Kotlin) |
+| `rig/` | the test rig: fake SkyController 2 + Disco, fake camera, Android emulator with the emulated USB link, simulated Disco; see [rig/README.md](rig/README.md) |
+| `tests/` | the end-to-end runner (TypeScript) and its scenarios: the app on the emulator against the rig |
+| `docs/` | [quick start](docs/QUICKSTART.md), logo, screenshots |
+| `sdk.lock.xml`, `patches/` | the Ground SDK fork's pinned revisions and our fixes to it (shared by the app and the fake) |
 
 ## Building and testing
 
-Everything runs in Docker (Linux host with KVM for the emulator). See
-[docs/QUICKSTART.md](docs/QUICKSTART.md) for the parts and recipes: the app
-with the fakes, flying the simulator, and your own phone by USB or Wi-Fi.
-`make help` lists the targets. The Ground SDK fork is checked out into
+Everything runs in Docker (Linux host with KVM for the emulator).
+[docs/QUICKSTART.md](docs/QUICKSTART.md) has the recipes: the app with the
+fakes, flying the simulator, your own phone by USB or Wi-Fi, a release.
+`make help` lists the targets, the app's and the SDK's from `Makefile`,
+the rig's from `rig/rig.mk`. The Ground SDK fork is checked out into
 `sdk/` by `make sdk-sync`, at the exact revisions recorded in
-`sdk.lock.xml`, with the fixes in `patches/` applied; building it asks
-you to accept Parrot's Ground SDK EULA once (`make sdk-eula`).
+`sdk.lock.xml`, with the fixes in `patches/` applied; building it asks you
+to accept Parrot's Ground SDK EULA once (`make sdk-eula`).
 
     make sdk-sync sdk-native sdk-aar   # the SDK, as AARs (long, once)
     make check                         # app, unit tests, fakes, emulator, scenarios
     make stop                          # stop the simulator, camera, fake and emulator
 
-`make check` builds the app (`out/disco-fpv-debug.apk`), runs the JVM unit
-tests and the fake Disco's protocol tests (`make fake-test`: its settings,
-states and flight, modelled on the Disco's firmware, `NOTES.md` section
-22), starts the fake SkyController 2 with a Disco (`fake-sc2/`), the
-fake camera and a headless Android emulator, and plays the end-to-end
-scenarios in `tests/scenarios/` (TypeScript runner in `tests/e2e/`). Its
-exit code is the verdict; screenshots and results go to `out/latest/`.
-
-The app: flight view and side-by-side headset view with a HUD in four
-modes (classic, minimal, jet fighter, moving map over map tiles,
-satellite photos worldwide or an offline OpenStreetMap file from
-download.mapsforge.org; tiles downloaded ahead around the Disco's last
-position, the phone's position or typed coordinates), the
-controller's buttons to cycle them and bring up the map, warnings from the
-Disco's alarms, the last GPS position kept after a loss, the camera tilt,
-and a settings screen.
-
-`make check-usb` runs the same scenarios through Android's real USB
-accessory path: the emulated phone is put in accessory mode on the
-emulator's dummy USB controller and `aoa-host` plays the SkyController's
-USB side (`NOTES.md` section 20).
-
-`make sim` (with `make fake`, instead of `make video`) flies a simulated
-Disco: ArduPilot SITL for the flight, FlightGear for the camera (on the
-host GPU), a TypeScript bridge in `sim/bridge` (`NOTES.md` section 21).
-`make sim SIM_ENGINE=gazebo` uses Gazebo instead: its physics and a 3D
-world of houses and trees (`sim/gazebo`), and `make sim-view` shows the
-Disco from the pilot's position on the PC's screen, as when flying line of
-sight (`VIEW=chase` follows it instead; `NOTES.md` section 25).
-
-The fake Disco was also checked against Parrot's own FreeFlight Pro
-(`make freeflight FREEFLIGHT_APK=<your copy>`, see `fake-sc2/README.md`).
+`make check` builds the app (`out/disco-fpv-debug.apk`), runs its JVM unit
+tests and the fake Disco's protocol tests, starts the rig (fake
+SkyController 2 with a Disco, fake camera, headless Android emulator) and
+plays the end-to-end scenarios in `tests/scenarios/`. Its exit code is the
+verdict; screenshots and results go to `out/latest/`. `make check-usb`
+plays them through Android's real USB accessory path instead of the debug
+build's network bridge.
 
 See also:
 
-- `PLAN.md`: architecture, milestones, test rig, repositories
+- `PLAN.md`: architecture, milestones, test rig
 - `TASKS.md`: what is done and what is next
 - `NOTES.md`: research notes and sources

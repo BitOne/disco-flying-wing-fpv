@@ -59,7 +59,7 @@ android {
         }
         // Debug build without the debug USB bridge (src/debug): reaches the
         // controller through Android's USB accessory path only, for the
-        // emulator's emulated USB (scripts/emu-usb-setup.sh) and phones.
+        // emulator's emulated USB (rig/scripts/emu-usb-setup.sh) and phones.
         create("usb") {
             initWith(getByName("debug"))
             matchingFallbacks += listOf("debug")

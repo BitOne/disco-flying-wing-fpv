@@ -95,17 +95,26 @@ real protocol peer can show.
 disco-flying-wing-fpv/
 ├── NOTES.md, PLAN.md, TASKS.md      research, this plan, live backlog
 ├── sdk/                             repo checkout of Unified GroundSdk (not committed; script)
+├── sdk.lock.xml, patches/           the fork's pinned revisions and our fixes (app and fake)
 ├── app/                             our Android app (Gradle, Kotlin), depends on the SDK AARs
-├── fake-sc2/                        fake SkyController 2 + Disco: adapted arsdk-ng device.c (C), built with Alchemy
-├── sim/                             optional SITL bridge (TypeScript), Gazebo camera, GStreamer pipelines
-├── tests/
+├── rig/                             the test rig (rig/README.md, targets in rig/rig.mk)
+│   ├── fake-sc2/                    fake SkyController 2 + Disco: adapted arsdk-ng device.c (C), built with Alchemy
+│   ├── aoa-host/                    the controller's side of the USB accessory link
+│   ├── sim/                         simulated Disco: SITL bridge (TypeScript), Gazebo world
+│   ├── fakedisco/                   mDNS helper app for FreeFlight Pro against the fake
+│   ├── docker/                      emulator, fake camera, SITL, FlightGear, Gazebo, Cesium images
+│   ├── scripts/                     emulator, USB and FreeFlight setup, fake tests
+│   └── tests/                       fake protocol probes, simulator probe
+├── tests/                           the app against the rig
 │   ├── scenarios/*.yaml             fake drone timelines
-│   ├── e2e/                         TypeScript runner: emulator + fake + screenshot/log checks
-│   └── golden/                      reference screenshots (with tolerances)
-│   (fast tests live in app/src/test and app/src/androidTest, on MockArsdkCore)
-├── docker/                          build images: sdk-build, android-sdk+emulator
-└── Makefile                         single entry points (below)
+│   └── e2e/                         TypeScript runner: emulator + fake + screenshot/log checks
+│   (fast tests live in app/app/src/test and app/app/src/androidTest)
+├── docker/                          build images: sdk-build, app-build
+└── Makefile                         single entry points (below), includes rig/rig.mk
 ```
+
+The rig and the app stay in one repository (`NOTES.md` section 36): they
+share the SDK pin, and most features change both plus a scenario.
 
 Entry points the loop relies on (each prints a short summary and writes
 artifacts to `out/<timestamp>/`):

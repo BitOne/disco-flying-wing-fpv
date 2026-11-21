@@ -1,0 +1,69 @@
+# The SkyController 2's input mapper (rig/fake-sc2/src/sc2.c): mapping lists,
+# FreeFlight's control mapping commands, grabbed inputs, mapped actions
+# (camera tilt on the left slider), access point and co-piloting.
+ctrl unhandled clear
+send Skyctrl.Common.AllStates
+expect Mapper.Active_product | Product=2318
+expect Mapper.Axis_mapping_item
+expect Action=CAMERA_TILT | Axis=4
+expect Mapper.Button_mapping_item | Uid=6 | Product=2318 | Action=RETURN_HOME | Buttons=2
+expect Mapper.Expo_map_item
+expect Mapper.Inverted_map_item
+expect Skyctrl.AccessPointSettingsState.AccessPointSSIDChanged
+expect Skyctrl.CoPilotingState.PilotingSource
+expect Skyctrl.CommonState.AllStatesChanged
+
+# FreeFlight's control mapping screen: map, expo, invert, reset
+mark
+send Mapper.Map_button_action 2318 TAKE_PICTURE 16
+expect Action=TAKE_PICTURE | Buttons=16
+send Mapper.Set_expo 2318 4 EXPO_4
+expect Mapper.Expo_map_item
+expect Axis=4 | Expo=EXPO_4
+send Mapper.Set_inverted 2318 3 1
+expect Axis=3 | Inverted=1
+# button A now takes a picture
+send Common.Common.AllStates
+expect AllStatesChanged
+mark
+ctrl button a
+expect PictureEventChanged | Event=TAKEN 2000
+mark
+send Mapper.Reset_mapping 2318
+expect Action=TAKE_PICTURE | Buttons=32
+ctrl_expect a3:17 sc2
+
+# the left slider tilts the camera (mapped CAMERA_TILT)
+mark
+ctrl axis left_slider -100
+expect Ardrone3.CameraState.OrientationV2 | Tilt=-2
+wait 1500
+ctrl axis left_slider 0
+ctrl_expect tilt=-3 disco
+# the settings button is the app's (APP_0)
+mark
+ctrl button settings
+expect Mapper.Application_button_event | Action=APP_0
+
+# grabbed inputs go to the app instead
+mark
+send Mapper.Grab 1 16
+expect Mapper.Grab_state | Buttons=1 | Axes=16
+ctrl button settings
+expect Mapper.Grab_button_event | Button=0 | Event=PRESS
+expect Mapper.Grab_button_event | Button=0 | Event=RELEASE
+ctrl axis left_slider 40
+expect Mapper.Grab_axis_event | Axis=4 | Value=40
+send Mapper.Grab 0 0
+expect Mapper.Grab_state | Buttons=0 | Axes=0
+
+# access point and co-piloting
+mark
+send Skyctrl.AccessPointSettings.AccessPointSSID MyController
+expect AccessPointSSIDChanged | Ssid='MyController'
+send Skyctrl.AccessPointSettings.AccessPointChannel 11
+expect AccessPointChannelChanged | Channel=11
+send Skyctrl.CoPiloting.SetPilotingSource CONTROLLER
+expect CoPilotingState.PilotingSource | Source=CONTROLLER
+send Skyctrl.Calibration.EnableMagnetoCalibrationQualityUpdates 1
+expect MagnetoCalibrationQualityUpdatesState | Enabled=1

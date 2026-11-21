@@ -2154,6 +2154,29 @@ app's README for pilots only). Split later if the rig gets users of its
 own; `git filter-repo --path` then extracts it with its history, the app
 consuming it as versioned Docker images in CI.
 
+## 37. The test rig moved under rig/ (2026-11-21)
+
+Following section 36, the rig's parts now live in one directory; the
+sections above keep the paths of their time. Old to new:
+
+| Before | Now |
+|---|---|
+| `fake-sc2/`, `aoa-host/`, `sim/` | `rig/fake-sc2/`, `rig/aoa-host/`, `rig/sim/` |
+| `docker/{emulator,video-src,sitl,flightgear,gazebo,cesium}` | `rig/docker/...` (`docker/` keeps sdk-build and app-build) |
+| `scripts/{emu-start,emu-usb-setup,fake-test,freeflight-setup,sim-frame}.sh` | `rig/scripts/...` (`scripts/` keeps sdk-sync, apk-check, release-key, gradle/) |
+| `tests/fake/`, `tests/sim/` | `rig/tests/fake/`, `rig/tests/sim/` (`tests/` keeps e2e/ and scenarios/: the app against the rig) |
+| `app/fakedisco` (a module of the app's Gradle build) | `rig/fakedisco`, a Gradle project of its own |
+| rig targets in `Makefile` | `rig/rig.mk`, included by `Makefile`; `make help` lists both |
+
+`rig/README.md` describes the rig; the top README is for pilots first
+(installing, features), then the repository's layout.
+
+After the move, Alchemy's dependency files still named
+`/work/fake-sc2/src/...` ("No rule to make target"): the fake's build
+folders (`sdk/out/olympe-linux/build/{fake-sc2,disco-probe}`,
+`sdk/out/groundsdk-android/x86_64/build/fake-sc2`) had to be deleted once.
+The Gazebo image rebuilt (comments changed in files it copies).
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf

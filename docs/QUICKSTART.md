@@ -10,10 +10,10 @@ together, then recipes for the usual setups.
  your app (emulator or phone)
      |  USB accessory (real path)      or  debug TCP bridge (debug builds)
      v
- fake SkyController 2 + Disco  (make fake, fake-sc2/)  <-- control socket 127.0.0.1:4322
+ fake SkyController 2 + Disco  (make fake, rig/fake-sc2/)  <-- control socket 127.0.0.1:4322
      ^ video (RTP)                      ^ telemetry, flying state, crashes
      |                                  |
- fake camera (make video)          simulator bridge (make sim, sim/bridge/)
+ fake camera (make video)          simulator bridge (make sim, rig/sim/bridge/)
  or the simulator's camera              ^ MAVLink
                                    ArduPlane SITL + FlightGear or Gazebo
 ```
@@ -24,7 +24,7 @@ together, then recipes for the usual setups.
   (`printf 'state\n' | nc -q1 127.0.0.1 4322`) drives it: `battery 30`,
   `gps <lat> <lon> <alt>`, `fail gps`, `drone_link lost`, `button takeoff`,
   `sticks <roll> <pitch> <gaz>`, `rc connect sbus` (a hobby radio's
-  receiver), `disco` and `state` for its status. See `fake-sc2/README.md`.
+  receiver), `disco` and `state` for its status. See `rig/fake-sc2/README.md`.
 - **fake camera** (`make video`): a moving test pattern with a clock.
   `VIDEO_ENV="-e CLOCK_CODE=1"` draws the wall clock as a code for latency
   measurements (`make latency`).
@@ -79,7 +79,7 @@ Open the flight view or the headset view in the app. To fly:
   crash flags). `make stop` stops everything.
 
 `make sim-world` regenerates the Gazebo world after changing
-`sim/bridge/src/gazebo-world.ts`.
+`rig/sim/bridge/src/gazebo-world.ts`.
 
 ## The app on your own phone
 
