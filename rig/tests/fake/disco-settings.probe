@@ -70,3 +70,33 @@ expect Common.SettingsState.ResetChanged
 ctrl_expect name=MyDisco disco
 send Common.Settings.ProductName DISCO-FAKE01
 expect ProductNameChanged | Name='DISCO-FAKE01'
+
+# Wi-Fi country and outdoor rules (they set the radio's power limits):
+# each change restarts the Disco's Wi-Fi, the link drops and comes back
+mark
+send Common.Settings.AutoCountry 0
+expect AutoCountryChanged | Automatic=0
+send Common.Settings.Country FR
+expect CountryChanged | Code='FR'
+send Common.WifiSettings.OutdoorSetting 0
+expect OutdoorSettingsChanged | Outdoor=0
+ctrl_expect country=FR,manual,indoor disco
+expect Skyctrl.DeviceState.ConnexionChanged | Status=NOTCONNECTED
+expect Skyctrl.DeviceState.ConnexionChanged | Status=CONNECTED
+# a Disco from the US keeps the automatic country (autolock)
+ctrl factory_country US
+mark
+send Common.Settings.Country DE
+expect CountryChanged | Code='FR'
+send Common.Settings.AutoCountry 1
+expect AutoCountryChanged | Automatic=0
+ctrl factory_country none
+mark
+send Common.Settings.AutoCountry 1
+expect AutoCountryChanged | Automatic=1
+send Common.Settings.Country US
+expect CountryChanged | Code='US'
+send Common.WifiSettings.OutdoorSetting 1
+expect OutdoorSettingsChanged | Outdoor=1
+expect Skyctrl.DeviceState.ConnexionChanged | Status=NOTCONNECTED
+expect Skyctrl.DeviceState.ConnexionChanged | Status=CONNECTED

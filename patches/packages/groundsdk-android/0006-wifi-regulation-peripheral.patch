@@ -1,0 +1,319 @@
+From: disco-flying-wing-fpv
+Subject: [PATCH] WifiRegulation peripheral: the Disco's Wi-Fi country and outdoor setting
+
+The Disco sets its Wi-Fi channels and transmit power limits from its
+country (Broadcom regulatory domain) and outdoor flag. Its flight program
+handles Common.Settings.Country/AutoCountry and
+Common.WifiSettings.OutdoorSetting, not the wifi feature that
+WifiAccessPoint uses. Add WifiRegulation (country, automatic, outdoor),
+its core, and the Disco's controller (published for the Disco only).
+---
+diff --git a/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/devicecontroller/BebopFamilyDroneController.java b/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/devicecontroller/BebopFamilyDroneController.java
+--- a/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/devicecontroller/BebopFamilyDroneController.java
++++ b/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/devicecontroller/BebopFamilyDroneController.java
+@@ -59,6 +59,7 @@
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.DiscoFlightTuning;
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.DiscoPitot;
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.DiscoRcReceiver;
++import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.DiscoWifiRegulation;
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.camera.BebopAntiFlicker;
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.camera.BebopCameraController;
+ import com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop.flightdata.BebopFlightDataDownloader;
+@@ -134,6 +135,7 @@
+                 new AnafiMagnetometer(this),
+                 new DiscoPitot(this),
+                 new DiscoRcReceiver(this), // Disco FPV
++                new DiscoWifiRegulation(this), // Disco FPV
+                 new DiscoFlightTuning(this),
+                 new AnafiSystemInfo(this),
+                 new AnafiBeeper(this),
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/device/peripheral/WifiRegulation.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/device/peripheral/WifiRegulation.java
+new file mode 100644
+--- /dev/null
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/device/peripheral/WifiRegulation.java
+@@ -0,0 +1,71 @@
++/*
++ * Disco FPV: the Wi-Fi regulation of a Bebop family drone (Disco).
++ */
++
++package com.parrot.drone.groundsdk.device.peripheral;
++
++import androidx.annotation.NonNull;
++
++/**
++ * The Wi-Fi country and environment of a Bebop family drone (the Disco).
++ * They set which channels the drone may use and its transmit power limits:
++ * the drone applies the regulatory domain of the country (and its outdoor
++ * rules when outdoor). The Disco handles {@code Common.Settings.Country},
++ * {@code Common.Settings.AutoCountry} and {@code Common.WifiSettings.OutdoorSetting},
++ * not the {@code wifi} feature used by {@link WifiAccessPoint}. Changing them
++ * restarts the drone's Wi-Fi.
++ * <p>
++ * This peripheral can be obtained from a {@code Drone} using:
++ * <pre>{@code drone.getPeripheral(WifiRegulation.class)}</pre>
++ */
++public interface WifiRegulation extends Peripheral {
++
++    /**
++     * Gets the country in use.
++     *
++     * @return ISO 3166-1 alpha-2 code, empty when unknown
++     */
++    @NonNull
++    String getCountry();
++
++    /**
++     * Tells whether the drone picks the country by itself.
++     *
++     * @return {@code true} when automatic
++     */
++    boolean isAutomatic();
++
++    /**
++     * Tells whether the outdoor rules apply.
++     *
++     * @return {@code true} when outdoor
++     */
++    boolean isOutdoor();
++
++    /**
++     * Sets a country, and stops the automatic choice.
++     *
++     * @param code ISO 3166-1 alpha-2 code (two letters)
++     *
++     * @return {@code true} if the command was sent
++     */
++    boolean setCountry(@NonNull String code);
++
++    /**
++     * Lets the drone pick the country by itself, or keeps the current one.
++     *
++     * @param automatic {@code true} for automatic
++     *
++     * @return {@code true} if the command was sent
++     */
++    boolean setAutomatic(boolean automatic);
++
++    /**
++     * Applies the outdoor or indoor rules.
++     *
++     * @param outdoor {@code true} for outdoor
++     *
++     * @return {@code true} if the command was sent
++     */
++    boolean setOutdoor(boolean outdoor);
++}
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/device/peripheral/WifiRegulationCore.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/device/peripheral/WifiRegulationCore.java
+new file mode 100644
+--- /dev/null
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/device/peripheral/WifiRegulationCore.java
+@@ -0,0 +1,110 @@
++/*
++ * Disco FPV: core class for the WifiRegulation peripheral.
++ */
++
++package com.parrot.drone.groundsdk.internal.device.peripheral;
++
++import androidx.annotation.NonNull;
++
++import com.parrot.drone.groundsdk.device.peripheral.Peripheral;
++import com.parrot.drone.groundsdk.device.peripheral.WifiRegulation;
++import com.parrot.drone.groundsdk.internal.component.ComponentDescriptor;
++import com.parrot.drone.groundsdk.internal.component.ComponentStore;
++import com.parrot.drone.groundsdk.internal.component.SingletonComponentCore;
++
++import java.util.Locale;
++
++/** Core class for the WifiRegulation peripheral. */
++public class WifiRegulationCore extends SingletonComponentCore implements WifiRegulation {
++
++    /** Description of WifiRegulation. */
++    private static final ComponentDescriptor<Peripheral, WifiRegulation> DESC =
++            ComponentDescriptor.of(WifiRegulation.class);
++
++    /** Engine-specific backend. */
++    public interface Backend {
++
++        boolean setCountry(@NonNull String code);
++
++        boolean setAutomatic(boolean automatic);
++
++        boolean setOutdoor(boolean outdoor);
++    }
++
++    @NonNull
++    private final Backend mBackend;
++
++    @NonNull
++    private String mCountry = "";
++
++    private boolean mAutomatic;
++
++    private boolean mOutdoor;
++
++    public WifiRegulationCore(@NonNull ComponentStore<Peripheral> peripheralStore, @NonNull Backend backend) {
++        super(DESC, peripheralStore);
++        mBackend = backend;
++    }
++
++    @NonNull
++    @Override
++    public String getCountry() {
++        return mCountry;
++    }
++
++    @Override
++    public boolean isAutomatic() {
++        return mAutomatic;
++    }
++
++    @Override
++    public boolean isOutdoor() {
++        return mOutdoor;
++    }
++
++    @Override
++    public boolean setCountry(@NonNull String code) {
++        String c = code.trim().toUpperCase(Locale.ROOT);
++        if (!c.matches("[A-Z]{2}")) {
++            return false;
++        }
++        return mBackend.setCountry(c);
++    }
++
++    @Override
++    public boolean setAutomatic(boolean automatic) {
++        return mBackend.setAutomatic(automatic);
++    }
++
++    @Override
++    public boolean setOutdoor(boolean outdoor) {
++        return mBackend.setOutdoor(outdoor);
++    }
++
++    @NonNull
++    public WifiRegulationCore updateCountry(@NonNull String code) {
++        if (!mCountry.equals(code)) {
++            mCountry = code;
++            mChanged = true;
++        }
++        return this;
++    }
++
++    @NonNull
++    public WifiRegulationCore updateAutomatic(boolean automatic) {
++        if (mAutomatic != automatic) {
++            mAutomatic = automatic;
++            mChanged = true;
++        }
++        return this;
++    }
++
++    @NonNull
++    public WifiRegulationCore updateOutdoor(boolean outdoor) {
++        if (mOutdoor != outdoor) {
++            mOutdoor = outdoor;
++            mChanged = true;
++        }
++        return this;
++    }
++}
+diff --git a/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/peripheral/bebop/DiscoWifiRegulation.java b/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/peripheral/bebop/DiscoWifiRegulation.java
+new file mode 100644
+--- /dev/null
++++ b/arsdkengine/src/main/java/com/parrot/drone/groundsdk/arsdkengine/peripheral/bebop/DiscoWifiRegulation.java
+@@ -0,0 +1,94 @@
++/*
++ * Disco FPV: the Disco's Wi-Fi country and outdoor setting as the
++ * WifiRegulation peripheral.
++ */
++
++package com.parrot.drone.groundsdk.arsdkengine.peripheral.bebop;
++
++import androidx.annotation.NonNull;
++
++import com.parrot.drone.groundsdk.arsdkengine.devicecontroller.DroneController;
++import com.parrot.drone.groundsdk.arsdkengine.peripheral.DronePeripheralController;
++import com.parrot.drone.groundsdk.device.Drone;
++import com.parrot.drone.groundsdk.internal.device.peripheral.WifiRegulationCore;
++import com.parrot.drone.sdkcore.arsdk.ArsdkFeatureCommon;
++import com.parrot.drone.sdkcore.arsdk.command.ArsdkCommand;
++
++/**
++ * WifiRegulation peripheral controller for the Disco: {@code Common.Settings.Country},
++ * {@code AutoCountry} and {@code Common.WifiSettings.OutdoorSetting}, which the Disco's
++ * flight program handles (firmware 1.7.1).
++ */
++public final class DiscoWifiRegulation extends DronePeripheralController {
++
++    @NonNull
++    private final WifiRegulationCore mRegulation;
++
++    public DiscoWifiRegulation(@NonNull DroneController droneController) {
++        super(droneController);
++        mRegulation = new WifiRegulationCore(mComponentStore, new WifiRegulationCore.Backend() {
++
++            @Override
++            public boolean setCountry(@NonNull String code) {
++                // a chosen country only holds with the automatic choice off
++                return sendCommand(ArsdkFeatureCommon.Settings.encodeAutoCountry(0))
++                       && sendCommand(ArsdkFeatureCommon.Settings.encodeCountry(code));
++            }
++
++            @Override
++            public boolean setAutomatic(boolean automatic) {
++                return sendCommand(ArsdkFeatureCommon.Settings.encodeAutoCountry(automatic ? 1 : 0));
++            }
++
++            @Override
++            public boolean setOutdoor(boolean outdoor) {
++                return sendCommand(ArsdkFeatureCommon.WifiSettings.encodeOutdoorSetting(outdoor ? 1 : 0));
++            }
++        });
++    }
++
++    @Override
++    public void onConnected() {
++        if (mDeviceController.getDevice().getModel() == Drone.Model.DISCO) {
++            mRegulation.publish();
++        }
++    }
++
++    @Override
++    public void onDisconnected() {
++        mRegulation.unpublish();
++    }
++
++    @Override
++    public void onCommandReceived(@NonNull ArsdkCommand command) {
++        int feature = command.getFeatureId();
++        if (feature == ArsdkFeatureCommon.SettingsState.UID) {
++            ArsdkFeatureCommon.SettingsState.decode(command, mSettingsCallback);
++        } else if (feature == ArsdkFeatureCommon.WifiSettingsState.UID) {
++            ArsdkFeatureCommon.WifiSettingsState.decode(command, mWifiCallback);
++        }
++    }
++
++    private final ArsdkFeatureCommon.SettingsState.Callback mSettingsCallback =
++            new ArsdkFeatureCommon.SettingsState.Callback() {
++
++                @Override
++                public void onCountryChanged(String code) {
++                    mRegulation.updateCountry(code == null ? "" : code).notifyUpdated();
++                }
++
++                @Override
++                public void onAutoCountryChanged(int automatic) {
++                    mRegulation.updateAutomatic(automatic != 0).notifyUpdated();
++                }
++            };
++
++    private final ArsdkFeatureCommon.WifiSettingsState.Callback mWifiCallback =
++            new ArsdkFeatureCommon.WifiSettingsState.Callback() {
++
++                @Override
++                public void onOutdoorSettingsChanged(int outdoor) {
++                    mRegulation.updateOutdoor(outdoor != 0).notifyUpdated();
++                }
++            };
++}

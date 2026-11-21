@@ -45,6 +45,9 @@
         <activity
             android:name=".RcActivity"
             android:exported="false" />
+        <activity
+            android:name=".DiscoSettingsActivity"
+            android:exported="false" />
 
         <activity
             android:name=".MapActivity"

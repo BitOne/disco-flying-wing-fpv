@@ -650,6 +650,14 @@ static void wifi_select(struct disco *d, int32_t type, int32_t band, uint8_t cha
 /* Commands                                                            */
 /* ------------------------------------------------------------------ */
 
+/** A Disco from the US, Canada or Israel keeps the automatic country. */
+static int country_locked(const struct disco *d)
+{
+	return strcmp(d->factory_country, "US") == 0
+		|| strcmp(d->factory_country, "CA") == 0
+		|| strcmp(d->factory_country, "IL") == 0;
+}
+
 int disco_recv_cmd(struct disco *d, const struct arsdk_cmd *cmd)
 {
 	struct disco_settings *s = &d->s;
@@ -677,13 +685,21 @@ int disco_recv_cmd(struct disco *d, const struct arsdk_cmd *cmd)
 		return 1;
 	case ARSDK_ID_COMMON_SETTINGS_COUNTRY:
 		if (arsdk_cmd_dec_Common_Settings_Country(cmd, &str) >= 0) {
-			snprintf(s->country, sizeof(s->country), "%s", str);
+			/* country_regul.yaml autolock: no manual country */
+			if (!country_locked(d) && strlen(str) == 2
+					&& strcmp(str, s->country) != 0) {
+				snprintf(s->country, sizeof(s->country), "%s", str);
+				d->wifi_restart = 1;
+			}
 			SEND(arsdk_cmd_send_Common_SettingsState_CountryChanged(ITF, s->country));
 		}
 		return 1;
 	case ARSDK_ID_COMMON_SETTINGS_AUTOCOUNTRY:
 		if (arsdk_cmd_dec_Common_Settings_AutoCountry(cmd, &u8) >= 0) {
-			s->auto_country = u8 != 0;
+			if (!country_locked(d) && s->auto_country != (u8 != 0)) {
+				s->auto_country = u8 != 0;
+				d->wifi_restart = 1;
+			}
 			SEND(arsdk_cmd_send_Common_SettingsState_AutoCountryChanged(ITF,
 					s->auto_country));
 		}
@@ -699,6 +715,8 @@ int disco_recv_cmd(struct disco *d, const struct arsdk_cmd *cmd)
 	}
 	case ARSDK_ID_COMMON_WIFISETTINGS_OUTDOORSETTING:
 		if (arsdk_cmd_dec_Common_WifiSettings_OutdoorSetting(cmd, &u8) >= 0) {
+			if (s->outdoor != (u8 != 0))
+				d->wifi_restart = 1;
 			s->outdoor = u8 != 0;
 			SEND(arsdk_cmd_send_Common_WifiSettingsState_OutdoorSettingsChanged(ITF,
 					s->outdoor));
@@ -1240,7 +1258,8 @@ int disco_status(const struct disco *d, char *buf, size_t len)
 			"name=%s max_alt=%.0f min_alt=%.0f max_dist=%.0f no_fly_over=%u "
 			"circling=%s,%u pitch_mode=%s home_type=%s rth_delay=%u "
 			"recording=%d photos=%u videos=%u flights=%u alert=%s "
-			"magneto=%d pitot=%d tilt=%.0f pan=%.0f wifi=%d,%u fp=%s failures=0x%x",
+			"magneto=%d pitot=%d tilt=%.0f pan=%.0f wifi=%d,%u fp=%s failures=0x%x "
+			"country=%s,%s,%s factory=%s",
 			s->name, s->max_altitude, s->min_altitude, s->max_distance,
 			s->no_fly_over_max_distance,
 			s->circling_direction ? "ccw" : "cw", s->circling_altitude,
@@ -1252,7 +1271,10 @@ int disco_status(const struct disco *d, char *buf, size_t len)
 			d->mavlink_state == ARSDK_COMMON_MAVLINKSTATE_MAVLINKFILEPLAYINGSTATECHANGED_STATE_PLAYING ?
 			"playing" : d->mavlink_state ==
 			ARSDK_COMMON_MAVLINKSTATE_MAVLINKFILEPLAYINGSTATECHANGED_STATE_PAUSED ?
-			"paused" : "stopped", d->failures);
+			"paused" : "stopped", d->failures,
+			s->country, s->auto_country ? "auto" : "manual",
+			s->outdoor ? "outdoor" : "indoor",
+			d->factory_country[0] ? d->factory_country : "none");
 	if (n >= 0 && (size_t)n + 1 < len) {
 		buf[n++] = ' ';
 		n += rc_status(&d->rc, buf + n, len - (size_t)n);

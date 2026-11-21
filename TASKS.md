@@ -660,6 +660,38 @@ From `NOTES.md` section 29 (ranked risks) and section 28 (measurements).
      Crossfire with S.BUS output, or the Disco on 5 GHz), range test,
      then a flight with the SkyController in hand as a fallback.
 
+## M9. What FreeFlight lacks (user request, 2026-11-21)
+
+From `NOTES.md` section 40 (web research) and the user's go-ahead.
+
+- [ ] **T9.1 Disco settings screen**: geofence (on/off, max altitude, max
+  distance), return home (delay after link loss, home type), circling
+  (direction, altitude), editable only where the Disco allows it.
+- [ ] **T9.2 Wi-Fi region and transmit power**: the Disco's transmit
+  power follows its Wi-Fi country (Broadcom regulatory domain) and the
+  outdoor flag (firmware 1.7.1, `NOTES.md` section 41). Settings: automatic
+  or a chosen country, outdoor on/off, landed only (the Wi-Fi restarts);
+  the pilot picks what their regulation allows. SDK patch 0006 (the
+  Disco's `Common.Settings.Country/AutoCountry` and
+  `Common.WifiSettings.OutdoorSetting`, which GroundSdk's
+  WifiAccessPoint does not use).
+- [ ] **T9.3 Small fixes**: the "Ready" hint without a SkyController;
+  Wi-Fi link quality on the HUD.
+- [ ] **T9.4 Flight log on the phone**: telemetry recorded per flight,
+  flight list and total time, GPX/KML/CSV export (share sheet).
+- [ ] **T9.5 The fake Disco's FTP**: the "drone" mux host, an FTP server
+  (TypeScript) on a shared directory, the privileged ports mapped; then
+  media, PUD flight data, flight plan upload and firmware upload can be
+  tested.
+- [ ] **T9.6 Recording and media**: recording state and SD space on the
+  HUD; browse, download (progress, cancel), delete; free space checked.
+- [ ] **T9.7 Wind estimate and battery to get home** on the HUD.
+- [ ] **T9.8 Flight plan editor** (free): waypoints on the offline map,
+  MAVLink file upload, start/pause/stop; fake and SITL scenarios.
+- [ ] **T9.9 Firmware update from a local file**, checksum checked.
+- [ ] **T9.10 F-Droid** metadata and submission (user approval for any
+  external submission).
+
 ## M6 and later
 
 See `PLAN.md` section 4.

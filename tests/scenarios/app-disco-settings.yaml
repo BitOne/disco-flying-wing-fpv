@@ -1,0 +1,106 @@
+name: Disco FPV changes the Disco's own settings
+description: >
+  Needs `make fake`, `make video` and `make emu`. From the main screen,
+  Disco settings: the geofence (distance limit, maximum altitude and
+  distance), the return home (delay after a link loss, where to), the
+  circling (altitude, direction), each read from and written to the fake
+  Disco; then the Wi-Fi country and outdoor rules, which set its radio's
+  power limits (T9.2, SDK patch 0006): a chosen country, the link
+  dropping while the Disco restarts its Wi-Fi, and both locked while it
+  flies. Everything is put back at the end (the fake keeps its settings).
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - send: [drone_link ok, flying_state landed, factory_country none, settings_reset]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Disco settings
+  - expect_texts: ["Distance limit: on", "Maximum altitude: 150 m", "Maximum distance: 2000 m",
+      "After a link loss, return home after: 10 s", "Return to: take-off point",
+      "Circling and return altitude: 50 m", "Circling direction: clockwise"]
+  - expect_texts: ["Wi-Fi country: automatic (US)", "Outdoor rules: on"]
+    scroll: true
+  - screenshot: disco-settings
+  # a number, typed in a dialog
+  - tap_text: "Maximum altitude: 150 m"
+  - expect_texts: ["Between 25 and 150"]
+  - tap_text: "150"
+  - shell: input keyevent KEYCODE_MOVE_END 67 67 67
+  - shell: input text 120
+  - tap_text: OK
+  - expect_texts: ["Maximum altitude: 120 m"]
+  - expect_fake: max_alt=120
+    query: disco
+  - tap_text: "Distance limit: on"
+  - expect_texts: ["Distance limit: off"]
+  - expect_fake: no_fly_over=0
+    query: disco
+  - tap_text: "After a link loss, return home after: 10 s"
+  - tap_text: "10"
+  - shell: input keyevent KEYCODE_MOVE_END 67 67
+  - shell: input text 30
+  - tap_text: OK
+  - expect_fake: rth_delay=30
+    query: disco
+  - tap_text: "Return to: take-off point"
+  - expect_texts: ["Return to: pilot's position"]
+  - expect_fake: home_type=pilot
+    query: disco
+  - tap_text: "Circling direction: clockwise"
+  - expect_texts: ["Circling direction: counter-clockwise"]
+  - expect_fake: circling=ccw,50
+    query: disco
+  # the Wi-Fi country: the pilot's choice, then the radio restarts
+  - tap_text: "Wi-Fi country: automatic (US)"
+  - expect_texts: ["Automatic: the Disco detects the country"]
+  - tap_text: "Australia (AU): 5 GHz outdoor 149-161"
+  - expect_fake: country=AU,manual,outdoor
+    query: disco
+  - expect_texts: ["The Disco is not connected (its Wi-Fi may be restarting)"]
+  - screenshot: disco-wifi-restarting
+  - expect_gone: ["The Disco is not connected"]
+    timeout: 15000
+  - back
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Disco settings
+  - expect_texts: ["Wi-Fi country: Australia (AU): 5 GHz outdoor 149-161"]
+    scroll: true
+    timeout: 10000
+  - tap_text: "Outdoor rules: on"
+  - expect_fake: country=AU,manual,indoor
+    query: disco
+  - expect_gone: ["The Disco is not connected"]
+    timeout: 15000
+  - screenshot: disco-wifi-country
+  # in flight: the Wi-Fi rows are locked
+  - back
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - send: [flying_state flying]
+  - tap_text: Disco settings
+  - expect_texts: ["Land the Disco to change its Wi-Fi"]
+    scroll: true
+  - send: [flying_state landed]
+  - expect_texts: ["The Disco restarts its Wi-Fi to apply a change"]
+    scroll: true
+  # back to the defaults
+  - tap_text: "Wi-Fi country: Australia (AU)"
+  - tap_text: "Automatic: the Disco detects the country"
+  - expect_fake: country=AU,auto,indoor
+    query: disco
+  - back
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Disco settings
+  - tap_text: "Outdoor rules: off"
+  - expect_fake: country=AU,auto,outdoor
+    query: disco
+  - back
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - send: [settings_reset]
+  - expect_fake: country=US,auto,outdoor
+    query: disco

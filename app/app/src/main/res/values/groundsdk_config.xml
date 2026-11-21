@@ -12,4 +12,9 @@
         <item>SKY_CONTROLLER_2</item>
         <item>SKY_CONTROLLER_2P</item>
     </string-array>
+    <!-- The Disco keeps its settings: nothing stored on the phone and pushed
+         back at each connection (GroundSdk's default, MODEL, would undo
+         changes made with another app, and give another Disco this one's
+         limits). -->
+    <string name="gsdk_offline_settings_mode">OFF</string>
 </resources>

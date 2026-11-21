@@ -53,6 +53,11 @@ struct disco {
 	struct arsdk_cmd_itf  *itf;     /* NULL when no app is connected */
 	struct disco_settings s;
 
+	/* Wi-Fi: the factory country (the firmware's /factory/country_setting.txt;
+	 * CA, IL, US lock the automatic choice), and a restart to apply a change */
+	char       factory_country[3];
+	int        wifi_restart;        /* set when a change needs the Wi-Fi restarted */
+
 	/* media */
 	int        recording;           /* video recording in progress */
 	uint64_t   recording_start_ms;

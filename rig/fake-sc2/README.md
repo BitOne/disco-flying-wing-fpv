@@ -46,7 +46,10 @@ counters, magnetometer and pitot calibrations, Wi-Fi settings, scan and
 authorised channels, battery alerts, sensors, flight meter, run id, flight
 plan states. Commands the real flight program ignores get no answer.
 `disco` on the control socket prints them; `alert <name|auto>` forces an
-alert.
+alert. A Wi-Fi country or outdoor change drops the Disco's link for 4 s
+(the firmware restarts its radio to apply it); `factory_country <CC>`
+sets the factory country (CA, IL and US keep the automatic country, as
+the firmware's `country_regul.yaml` autolock).
 
 The controller's own model lives in `src/sc2.c`: its input mapper (the
 mappings FreeFlight's control mapping screen shows and changes, grabbed

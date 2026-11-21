@@ -29,6 +29,7 @@ class MainActivity : Activity() {
     private lateinit var flightButton: Button
     private lateinit var headsetButton: Button
     private lateinit var rcButton: Button
+    private lateinit var discoSettingsButton: Button
     private var connectedDroneUid: String? = null
     private lateinit var guard: ConnectionGuard
     private lateinit var wifiButton: Button
@@ -56,6 +57,14 @@ class MainActivity : Activity() {
         rcButton.setOnClickListener {
             connectedDroneUid?.let {
                 startActivity(android.content.Intent(this, RcActivity::class.java)
+                    .putExtra(DroneScreenActivity.EXTRA_DRONE_UID, it))
+            }
+        }
+
+        discoSettingsButton = findViewById(R.id.disco_settings_button)
+        discoSettingsButton.setOnClickListener {
+            connectedDroneUid?.let {
+                startActivity(android.content.Intent(this, DiscoSettingsActivity::class.java)
                     .putExtra(DroneScreenActivity.EXTRA_DRONE_UID, it))
             }
         }
@@ -92,6 +101,7 @@ class MainActivity : Activity() {
             flightButton.isEnabled = connectedDroneUid != null
             headsetButton.isEnabled = connectedDroneUid != null
             rcButton.isEnabled = connectedDroneUid != null
+            discoSettingsButton.isEnabled = connectedDroneUid != null
             updateHint()
         }
     }
@@ -105,7 +115,8 @@ class MainActivity : Activity() {
     private fun updateHint() {
         val waiting = wifiDrone
         hint.text = when {
-            connectedDroneUid != null -> getString(R.string.main_hint_ready)
+            connectedDroneUid != null && rcConnected -> getString(R.string.main_hint_ready)
+            connectedDroneUid != null -> getString(R.string.main_hint_ready_wifi)
             rcConnected -> getString(R.string.main_hint_drone)
             waiting != null -> getString(R.string.main_hint_wifi, waiting.name)
             else -> getString(R.string.main_hint)

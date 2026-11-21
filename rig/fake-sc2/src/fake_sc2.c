@@ -184,6 +184,9 @@ struct app {
 		int               low_battery_home; /* done for this flight */
 		double            battery_used; /* percent, fraction not sent yet */
 		struct pomp_timer *reboot_timer;
+		/* the Disco's Wi-Fi restarting for a country or outdoor change */
+		struct pomp_timer *wifi_timer;
+		int               wifi_down;
 	} flight;
 
 	/* fake-sc2: the Disco's settings and other states (disco.c) */
@@ -298,6 +301,10 @@ static void link_quality(struct arsdk_cmd_itf *itf,
 #define FAKE_DRONE_SOFTWARE "1.7.1"
 #define FAKE_DRONE_HARDWARE "1.0"
 #define REBOOT_MS           15000
+/* a Wi-Fi country or outdoor change: the firmware takes the radio down and
+ * up again (bcm_sel_country); the answers go out first */
+#define WIFI_RESTART_DELAY_MS 500
+#define WIFI_RESTART_MS       4000
 
 #define SEND(_res, _call) do { \
 		(_res) = (_call); \
@@ -1264,6 +1271,15 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 	if (disco_recv_cmd(&app->disco, cmd)) {
 		if (app->disco.fp_request != DISCO_FP_NONE && !app->sim_external)
 			flight_plan(app);
+		if (app->disco.wifi_restart) {
+			app->disco.wifi_restart = 0;
+			LOGI("wifi restart");
+			if (app->backend_type == ARSDK_BACKEND_TYPE_MUX
+					&& app->flight.wifi_timer != NULL
+					&& !app->flight.wifi_down)
+				pomp_timer_set(app->flight.wifi_timer,
+						WIFI_RESTART_DELAY_MS);
+		}
 		return;
 	}
 
@@ -1345,6 +1361,24 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 	default:
 		note_unhandled(app, cmd);
 		break;
+	}
+}
+
+/** The Disco's Wi-Fi restarting: down, then back after WIFI_RESTART_MS. */
+static void wifi_restart_cb(struct pomp_timer *timer, void *userdata)
+{
+	struct app *app = userdata;
+	if (!app->flight.wifi_down) {
+		LOGI("wifi down");
+		app->flight.wifi_down = 1;
+		app->drone_link_lost = 1;
+		send_drone_link(app);
+		pomp_timer_set(timer, WIFI_RESTART_MS);
+	} else {
+		LOGI("wifi up");
+		app->flight.wifi_down = 0;
+		app->drone_link_lost = 0;
+		send_drone_link(app);
 	}
 }
 
@@ -2145,6 +2179,10 @@ static int fail(struct app *app, const char *name, int on)
  *                                almost_empty_battery too_much_angle; auto =
  *                                from the battery level
  *   disco                        "ok <settings and states>" (disco.c)
+ *   settings_reset               the Disco's settings back to their
+ *                                defaults (name kept)
+ *   factory_country <CC|none>    the Disco's factory country: CA, IL and
+ *                                US refuse a manual Wi-Fi country
  *   button <name>                press and release a controller button:
  *                                to the app if grabbed, else its mapped
  *                                action (sc2.c: rth, takeoff, record,
@@ -2223,6 +2261,20 @@ static int ctrl_handle_line(struct app *app, char *line,
 		char buf[512];
 		disco_status(&app->disco, buf, sizeof(buf));
 		return snprintf(reply, reply_size, "ok %s\n", buf);
+	} else if (strcmp(word, "settings_reset") == 0 && n == 1) {
+		/* back to default-dragon.conf, name kept (tests) */
+		char name[sizeof(app->disco.s.name)];
+		snprintf(name, sizeof(name), "%s", app->disco.s.name);
+		disco_reset_settings(&app->disco.s, name);
+		if (app->disco.itf != NULL)
+			disco_send_settings(&app->disco);
+	} else if (strcmp(word, "factory_country") == 0) {
+		char cc[8] = "";
+		if (sscanf(line, "%*s %7s", cc) != 1
+				|| (strlen(cc) != 2 && strcmp(cc, "none") != 0))
+			return snprintf(reply, reply_size, "error factory_country <CC|none>\n");
+		snprintf(app->disco.factory_country, sizeof(app->disco.factory_country),
+				"%s", strcmp(cc, "none") == 0 ? "" : cc);
 	} else if (strcmp(word, "alert") == 0) {
 		char name[32] = "";
 		if (sscanf(line, "%*s %31s", name) != 1
@@ -2709,6 +2761,7 @@ int main(int argc, char *argv[])
 		sc2_init(&s_app.sc2, FAKE_DRONE_PRODUCT, "SkyController_fake", &ops);
 	}
 	s_app.flight.reboot_timer = pomp_timer_new(s_app.loop, &reboot_done_cb, &s_app);
+	s_app.flight.wifi_timer = pomp_timer_new(s_app.loop, &wifi_restart_cb, &s_app);
 	s_app.flight.timer = pomp_timer_new(s_app.loop, &flight_tick, &s_app);
 	if (s_app.flight.timer != NULL)
 		pomp_timer_set_periodic(s_app.flight.timer,
@@ -2744,6 +2797,11 @@ out:
 		pomp_timer_clear(s_app.flight.timer);
 		pomp_timer_destroy(s_app.flight.timer);
 		s_app.flight.timer = NULL;
+	}
+	if (s_app.flight.wifi_timer != NULL) {
+		pomp_timer_clear(s_app.flight.wifi_timer);
+		pomp_timer_destroy(s_app.flight.wifi_timer);
+		s_app.flight.wifi_timer = NULL;
 	}
 	if (s_app.flight.reboot_timer != NULL) {
 		pomp_timer_clear(s_app.flight.reboot_timer);
