@@ -2290,6 +2290,48 @@ Measured with every core busy (one shell loop per core): the old script
 failed 1 of 20 runs (at the gaz step, the same race), the fixed one passed
 70 of 70.
 
+## 40. What pilots say FreeFlight lacks, and the next tasks (2026-11-21)
+
+Web search (reviews, parrotpilots, ArduPilot forum). Little is written
+about the Disco's app itself; most posts are 2016 to 2019, plus a 2023 to
+2024 parrotpilots thread. What comes up:
+
+- Availability: the Play Store calls FreeFlight Pro "not compatible" on
+  recent phones (sideload 5.2.7 or copy it from an old phone); a
+  pre-owned Disco "won't set up"; Parrot stopped the account servers, so
+  flight history and flight counts are gone (workarounds: email the
+  flight JSON, ask parrot.com for the data, Airdata).
+- Paid features: Flight Plan was a 20 dollar purchase tied to the Parrot
+  account; vouchers from the Adventure pack could not be redeemed.
+- Logs: pilots want the log files (telemetry overlays on videos); the app
+  display and the log disagreed on altitude (150 m shown, 160 m logged).
+- Limits: the 150 m altitude cap is in the firmware, not the app (cannot
+  be lifted from an app); wish for a user set return-home altitude.
+- Controller: the SkyController sometimes needs an app restart to connect
+  (Digital Trends).
+- Media: file transfer to the phone refused for "not enough storage"
+  despite free space.
+- Range and link: short range is the main complaint of those who moved to
+  ArduPilot; one wants more radio power (set by the country, which we
+  will not override).
+- Modes: no autonomous camera modes; with a third party RC, no loiter.
+- Reviews: landing needs a big area; the reviewer lost sight at 450 m and
+  used Return Home.
+
+What the SDK offers the Disco (BebopFamilyDroneController): Geofence,
+ReturnHome, BebopFlightPlanPilotingItf, BebopMediaStore,
+RemovableUserStorage, FlightMeter, WifiAccessPoint, DiscoFlightTuning
+(circling direction and altitude), Beeper. No FlightDataDownloader or
+FlightLogDownloader for the Disco in this fork: logs need our own
+telemetry recording on the phone, or a look at what the Disco stores on
+FTP.
+
+Plan proposed to the user (see the reply of 2026-11-21): settings for the
+Disco (geofence, return home, circling), a flight log recorded on the
+phone with GPX/KML/CSV export, recording and SD card media, link quality
+and wind estimate on the HUD, a free flight plan editor, then firmware
+updates from a local file and F-Droid.
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
@@ -2334,3 +2376,10 @@ failed 1 of 20 runs (at the gaz step, the same race), the fixed one passed
 - ArduPilot SITL: https://ardupilot.org/dev/docs/sitl-simulator-software-in-the-loop.html
 - ardupilot_gazebo: https://github.com/ArduPilot/ardupilot_gazebo
 - Parrot developer forum, "Skycontroller 2 - Wifi and HDMI out" (2016-2017), archived PDF: http://parrot.disco.free.fr/wp-content/uploads/2021/06/Skycontroller-2-Wifi-and-HDMI-out-ARSDK3-_-Sky-Controller-Parrot-Developers-Forum.pdf
+- parrotpilots, Parrot Disco and FreeFlight Pro (2023-2024): https://parrotpilots.com/threads/parrot-disco-and-freeflight-pro.5397/
+- parrotpilots, altitude limitation: https://parrotpilots.com/threads/altitude-limitation.12/
+- parrotpilots, Galaxy Z Fold5, Android 13 and FreeFlight Pro: https://parrotpilots.com/threads/galaxy-zfold5-and-android-13-and-free-flight-pro.5486/
+- Digital Trends, Parrot Disco review: https://www.digitaltrends.com/cool-tech/parrot-disco-review/
+- FreeFlight Pro on the App Store (reviews): https://apps.apple.com/us/app/freeflight-pro/id889985763
+- ArduPilot forum, Pushing a Parrot Disco to the limit: https://discuss.ardupilot.org/t/pushing-a-parrot-disco-to-the-limit/12171
+- parrotpilots, FreeFlight Pro Android issue: https://parrotpilots.com/threads/freeflight-pro-android-issue.1192/
