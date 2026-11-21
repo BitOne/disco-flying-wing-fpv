@@ -2177,6 +2177,59 @@ folders (`sdk/out/olympe-linux/build/{fake-sc2,disco-probe}`,
 `sdk/out/groundsdk-android/x86_64/build/fake-sc2`) had to be deleted once.
 The Gazebo image rebuilt (comments changed in files it copies).
 
+## 38. Security audit of the whole repository (2026-11-21)
+
+Three read-only reviews (the app; the rig's C code; build, Docker, scripts
+and TypeScript), the main claims checked against the code. Nothing high.
+No secrets in the tree or the history; the release build has no debug
+bridge, cleartext is refused (HTTPS only), backups are off, only the
+launcher and the SDK's USB accessory activity are exported, tile cache
+paths are integers under the app's private files, preferences are
+private, location is never logged.
+
+The app (what pilots run):
+- Medium: GroundSdk's Wi-Fi backend is on (SDK default `gsdk_wifi_enabled`
+  true, not overridden in `groundsdk_config.xml`) and auto-connection is
+  on with every model supported: before the SkyController is plugged in,
+  the app connects to any ARSDK drone announced on the phone's Wi-Fi (a
+  hotspot, a rogue access point), showing its video and telemetry and
+  feeding its data to the SDK's native parsers. Once the controller is on
+  USB, drones not behind it are dropped. Fix: Wi-Fi off, supported devices
+  limited to the Disco and the SkyController 2 (the app only uses USB).
+- Low: a hostile or broken tile server can crash the app, the moving map
+  included, in flight: no size cap on downloads (`TileLayer` readBytes),
+  no size check on decoding, `createBitmap` assumes 256 px tiles, Imagery's
+  `getPixel(... + 1)` fails on tiny images; OutOfMemoryError and
+  IllegalArgumentException escape `catch (Exception)` on pool threads,
+  which kills the process. The sticks still fly the Disco. Fix: cap the
+  body, check bounds before decoding, catch Throwable in the workers.
+- Low: a custom tile URL's key shows in logcat and on the map screen.
+- Info: tile requests tell the tile servers where the pilot is (as any
+  online map); the User-Agent carries no device id.
+
+The rig's C code: no memory-safety bug reachable from the network.
+- Medium: the fake's mux port 4321 listens on all interfaces
+  (`fake_sc2.c` INADDR_ANY), and a new connection replaces the session:
+  anyone on the LAN can take over or keep breaking a test session, and
+  reaches Parrot's mux/ARSDK parsers in a container that mounts the
+  repository read-write. Only the Wi-Fi debug bridge needs the LAN. Fix:
+  127.0.0.1 by default, an option for the Wi-Fi case.
+- Low: `aoa-host-linux` is run with sudo (QUICKSTART) where a udev rule
+  would do; it accepts any device in accessory mode, not only `--phone`;
+  a 1 to 2 byte read past its descriptor buffer (`i + 2 <= n` then
+  `buf[i + 3]`).
+
+Build and tooling:
+- Medium (not tested live): FlightGear's property server (`--telnet`,
+  5401) and SITL's MAVLink TCP ports run with host networking, likely on
+  all interfaces while `make sim` runs; FlightGear's can run Nasal.
+- Low: the e2e tile server listens on 0.0.0.0 (127.0.0.1 is enough);
+  `release-key.sh` puts the keystore password on keytool's command line
+  (visible in `ps` while it runs); the `repo` launcher, Gradle, Android
+  command line tools, VirtualGL and textures are downloaded without a
+  checksum, base images pinned by tag not digest; passwordless sudo in the
+  SDK build image; the sim bridge uses `npm install`, not `npm ci`.
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
