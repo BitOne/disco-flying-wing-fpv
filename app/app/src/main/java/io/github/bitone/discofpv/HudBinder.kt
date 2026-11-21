@@ -137,7 +137,9 @@ class HudBinder(
             updateAlerts { it.copy(pitotCalibrated = pitot?.isCalibrated) }
         }
         drone.getInstrument(Radio::class.java) { r ->
-            updateAlerts { it.copy(rssi = r?.rssi?.takeIf { v -> v < 0 }) }
+            val rssi = r?.rssi?.takeIf { v -> v < 0 }
+            updateAlerts { it.copy(rssi = rssi) }
+            update { it.copy(rssi = rssi) }
         }
         drone.getPeripheral(Gimbal::class.java) { g ->
             val tilt = g?.takeIf { Gimbal.Axis.PITCH in it.supportedAxes }?.getAttitude(Gimbal.Axis.PITCH)

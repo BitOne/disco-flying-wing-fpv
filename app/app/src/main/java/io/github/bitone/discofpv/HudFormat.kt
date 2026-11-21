@@ -28,6 +28,12 @@ object HudFormat {
     fun battery(label: String, percent: Int?): String =
         "$label " + (percent?.takeIf { it in 0..100 }?.let { "$it %" } ?: UNKNOWN)
 
+    /** The Disco's Wi-Fi signal: "LINK -62 dBm". */
+    fun link(rssi: Int?): String = "LINK " + (rssi?.let { "$it dBm" } ?: UNKNOWN)
+
+    /** Below this the link is weak (HudAlerts.WEAK_RSSI). */
+    fun isWeakLink(rssi: Int?): Boolean = rssi != null && rssi < HudAlerts.WEAK_RSSI
+
     /** GPS: satellite count when fixed. */
     fun gps(fixed: Boolean?, satellites: Int?): String = when (fixed) {
         null -> "GPS $UNKNOWN"

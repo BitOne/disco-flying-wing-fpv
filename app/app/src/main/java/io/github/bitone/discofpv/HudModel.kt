@@ -23,6 +23,7 @@ data class HudModel(
     val groundSpeed: Double? = null,   // m/s
     val battery: Int? = null,          // %
     val rcBattery: Int? = null,        // %
+    val rssi: Int? = null,             // dBm, the Disco's Wi-Fi signal
     val gpsFixed: Boolean? = null,
     val satellites: Int? = null,
     val roll: Double? = null,          // degrees, right wing down positive

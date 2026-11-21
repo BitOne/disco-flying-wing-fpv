@@ -122,6 +122,7 @@ class Hud(private val root: View, mode: HudMode) {
         text(R.id.hud_ground_speed, HudFormat.groundSpeed(m.groundSpeed))
         text(R.id.hud_battery, HudFormat.battery("BAT", m.battery), HudFormat.isLowBattery(m.battery))
         text(R.id.hud_rc_battery, HudFormat.battery("RC", m.rcBattery), HudFormat.isLowBattery(m.rcBattery))
+        text(R.id.hud_link, HudFormat.link(m.rssi), HudFormat.isWeakLink(m.rssi))
         text(R.id.hud_gps, HudFormat.gps(m.gpsFixed, m.satellites))
         text(R.id.hud_camera, HudAlerts.camera(m.cameraTilt, m.cameraPan) ?: "")
         renderAlerts(m)

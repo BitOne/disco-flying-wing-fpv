@@ -21,7 +21,7 @@ steps:
   - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
     timeout: 20000
   - tap_text: Flight view
-  - expect_texts: [FLYING, ALT 42.5 m, AIR 15.2 m/s, GND 12.4 m/s, BAT 73 %, RC 58 %, GPS 10 sat]
+  - expect_texts: [FLYING, ALT 42.5 m, AIR 15.2 m/s, GND 12.4 m/s, BAT 73 %, RC 58 %, GPS 10 sat, LINK -45 dBm]
     timeout: 10000
   - expect_video:
       region: [0.3, 0.25, 0.7, 0.75]

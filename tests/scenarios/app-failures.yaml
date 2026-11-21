@@ -24,6 +24,7 @@ steps:
   - expect_texts: [CALIBRATE COMPASS]
   - send: [fail link_weak]
   - expect_texts: [WEAK LINK]
+  - expect_texts: [LINK -88 dBm]
   - send: [fail gps]
   - expect_texts: [GPS LOST, "LAST FIX 45.18"]
   - screenshot: failures

@@ -44,6 +44,14 @@ class HudFormatTest {
         assertEquals("GPS --", HudFormat.gps(null, null))
     }
 
+    @Test fun link() {
+        assertEquals("LINK -62 dBm", HudFormat.link(-62))
+        assertEquals("LINK --", HudFormat.link(null))
+        assertEquals(true, HudFormat.isWeakLink(-88))
+        assertEquals(false, HudFormat.isWeakLink(-45))
+        assertEquals(false, HudFormat.isWeakLink(null))
+    }
+
     @Test fun flyingState() {
         assertEquals("FLYING", HudFormat.flyingState("FLYING"))
         assertEquals("TAKING OFF", HudFormat.flyingState("TAKING_OFF"))
