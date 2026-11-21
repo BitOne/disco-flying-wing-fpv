@@ -2321,16 +2321,65 @@ about the Disco's app itself; most posts are 2016 to 2019, plus a 2023 to
 What the SDK offers the Disco (BebopFamilyDroneController): Geofence,
 ReturnHome, BebopFlightPlanPilotingItf, BebopMediaStore,
 RemovableUserStorage, FlightMeter, WifiAccessPoint, DiscoFlightTuning
-(circling direction and altitude), Beeper. No FlightDataDownloader or
-FlightLogDownloader for the Disco in this fork: logs need our own
-telemetry recording on the phone, or a look at what the Disco stores on
-FTP.
+(circling direction and altitude), Beeper. Correction (same day): the
+Bebop family controller also has BebopFlightDataDownloader (PUD files from
+`/internal_000/Disco/academy/`), FtpFlightLogDownloader and the FTP
+firmware updater; all go through FTP, which the fake lacks (T9.5).
 
 Plan proposed to the user (see the reply of 2026-11-21): settings for the
 Disco (geofence, return home, circling), a flight log recorded on the
 phone with GPX/KML/CSV export, recording and SD card media, link quality
 and wind estimate on the HUD, a free flight plan editor, then firmware
 updates from a local file and F-Droid.
+
+## 41. Disco settings, Wi-Fi power, flight log (2026-11-21)
+
+### Wi-Fi transmit power (firmware 1.7.1, static analysis)
+
+The Disco has no transmit power command. Its Broadcom radio (bcm43526,
+`wl.ko`) takes its power limits from the regulatory domain of its country
+code, plus indoor/outdoor rules:
+
+- `usr/share/netmon/country_regul.yaml`: per country group, the allowed
+  channels and environments. All allow 2.4 GHz channels 1 to 11; on 5 GHz
+  Europe and Japan allow 36-48 indoor only, the US, Brazil and Mexico all
+  of 36-48 and 149-161 outdoor, Australia and others 149-161 (the app's
+  `WifiCountries` holds the table). `autolock` for CA, IL, US: those
+  factory countries (`/factory/country_setting.txt`) refuse a manual
+  country.
+- `usr/bin/bcm_sel_country`, `bcm_wifid`: "set country", "autocountry
+  detection failed => default US", "We have to put broadcom down and
+  change band before setting country": a change restarts the radio.
+- `usr/share/netmon/device_perf.yaml`: per board, a per-channel tx_power
+  table (20 dBm 2.4 GHz and 16 dBm 5 GHz for the Bebop boards; the
+  SkyController up to 28 dBm on 2.4 GHz). Used by netmon, not a setting.
+- `dragon-prog` decodes `Common.Settings.Country`, `AutoCountry` and
+  `Common.WifiSettings.OutdoorSetting`, not the `wifi` feature GroundSdk's
+  WifiAccessPoint uses (Anafi). SDK patch 0006 adds a WifiRegulation
+  peripheral for them.
+
+So "more power" means a country whose rules allow more (FCC countries
+allow the most on 2.4 GHz) and the outdoor rules. The user asked for the
+setting and takes responsibility for matching their regulation; the app
+says so next to it, and only allows it on the ground. Not known: whether
+the SkyController 2 follows the Disco's country (it has its own
+`bcm_autocountry` and a `SkyController.WifiState.WifiCountryChanged`
+event). Bench check: RSSI at a fixed distance before and after.
+
+### GroundSdk offline settings turned off
+
+GroundSdk stored the settings per drone model and sent them back at each
+connection (`gsdk_offline_settings_mode` MODEL): a reset done elsewhere was
+undone by the app. Now OFF: the Disco is the reference.
+
+### Flight log
+
+`FlightRecorder` (its own GroundSdk session and a HudBinder, owned by the
+main screen) writes a CSV per flight in the app's files, from the first
+flying state that is not LANDED until 3 s landed, 2 samples a second,
+flushed each line. A link loss keeps the flight open. The Flights screen
+exports GPX (height above take-off as elevation), KML (relative to the
+ground) or CSV through the system file picker (no FileProvider).
 
 ## Sources
 

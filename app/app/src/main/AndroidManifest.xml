@@ -48,6 +48,9 @@
         <activity
             android:name=".DiscoSettingsActivity"
             android:exported="false" />
+        <activity
+            android:name=".FlightsActivity"
+            android:exported="false" />
 
         <activity
             android:name=".MapActivity"

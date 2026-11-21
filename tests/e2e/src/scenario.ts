@@ -20,6 +20,7 @@ export type Step =
   | { kind: 'expect_http'; url: string; matches: string; timeoutMs: number }
   | { kind: 'screenshot'; name: string }
   | { kind: 'expect_fake'; query: string; contains: string; timeoutMs: number }
+  | { kind: 'expect_shell'; command: string; contains: string; timeoutMs: number }
   | {
       kind: 'expect_image';
       region: [number, number, number, number];
@@ -73,7 +74,7 @@ function parseStep(raw: unknown, index: number): Step {
     throw new Error(`${where}: unknown step "${raw}"`);
   }
   if (!isRecord(raw)) throw new Error(`${where}: expected a map`);
-  const keys = Object.keys(raw).filter((k) => !['timeout', 'scroll', 'query', 'times'].includes(k));
+  const keys = Object.keys(raw).filter((k) => !['timeout', 'scroll', 'query', 'times', 'command'].includes(k));
   if (keys.length !== 1) throw new Error(`${where}: expected exactly one action, got ${keys.join(', ') || 'none'}`);
   const key = keys[0] as string;
   const value = raw[key];
@@ -203,6 +204,15 @@ function parseStep(raw: unknown, index: number): Step {
       if (typeof query !== 'string') throw new Error(`${where}: query must be a control command`);
       if (typeof timeout !== 'number') throw new Error(`${where}: timeout must be milliseconds`);
       return { kind: 'expect_fake', query, contains: value, timeoutMs: timeout };
+    }
+    case 'expect_shell': {
+      // polls a device shell command until its output contains the text
+      const command = raw['command'];
+      const timeout = raw['timeout'] ?? 10_000;
+      if (typeof value !== 'string' || value === '') throw new Error(`${where}: expect_shell expects a text`);
+      if (typeof command !== 'string' || command === '') throw new Error(`${where}: command must be a shell command`);
+      if (typeof timeout !== 'number') throw new Error(`${where}: timeout must be milliseconds`);
+      return { kind: 'expect_shell', command, contains: value, timeoutMs: timeout };
     }
     case 'screenshot':
       if (typeof value !== 'string' || !/^[\w-]+$/.test(value)) {

@@ -32,6 +32,7 @@ class MainActivity : Activity() {
     private lateinit var discoSettingsButton: Button
     private var connectedDroneUid: String? = null
     private lateinit var guard: ConnectionGuard
+    private lateinit var recorder: FlightRecorder
     private lateinit var wifiButton: Button
     /** A Disco on Wi-Fi waiting for the pilot's tap, if any. */
     private var wifiDrone: ConnectionGuard.WifiDrone? = null
@@ -69,6 +70,10 @@ class MainActivity : Activity() {
             }
         }
 
+        findViewById<Button>(R.id.flights_button).setOnClickListener {
+            startActivity(android.content.Intent(this, FlightsActivity::class.java))
+        }
+
         findViewById<Button>(R.id.settings_button).setOnClickListener {
             startActivity(android.content.Intent(this, SettingsActivity::class.java))
         }
@@ -76,6 +81,7 @@ class MainActivity : Activity() {
         wifiButton = findViewById(R.id.wifi_connect)
         wifiButton.setOnClickListener { wifiDrone?.let { guard.allow(it.uid) } }
         guard = ConnectionGuard(this)
+        recorder = FlightRecorder(this)
         guard.onWifiDrones = { list ->
             wifiDrone = list.firstOrNull()
             wifiButton.visibility = if (wifiDrone == null) View.GONE else View.VISIBLE
@@ -108,6 +114,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         guard.close()
+        recorder.close()
         super.onDestroy()
     }
 

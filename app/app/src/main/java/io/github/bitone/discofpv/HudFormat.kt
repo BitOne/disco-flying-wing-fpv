@@ -49,6 +49,10 @@ object HudFormat {
         else -> state.replace('_', ' ').uppercase(Locale.US)
     }
 
+    /** A distance: metres below 1 km, else kilometres ("850 m", "1.8 km"). */
+    fun distance(metres: Double): String =
+        if (metres < 1000) "${metres.roundToLong()} m" else String.format(Locale.US, "%.1f km", metres / 1000)
+
     /** Distance to home, metres (kilometres from 10 km). */
     fun home(metres: Double?): String = "HOME " + when {
         metres == null || !metres.isFinite() -> UNKNOWN

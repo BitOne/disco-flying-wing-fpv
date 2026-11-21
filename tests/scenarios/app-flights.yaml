@@ -1,0 +1,46 @@
+name: Disco FPV records each flight on the phone and exports it
+description: >
+  Needs `make fake`, `make video` and `make emu`. The app records the
+  connected Disco's telemetry from take-off to landing whatever screen is
+  in front (T9.4); the Flights screen lists the flight with its duration,
+  height and distance, saves it as GPX through Android's file picker (the
+  file checked on the device), and deletes it.
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -rf files/flights
+  - shell: rm -f /sdcard/Download/flight-*
+  - send: [drone_link ok, flying_state landed, battery 90, altitude 0, gps 45.1885 5.7245 250, satellites 10]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flights
+  - expect_texts: ["No flight recorded yet"]
+  - back
+  # a short flight, the main screen in front
+  - send: [flying_state flying, altitude 30, battery 85]
+  - wait: 2000
+  - send: [gps 45.1935 5.7245 330, altitude 80, battery 70]
+  - wait: 2000
+  - send: [flying_state landed, altitude 0]
+  - expect_shell: flight-
+    command: run-as io.github.bitone.discofpv ls files/flights
+  - wait: 5000
+  - tap_text: Flights
+  - expect_texts: ["1 flight, ", "up to 80 m high", "up to 556 m away", "battery down to 70 %"]
+  - screenshot: flights
+  # GPX through the file picker
+  - tap_text: GPX
+  - expect_texts: ["SAVE"]
+    timeout: 15000
+  - tap_text: SAVE
+  - expect_texts: ["GPX file saved."]
+    timeout: 15000
+  - expect_shell: "<trkpt lat=\"45.1935000\" lon=\"5.7245000\"><ele>80.0</ele>"
+    command: cat /sdcard/Download/flight-*.gpx
+  # deleted
+  - tap_text: Delete
+  - tap_text: Yes, delete
+  - expect_texts: ["No flight recorded yet"]
+  - shell: rm -f /sdcard/Download/flight-*

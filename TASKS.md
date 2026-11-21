@@ -664,10 +664,10 @@ From `NOTES.md` section 29 (ranked risks) and section 28 (measurements).
 
 From `NOTES.md` section 40 (web research) and the user's go-ahead.
 
-- [ ] **T9.1 Disco settings screen**: geofence (on/off, max altitude, max
+- [x] **T9.1 Disco settings screen**: geofence (on/off, max altitude, max
   distance), return home (delay after link loss, home type), circling
   (direction, altitude), editable only where the Disco allows it.
-- [ ] **T9.2 Wi-Fi region and transmit power**: the Disco's transmit
+- [x] **T9.2 Wi-Fi region and transmit power**: the Disco's transmit
   power follows its Wi-Fi country (Broadcom regulatory domain) and the
   outdoor flag (firmware 1.7.1, `NOTES.md` section 41). Settings: automatic
   or a chosen country, outdoor on/off, landed only (the Wi-Fi restarts);
@@ -675,9 +675,9 @@ From `NOTES.md` section 40 (web research) and the user's go-ahead.
   Disco's `Common.Settings.Country/AutoCountry` and
   `Common.WifiSettings.OutdoorSetting`, which GroundSdk's
   WifiAccessPoint does not use).
-- [ ] **T9.3 Small fixes**: the "Ready" hint without a SkyController;
+- [x] **T9.3 Small fixes**: the "Ready" hint without a SkyController;
   Wi-Fi link quality on the HUD.
-- [ ] **T9.4 Flight log on the phone**: telemetry recorded per flight,
+- [x] **T9.4 Flight log on the phone**: telemetry recorded per flight,
   flight list and total time, GPX/KML/CSV export (share sheet).
 - [ ] **T9.5 The fake Disco's FTP**: the "drone" mux host, an FTP server
   (TypeScript) on a shared directory, the privileged ports mapped; then

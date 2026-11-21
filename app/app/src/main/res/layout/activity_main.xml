@@ -126,14 +126,32 @@
             android:enabled="false"
             android:text="@string/headset_view" />
 
-        <Button
-            android:id="@+id/disco_settings_button"
-            style="@style/Button.Secondary"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:enabled="false"
-            android:text="@string/disco_settings_button" />
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/disco_settings_button"
+                style="@style/Button.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="@string/disco_settings_button" />
+
+            <Button
+                android:id="@+id/rc_button"
+                style="@style/Button.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:enabled="false"
+                android:text="@string/rc_button" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -142,14 +160,13 @@
             android:orientation="horizontal">
 
             <Button
-                android:id="@+id/rc_button"
+                android:id="@+id/flights_button"
                 style="@style/Button.Secondary"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_marginEnd="6dp"
                 android:layout_weight="1"
-                android:enabled="false"
-                android:text="@string/rc_button" />
+                android:text="@string/flights_button" />
 
             <Button
                 android:id="@+id/settings_button"

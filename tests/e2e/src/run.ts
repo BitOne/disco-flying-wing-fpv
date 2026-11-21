@@ -51,6 +51,7 @@ function label(step: Step): string {
     case 'expect_http': return `expect ${step.url} to match /${step.matches}/`;
     case 'screenshot': return `screenshot ${step.name}`;
     case 'expect_fake': return `expect fake "${step.query}" to report "${step.contains}"`;
+    case 'expect_shell': return `expect "${step.command}" to print "${step.contains}"`;
     case 'expect_image':
       return step.maxContrast < Infinity
         ? `expect blank in [${step.region.join(', ')}] (contrast <= ${step.maxContrast})`
@@ -171,6 +172,15 @@ async function runStep(
         if (reply.includes(step.contains)) return undefined;
         if (Date.now() > deadline) throw new Error(`fake replied "${reply}"`);
         await sleep(300);
+      }
+    }
+    case 'expect_shell': {
+      const deadline = Date.now() + step.timeoutMs;
+      for (;;) {
+        const out = await emu.shell(step.command).catch((e: Error) => e.message);
+        if (out.includes(step.contains)) return undefined;
+        if (Date.now() > deadline) throw new Error(`"${step.command}" printed "${out.slice(0, 300)}"`);
+        await sleep(500);
       }
     }
     case 'screenshot': {

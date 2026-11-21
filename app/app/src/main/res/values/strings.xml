@@ -133,4 +133,22 @@
     <string name="disco_wifi_unavailable">Not reported by this Disco.</string>
     <string name="disco_range">Between %1$d and %2$d</string>
     <string name="main_hint_ready_wifi">Ready, over this phone\'s Wi-Fi: the range is short, keep the Disco close.</string>
+    <!-- flights recorded on the phone (FlightsActivity) -->
+    <string name="flights_button">Flights</string>
+    <string name="flights_title">Flights</string>
+    <string name="flights_none">No flight recorded yet. Every flight is recorded on this phone, from take-off to landing.</string>
+    <plurals name="flights_summary">
+        <item quantity="one">%1$d flight, %2$s in the air. Recorded on this phone only.</item>
+        <item quantity="other">%1$d flights, %2$s in the air. Recorded on this phone only.</item>
+    </plurals>
+    <string name="flights_delete_yes">Yes, delete</string>
+    <string name="flights_max_altitude">up to %1$d m high</string>
+    <string name="flights_max_distance">up to %1$s away</string>
+    <string name="flights_flown">%1$s flown</string>
+    <string name="flights_battery">battery down to %1$d %%</string>
+    <string name="flights_export">%1$s</string>
+    <string name="flights_delete">Delete</string>
+    <string name="flights_delete_confirm">Delete this flight from the phone?</string>
+    <string name="flights_exported">%1$s file saved.</string>
+    <string name="flights_export_failed">The %1$s file could not be saved.</string>
 </resources>
