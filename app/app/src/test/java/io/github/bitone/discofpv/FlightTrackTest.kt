@@ -65,7 +65,9 @@ class FlightTrackTest {
     private class Sink : RecorderCore.Sink {
         val events = mutableListOf<String>()
         override fun start(timeMs: Long) { events += "start $timeMs" }
-        override fun sample(s: FlightSample) { events += "sample ${s.timeMs}" }
+        override fun sample(s: FlightSample) {
+            events += "sample ${s.timeMs}" + (s.altitude?.let { " $it" } ?: "")
+        }
         override fun end() { events += "end" }
     }
 
@@ -76,19 +78,27 @@ class FlightTrackTest {
         val sink = Sink()
         val core = RecorderCore(sink)
         core.onModel(model("LANDED"), 0)
+        core.tick(500)
         assertFalse(core.recording)
-        core.onModel(model("TAKING_OFF"), 1000)
-        core.onModel(model("FLYING"), 1200)   // < 500 ms: no sample
-        core.onModel(model("FLYING"), 1500)
+        core.onModel(model("TAKING_OFF"), 1000)          // start, first sample
+        core.onModel(model("FLYING"), 1200)
+        core.tick(1500)                                  // the latest state
+        // two updates in a row: the tick takes the last one
+        core.onModel(model("FLYING").copy(altitude = 30.0), 1900)
+        core.onModel(model("FLYING").copy(altitude = 80.0), 1901)
+        core.tick(2000)
         // link lost: the flight stays open, no sample
-        core.onModel(model("FLYING", connected = false), 2500)
+        core.onModel(model("FLYING", connected = false), 2400)
+        core.tick(2500)
         assertTrue(core.recording)
         core.onModel(model("LANDED"), 4000)
-        core.onModel(model("LANDED"), 6000)
+        core.tick(4500)
+        core.tick(6500)
         assertTrue(core.recording)
-        core.onModel(model("LANDED"), 7000)   // landed for 3 s
+        core.tick(7000)                                  // landed for 3 s
         assertFalse(core.recording)
-        assertEquals(listOf("start 1000", "sample 1000", "sample 1500", "sample 4000", "sample 6000", "sample 7000", "end"), sink.events)
+        assertEquals(listOf("start 1000", "sample 1000", "sample 1500", "sample 2000 80.0", "sample 4500",
+            "sample 6500", "sample 7000", "end"), sink.events)
     }
 
     @Test
@@ -99,6 +109,7 @@ class FlightTrackTest {
         core.onModel(model("LANDED"), 1000)
         core.onModel(model("FLYING"), 2000)
         core.onModel(model("LANDED"), 4500)
+        core.tick(5000)
         assertTrue(core.recording)
         core.close()
         assertEquals("end", sink.events.last())

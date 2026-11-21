@@ -64,6 +64,9 @@ function label(step: Step): string {
   }
 }
 
+/** The rotation the scenario asked for (portrait unless a rotate step said otherwise). */
+let wantedRotation: 0 | 1 = 0;
+
 async function runStep(
   step: Step,
   scenario: Scenario,
@@ -81,6 +84,7 @@ async function runStep(
     case 'restart_app':
       await emu.stopApp(scenario.app.package);
       // a fresh start in portrait, whatever the last scenario left
+      wantedRotation = 0;
       await emu.rotate(0);
       await emu.startApp(scenario.app.package, scenario.app.activity);
       // and again once it shows: a landscape screen closing can free the lock
@@ -98,7 +102,8 @@ async function runStep(
     case 'emu':
       return (await emu.adb(['emu', ...step.command.split(/\s+/)])).toString('utf8').trim() || undefined;
     case 'rotate':
-      await emu.rotate(step.to === 'portrait' ? 0 : 1);
+      wantedRotation = step.to === 'portrait' ? 0 : 1;
+      await emu.rotate(wantedRotation);
       await sleep(1500);
       return undefined;
     case 'home':
@@ -135,6 +140,9 @@ async function runStep(
     case 'back':
       await emu.back();
       await sleep(500);
+      // leaving a landscape-only screen, Android 15 keeps its rotation:
+      // back to the scenario's
+      await emu.rotate(wantedRotation);
       return undefined;
     case 'expect_texts': {
       const deadline = Date.now() + step.timeoutMs;

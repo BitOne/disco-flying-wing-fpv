@@ -34,9 +34,11 @@ class FlightLogStore(val dir: File) {
 
 /**
  * When to record (pure, unit-tested): from the take-off (any flying state
- * but LANDED) until the Disco has been landed for [LANDED_END_MS], one
- * sample every [SAMPLE_MS] while connected. A link loss in flight keeps the
- * flight open: it goes on when the Disco is back.
+ * but LANDED) until the Disco has been landed for [LANDED_END_MS]; one
+ * sample of the latest state every [SAMPLE_MS] ([tick], from a timer:
+ * telemetry comes as separate updates, sampling on them could miss the
+ * last one), while connected. A link loss in flight keeps the flight
+ * open: it goes on when the Disco is back.
  */
 class RecorderCore(private val sink: Sink) {
 
@@ -48,10 +50,12 @@ class RecorderCore(private val sink: Sink) {
 
     var recording = false
         private set
-    private var lastSampleMs: Long? = null
+    private var latest: HudModel? = null
     private var landedSinceMs: Long? = null
 
+    /** A new state of the Disco: starts or ends the flight. */
     fun onModel(m: HudModel, nowMs: Long) {
+        latest = m
         val state = m.flyingState
         val airborne = m.connected && state != null && state != "LANDED"
         if (!recording) {
@@ -59,24 +63,36 @@ class RecorderCore(private val sink: Sink) {
             recording = true
             landedSinceMs = null
             sink.start(nowMs)
+            sink.sample(FlightSample.of(m, nowMs))
+            return
         }
         if (!m.connected) return
         if (state == "LANDED") {
             val since = landedSinceMs ?: nowMs.also { landedSinceMs = it }
-            if (nowMs - since >= LANDED_END_MS) {
-                sink.sample(FlightSample.of(m, nowMs))
-                recording = false
-                lastSampleMs = null
-                sink.end()
-                return
-            }
+            if (nowMs - since >= LANDED_END_MS) finish(m, nowMs)
         } else {
             landedSinceMs = null
         }
-        if (lastSampleMs.let { it == null || nowMs - it >= SAMPLE_MS }) {
-            lastSampleMs = nowMs
-            sink.sample(FlightSample.of(m, nowMs))
+    }
+
+    /** Every [SAMPLE_MS]: the latest state, while recording and connected. */
+    fun tick(nowMs: Long) {
+        val m = latest ?: return
+        if (!recording || !m.connected) return
+        // the landing's end also comes from here when no update arrives
+        val since = landedSinceMs
+        if (m.flyingState == "LANDED" && since != null && nowMs - since >= LANDED_END_MS) {
+            finish(m, nowMs)
+            return
         }
+        sink.sample(FlightSample.of(m, nowMs))
+    }
+
+    private fun finish(m: HudModel, nowMs: Long) {
+        sink.sample(FlightSample.of(m, nowMs))
+        recording = false
+        landedSinceMs = null
+        sink.end()
     }
 
     /** The app closing: what was recorded stays. */
@@ -128,7 +144,16 @@ class FlightRecorder(context: Context) {
         }
     })
 
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val ticker = object : Runnable {
+        override fun run() {
+            core.tick(System.currentTimeMillis())
+            handler.postDelayed(this, RecorderCore.SAMPLE_MS)
+        }
+    }
+
     init {
+        handler.postDelayed(ticker, RecorderCore.SAMPLE_MS)
         sdk.resume()
         sdk.getDroneList({ true }) { list ->
             val uid = list.orEmpty().firstOrNull {
@@ -149,6 +174,7 @@ class FlightRecorder(context: Context) {
     }
 
     fun close() {
+        handler.removeCallbacks(ticker)
         core.close()
         droneSdk?.close()
         sdk.close()
