@@ -20,9 +20,9 @@ steps:
   - back
   # a short flight, the main screen in front
   - send: [flying_state flying, altitude 30, battery 85]
-  - wait: 2000
+  - wait: 3000
   - send: [gps 45.1935 5.7245 330, altitude 80, battery 70]
-  - wait: 2000
+  - wait: 3000
   - send: [flying_state landed, altitude 0]
   - expect_shell: flight-
     command: run-as io.github.bitone.discofpv ls files/flights

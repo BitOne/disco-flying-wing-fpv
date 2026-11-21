@@ -56,6 +56,9 @@ export class Emulator {
   /** Fixed screen rotation: 0 portrait, 1 landscape (auto-rotate off). */
   async rotate(rotation: 0 | 1): Promise<void> {
     await this.shell(`settings put system accelerometer_rotation 0; settings put system user_rotation ${rotation}`);
+    // the window manager's own lock: the setting alone can be overridden
+    // after a landscape-only screen (Android 15)
+    await this.shell(`cmd window user-rotation lock ${rotation}`).catch(() => '');
   }
 
   async home(): Promise<void> {
@@ -104,7 +107,10 @@ export class Emulator {
     }
   }
 
+  /** The screen as it is now (rotated): `wm size` always gives the portrait size. */
   async screenSize(): Promise<{ width: number; height: number }> {
+    const cur = / cur=(\d+)x(\d+)/.exec(await this.shell('dumpsys window displays'));
+    if (cur) return { width: Number(cur[1]), height: Number(cur[2]) };
     const m = /(\d+)x(\d+)/.exec(await this.shell('wm size'));
     return { width: Number(m?.[1] ?? 1080), height: Number(m?.[2] ?? 2400) };
   }

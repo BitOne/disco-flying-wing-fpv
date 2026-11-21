@@ -80,7 +80,12 @@ async function runStep(
       return undefined;
     case 'restart_app':
       await emu.stopApp(scenario.app.package);
+      // a fresh start in portrait, whatever the last scenario left
+      await emu.rotate(0);
       await emu.startApp(scenario.app.package, scenario.app.activity);
+      // and again once it shows: a landscape screen closing can free the lock
+      await sleep(1500);
+      await emu.rotate(0);
       return undefined;
     case 'resume_app':
       await emu.resumeApp(scenario.app.package);

@@ -11,7 +11,10 @@ app:
   package: io.github.bitone.discofpv
   activity: .MainActivity
 steps:
-  - send: [media_clear, drone_link ok, flying_state landed]
+  # landed first: it ends an auto-recording, which writes a video
+  - send: [drone_link ok, flying_state landed]
+  - wait: 1000
+  - send: [media_clear]
   - shell: rm -rf "/sdcard/DCIM/Disco FPV"
   - restart_app
   - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
