@@ -54,6 +54,9 @@
         <activity
             android:name=".MediaActivity"
             android:exported="false" />
+        <activity
+            android:name=".FlightPlanActivity"
+            android:exported="false" />
 
         <activity
             android:name=".MapActivity"

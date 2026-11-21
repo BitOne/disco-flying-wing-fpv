@@ -2423,6 +2423,28 @@ lines; the headset keeps HOME (and LINK) only, to stay readable. Bench and
 flight to check: the drain at cruise versus climbing, and the pitot's
 airspeed against the GPS on a calm day.
 
+### Flight plans (T9.8)
+
+- The app writes the plan with GroundSdk's MavlinkFiles ("QGC WPL 120":
+  take-off, NAV_WAYPOINT with the height above take-off and a 30 m
+  acceptance radius, then RTL or LAND, or nothing to circle at the last
+  point); BebopFlightPlanPilotingItf uploads it as `flightPlan.mavlink` on
+  FTP port 61 and sends `Mavlink.Start("flightPlan.mavlink")`. Pause is
+  `Mavlink.Pause` (the Disco circles); GroundSdk has no stop for this
+  drone: a new start plays it from the beginning.
+- The fake reads the file from `out/disco-fs/flightplan`, takes off if
+  landed, flies each waypoint (bank towards it, climb or descend to its
+  height), sends `MissionItemExecuted` for each item, then returns home,
+  lands, or circles. Landing (ctrl `flying_state landed`) ends a plan.
+- Checks in the app before the start: the Disco's maximum altitude and
+  distance (when the distance limit is on), waypoints below 30 m. The
+  real Disco may also refuse with WAYPOINT_BEYOND_GEOFENCE.
+- Test gotcha: the e2e runner's scrolling searches swipe over the screen
+  and drag the map; the scenario taps the map before any scrolling step.
+- Not done: the SITL path (the bridge would turn the plan into an
+  ArduPilot mission). To check on the bench: that the Disco accepts the
+  take-off item (FreeFlight's plans start with one).
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf

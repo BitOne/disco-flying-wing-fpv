@@ -686,8 +686,10 @@ From `NOTES.md` section 40 (web research) and the user's go-ahead.
 - [x] **T9.6 Recording and media**: recording state and SD space on the
   HUD; browse, download (progress, cancel), delete; free space checked.
 - [x] **T9.7 Wind estimate and battery to get home** on the HUD.
-- [ ] **T9.8 Flight plan editor** (free): waypoints on the offline map,
+- [x] **T9.8 Flight plan editor** (free): waypoints on the offline map,
   MAVLink file upload, start/pause/stop; fake and SITL scenarios.
+  Left: the SITL route (the bridge turning the plan into an ArduPilot
+  mission), and the bench check of the Disco's take-off item.
 - [ ] **T9.9 Firmware update from a local file**, checksum checked.
 - [ ] **T9.10 F-Droid** metadata and submission (user approval for any
   external submission).

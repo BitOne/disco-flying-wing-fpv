@@ -804,6 +804,55 @@ static void wifi_select(struct disco *d, int32_t type, int32_t band, uint8_t cha
 /* Commands                                                            */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Flight plan file                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Reads the uploaded plan: "QGC WPL 120", then one item per line:
+ * seq current frame command p1 p2 p3 p4 lat lon alt autocontinue
+ * (tab separated, GroundSdk's MavlinkFiles). No file: no items, the fake
+ * then circles home as before. */
+static void mission_load(struct disco *d)
+{
+	char path[512], line[512];
+	const char *base = strrchr(d->mavlink_file, '/');
+	FILE *f;
+	d->mission_count = 0;
+	if (d->fs[0] == '\0')
+		return;
+	base = base ? base + 1 : d->mavlink_file;
+	snprintf(path, sizeof(path), "%s/flightplan/%s", d->fs, base);
+	f = fopen(path, "r");
+	if (f == NULL) {
+		LOGW("flight plan %s: %s", path, strerror(errno));
+		return;
+	}
+	while (fgets(line, sizeof(line), f) != NULL
+			&& d->mission_count < DISCO_MISSION_MAX) {
+		int seq, cur, frame, command, cont;
+		double p1, p2, p3, p4, lat, lon, alt;
+		if (sscanf(line, "%d %d %d %d %lf %lf %lf %lf %lf %lf %lf %d",
+				&seq, &cur, &frame, &command, &p1, &p2, &p3, &p4,
+				&lat, &lon, &alt, &cont) != 12)
+			continue;
+		d->mission[d->mission_count].cmd = command;
+		d->mission[d->mission_count].lat = lat;
+		d->mission[d->mission_count].lon = lon;
+		d->mission[d->mission_count].alt = alt;
+		d->mission_count++;
+	}
+	fclose(f);
+	LOGI("flight plan %s: %d items", base, d->mission_count);
+}
+
+void disco_mission_executed(struct disco *d, int index)
+{
+	LOGI("flight plan item %d executed", index);
+	if (d->itf != NULL)
+		SEND(arsdk_cmd_send_Common_MavlinkState_MissionItemExecuted(ITF,
+				(uint32_t)index));
+}
+
 /** A Disco from the US, Canada or Israel keeps the automatic country. */
 static int country_locked(const struct disco *d)
 {
@@ -1102,7 +1151,13 @@ camera_orientation:
 	case ARSDK_ID_COMMON_MAVLINK_START:
 		if (arsdk_cmd_dec_Common_Mavlink_Start(cmd, &str, &i32) < 0)
 			return 1;
+		/* a paused plan resumes where it was; otherwise from the start */
+		d->fp_resume = d->mavlink_state
+			== ARSDK_COMMON_MAVLINKSTATE_MAVLINKFILEPLAYINGSTATECHANGED_STATE_PAUSED
+			&& strcmp(d->mavlink_file, str) == 0;
 		snprintf(d->mavlink_file, sizeof(d->mavlink_file), "%s", str);
+		if (!d->fp_resume)
+			mission_load(d);
 		d->mavlink_state = ARSDK_COMMON_MAVLINKSTATE_MAVLINKFILEPLAYINGSTATECHANGED_STATE_PLAYING;
 		d->fp_request = DISCO_FP_START;
 		LOGI("flight plan %s playing", d->mavlink_file);

@@ -1,0 +1,50 @@
+name: Disco FPV plans a flight, and the Disco flies it
+description: >
+  Needs `make fake` (with rig/disco-ftp), `make video` and `make emu`. On
+  the Flight plan screen, two waypoints tapped on the map around the
+  Disco, the first one's height changed; uploaded (MAVLink file, FTP port
+  61 through the controller) and started: the fake Disco takes off, flies
+  the waypoints from the file, reports each one (MissionItemExecuted) and
+  returns home at the end (T9.8).
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -f shared_prefs/flight_plan.xml
+  - send: [sim internal, drone_link ok, flying_state landed, battery 95, satellites 12,
+      home 45.1885 5.7245 250, gps 45.1885 5.7245 250]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Flight plan
+  # no scrolling search before the taps: its swipes would drag the map
+  - expect_texts: ["No waypoint yet."]
+  - screenshot: plan-empty
+  # two waypoints tapped on the map, north and north-east of the Disco
+  - tap: [0.5, 0.3]
+  - tap: [0.75, 0.38]
+  - expect_texts: ["2 waypoints, "]
+  - screenshot: plan-tapped
+  - tap_text: "1. "
+  - tap_text: "80"
+  - shell: input keyevent KEYCODE_MOVE_END 67 67
+  - shell: input text 60
+  - tap_text: OK
+  - expect_texts: [", 60 m"]
+  - screenshot: plan
+  - tap_text: Upload and start
+  - expect_texts: ["The Disco takes off by itself"]
+  - tap_text: Start
+  # the file through the controller, the take-off, the waypoints, home
+  - expect_fake: fp=1
+    timeout: 20000
+  - expect_texts: ["Flying the plan: 1 of 2 waypoints done."]
+    scroll: true
+    timeout: 120000
+  - screenshot: plan-flying
+  - expect_texts: ["Plan done: 2 waypoints flown, the Disco returns home."]
+    scroll: true
+    timeout: 120000
+  - expect_fake: home=1
+    timeout: 20000
+  - send: [flying_state landed]

@@ -169,6 +169,7 @@ struct app {
 		int               over_home; /* return home: home overflown */
 		int               fp;        /* flight plan playing */
 		int               fp_circling; /* flight plan: circling home */
+		int               fp_item;   /* flight plan: the item being flown */
 		unsigned long     pcmd;      /* PCMD commands received */
 		/* the app's last PCMD, percent */
 		uint8_t           pcmd_flag;
@@ -308,6 +309,8 @@ static void link_quality(struct arsdk_cmd_itf *itf,
 #define FAKE_DRONE_SOFTWARE "1.7.1"
 #define FAKE_DRONE_HARDWARE "1.0"
 #define REBOOT_MS           15000
+/* a flight plan waypoint counts as reached within this distance (m) */
+#define FP_ACCEPT_M          30.0
 /* a Wi-Fi country or outdoor change: the firmware takes the radio down and
  * up again (bcm_sel_country); the answers go out first */
 #define WIFI_RESTART_DELAY_MS 500
@@ -883,6 +886,59 @@ static void flight_watch_external(struct app *app)
 	}
 }
 
+/** The uploaded flight plan, item by item (disco.c read it): take-off
+ * (already done), waypoints at their altitude, return home or land; past
+ * the last item, the Disco circles where it is and the plan stops. */
+static void flight_mission(struct app *app, double dt)
+{
+	struct disco *d = &app->disco;
+	while (app->flight.fp_item < d->mission_count) {
+		int i = app->flight.fp_item;
+		double dn, de, dist, next_alt, cl;
+		switch (d->mission[i].cmd) {
+		case 16: /* MAV_CMD_NAV_WAYPOINT */
+			cl = cos(app->flight.origin_lat * M_PI / 180);
+			dn = (d->mission[i].lat - app->flight.origin_lat) * EARTH_M_PER_DEG
+				- app->flight.n;
+			de = (d->mission[i].lon - app->flight.origin_lon) * EARTH_M_PER_DEG
+				* cl - app->flight.e;
+			dist = sqrt(dn * dn + de * de);
+			if (dist > FP_ACCEPT_M) {
+				next_alt = flight_toward(app->tm.altitude,
+						d->mission[i].alt, FLIGHT_CLIMB,
+						FLIGHT_DESCENT, dt);
+				flight_move(app, flight_bank_to(app, atan2(de, dn)),
+						(next_alt - app->tm.altitude) / dt, dt);
+				return;
+			}
+			break;
+		case 20: /* MAV_CMD_NAV_RETURN_TO_LAUNCH */
+			disco_mission_executed(d, i);
+			app->flight.fp_item = d->mission_count;
+			app->flight.fp = 0;
+			disco_flight_plan_stopped(d);
+			flight_start_home(app, HOME_REASON(USERREQUEST));
+			return;
+		case 21: /* MAV_CMD_NAV_LAND */
+			disco_mission_executed(d, i);
+			app->flight.fp_item = d->mission_count;
+			app->flight.fp = 0;
+			disco_flight_plan_stopped(d);
+			flight_set_state(app, FS(LANDING));
+			return;
+		default: /* take-off (done), camera and speed items */
+			break;
+		}
+		disco_mission_executed(d, i);
+		app->flight.fp_item++;
+	}
+	/* the end: circling where it is */
+	app->flight.fp = 0;
+	disco_flight_plan_stopped(d);
+	flight_loiter_here(app, d->s.circling_direction != 0);
+	flight_set_state(app, FS(HOVERING));
+}
+
 static void flight_tick(struct pomp_timer *timer, void *userdata)
 {
 	struct app *app = userdata;
@@ -946,6 +1002,8 @@ static void flight_tick(struct pomp_timer *timer, void *userdata)
 	case FS(FLYING):
 		if (app->flight.home) {
 			flight_go_home(app, s->circling_altitude, dt, 1);
+		} else if (app->flight.fp && app->disco.mission_count > 0) {
+			flight_mission(app, dt);
 		} else if (app->flight.fp) {
 			if (app->flight.fp_circling)
 				flight_circle(app, s->circling_altitude, dt);
@@ -1070,6 +1128,8 @@ static void flight_plan(struct app *app)
 	case DISCO_FP_START:
 		app->flight.fp = 1;
 		app->flight.fp_circling = 0;
+		if (!app->disco.fp_resume)
+			app->flight.fp_item = 0;
 		app->flight.over_home = 0;
 		flight_stop_home(app, HOME_REASON(STOPPED));
 		if (!flight_takeoff(app) && (st == FS(HOVERING) || st == FS(FLYING))) {
@@ -2515,6 +2575,12 @@ static int ctrl_handle_line(struct app *app, char *line,
 		if (app->cmd_itf)
 			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_FlyingStateChanged(
 				app->cmd_itf, &send_status, app, tm->flying_state));
+		/* landed: a flight plan or a return home ends, as in flight */
+		if (tm->flying_state == FS(LANDED)) {
+			app->flight.fp = 0;
+			app->flight.home = 0;
+			disco_flight_plan_stopped(&app->disco);
+		}
 	} else if (strcmp(word, "send_all") == 0) {
 		send_rc_state(app);
 		send_telemetry(app);

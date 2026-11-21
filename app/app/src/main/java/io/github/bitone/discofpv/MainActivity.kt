@@ -79,6 +79,13 @@ class MainActivity : Activity() {
             }
         }
 
+        findViewById<Button>(R.id.plan_button).setOnClickListener {
+            // editable without a Disco; flown once one is connected
+            val i = android.content.Intent(this, FlightPlanActivity::class.java)
+            connectedDroneUid?.let { i.putExtra(DroneScreenActivity.EXTRA_DRONE_UID, it) }
+            startActivity(i)
+        }
+
         findViewById<Button>(R.id.flights_button).setOnClickListener {
             startActivity(android.content.Intent(this, FlightsActivity::class.java))
         }

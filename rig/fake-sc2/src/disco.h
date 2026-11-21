@@ -16,6 +16,8 @@
 #include "arsdk/arsdk.h"
 #include "rc.h"
 
+#define DISCO_MISSION_MAX 100
+
 /* Settings: kept across connections, like the drone's config file. */
 struct disco_settings {
 	char     name[33];          /* product name, also the Wi-Fi SSID */
@@ -89,7 +91,14 @@ struct disco {
 	/* pilot position (controller GPS), for the pilot home type */
 	double     pilot_lat, pilot_lon;  /* 500 = unknown */
 
-	/* flight plan (Mavlink feature): playing state only, no file transfer */
+	/* flight plan (Mavlink feature): the playing state, and the plan read
+	 * from the file the app uploaded (rig/disco-ftp, <fs>/flightplan) */
+	struct {
+		int    cmd;     /* MAV_CMD: 16 waypoint, 20 RTL, 21 land, 22 take-off */
+		double lat, lon, alt;
+	} mission[DISCO_MISSION_MAX];
+	int        mission_count;
+	int        fp_resume;           /* the last start resumed a paused plan */
 	int32_t    mavlink_state;       /* ARSDK_COMMON_MAVLINKSTATE_MAVLINKFILEPLAYINGSTATECHANGED_STATE_* */
 	char       mavlink_file[128];
 	int        fp_request;          /* DISCO_FP_*: for the fake's flight, reset by it */
@@ -131,6 +140,8 @@ void disco_init(struct disco *d, struct pomp_loop *loop, const char *name);
 void disco_set_fs(struct disco *d, const char *fs, const char *samples);
 /* empties the Disco's media and thumbnails (tests) */
 void disco_media_clear(struct disco *d);
+/* a flight plan item done (Mavlink MissionItemExecuted) */
+void disco_mission_executed(struct disco *d, int index);
 void disco_clear(struct disco *d);
 void disco_reset_settings(struct disco_settings *s, const char *name);
 

@@ -160,21 +160,36 @@
             android:orientation="horizontal">
 
             <Button
-                android:id="@+id/media_button"
+                android:id="@+id/plan_button"
                 style="@style/Button.Secondary"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_marginEnd="6dp"
                 android:layout_weight="1"
+                android:text="@string/plan_button" />
+
+            <Button
+                android:id="@+id/media_button"
+                style="@style/Button.Secondary"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
                 android:enabled="false"
                 android:text="@string/media_button" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
 
             <Button
                 android:id="@+id/flights_button"
                 style="@style/Button.Secondary"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
-                android:layout_marginStart="6dp"
                 android:layout_marginEnd="6dp"
                 android:layout_weight="1"
                 android:text="@string/flights_button" />
