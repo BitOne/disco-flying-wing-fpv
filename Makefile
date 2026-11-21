@@ -292,7 +292,7 @@ e2e: e2e-unit ## Run end-to-end scenarios (SCENARIOS) against emulator + fake; o
 include rig/rig.mk
 
 .PHONY: check
-check: app apk-check unit fake-test fake video emu app-install e2e ## Full verification; exit code is the verdict
+check: app apk-check unit fake-test ftp-unit firmware-sample fake video emu app-install e2e ## Full verification; exit code is the verdict
 
 .PHONY: stop
 stop: sim-stop video-stop fake-stop emu-stop ## Stop everything running: simulator, camera, fake, emulator (logs to out/)

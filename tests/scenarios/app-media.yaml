@@ -49,7 +49,7 @@ steps:
   - expect_texts: ["SD 29."]
     timeout: 15000
   - send: [button rear_right]
-  - expect_texts: ["REC 0:0"]
+  - expect_texts: ["REC <1 min"]
     timeout: 10000
   - screenshot: hud-recording
   - send: [button rear_right]

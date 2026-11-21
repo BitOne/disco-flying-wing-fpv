@@ -152,8 +152,10 @@ class HudBinder(
         }
         drone.getPeripheral(MainCamera::class.java) { c ->
             val state = c?.recordingState()
+            // the Disco may not give the start time: the moment it was seen
+            // starting, kept while it records
             val since = if (state?.get() == CameraRecording.State.FunctionState.STARTED) {
-                state.recordStartTime()?.time ?: System.currentTimeMillis()
+                state.recordStartTime()?.time ?: model.recordingSinceMs ?: System.currentTimeMillis()
             } else {
                 null
             }

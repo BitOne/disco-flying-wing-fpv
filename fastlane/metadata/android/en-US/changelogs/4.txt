@@ -1,0 +1,7 @@
+- Disco settings: flying zone, return home, circling, Wi-Fi country and outdoor rules (transmit power), firmware.
+- Flight plans: waypoints on the map, upload, start, pause.
+- Flights recorded on the phone, exported as GPX, KML or CSV.
+- Photos and videos: list, download to the gallery, delete.
+- HUD: Wi-Fi signal, recording time or free storage, wind, time and battery to get home.
+- Firmware update from Parrot's own files.
+- No Crashlytics; nothing collected for Parrot's cloud.

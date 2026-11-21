@@ -2599,8 +2599,9 @@ static int ctrl_handle_line(struct app *app, char *line,
 			return snprintf(reply, reply_size, "error unknown state\n");
 		app->flight.active = 0;
 		tm->flying_state = flying_states[i].value;
-		rc_landed(&app->disco.rc, tm->flying_state ==
-				ARSDK_ARDRONE3_PILOTINGSTATE_FLYINGSTATECHANGED_STATE_LANDED);
+		/* as in flight: auto-record from take-off to landing, the
+		 * flight meter, the RC receiver's landed state */
+		disco_flying_state(&app->disco, tm->flying_state);
 		if (app->cmd_itf)
 			SEND(res, arsdk_cmd_send_Ardrone3_PilotingState_FlyingStateChanged(
 				app->cmd_itf, &send_status, app, tm->flying_state));

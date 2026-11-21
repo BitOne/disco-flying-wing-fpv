@@ -1,0 +1,25 @@
+<p>Disco FPV flies the <b>Parrot Disco</b> fixed-wing drone through its <b>SkyController 2</b> (USB) or on the Disco's own Wi-Fi. It replaces FreeFlight Pro, which is no longer maintained: free, open source, no account, nothing sent to Parrot or anyone else.</p>
+
+<p><b>Flying</b></p>
+<ul>
+<li>Live video with a HUD: altitude, air and ground speed, battery, link, GPS, home direction and distance, wind estimate, time and battery needed to get home, warnings.</li>
+<li>Headset view (Cockpitglasses and phone headsets), with adjustable lenses and optional head tracking of the camera.</li>
+<li>Moving map with OpenStreetMap, satellite imagery or offline Mapsforge maps; download an area before going to the field.</li>
+<li>A hobby RC transmitter on the Disco's receiver: calibration and channel check.</li>
+</ul>
+
+<p><b>The Disco's settings</b></p>
+<ul>
+<li>Flying zone (maximum altitude and distance), return home (delay after a link loss, where to), circling altitude and direction.</li>
+<li>Wi-Fi country and outdoor rules, which set the Disco's channels and transmit power limits. You choose the country whose radio rules apply where you fly.</li>
+<li>Firmware update from Parrot's own update files.</li>
+</ul>
+
+<p><b>Free features FreeFlight sold or lost</b></p>
+<ul>
+<li>Flight plans: tap waypoints on the map, set their height, upload and fly, pause and resume.</li>
+<li>Every flight recorded on the phone, with total flight time; export as GPX, KML (Google Earth) or CSV.</li>
+<li>Photos and videos on the Disco: list, download to the gallery, delete.</li>
+</ul>
+
+<p>Not affiliated with or endorsed by Parrot. "Parrot", "Disco", "SkyController" and "FreeFlight" are trademarks of Parrot Drones SAS. Fly safely and within your local rules: test new features with the Disco in sight.</p>

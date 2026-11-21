@@ -44,6 +44,23 @@ the fake SkyController 2 and Disco of the test rig, and the simulator.
 - Robustness: Disco out of range (LINK LOST, video cleared, everything
   back by itself), controller unplugged and plugged back, app in the
   background, rotation.
+- The Disco's settings: flying zone (maximum altitude and distance),
+  return home (delay after a link loss, where to), circling altitude and
+  direction, Wi-Fi country and outdoor rules (they set the radio's
+  channels and transmit power limits: choose what your local rules
+  allow), firmware update from Parrot's own files.
+- Flight plans, free: waypoints tapped on the map with their height,
+  uploaded and flown, paused and resumed.
+- Every flight recorded on the phone, with the total flight time, and
+  exported as GPX, KML or CSV.
+- Photos and videos on the Disco: listed with thumbnails, downloaded to
+  the phone's gallery, deleted.
+- HUD extras: the Wi-Fi signal, recording time or free storage, the
+  wind, and the time and battery needed to get home (GO HOME warning).
+- No account and no data sent anywhere: GroundSdk's collectors for
+  Parrot's cloud are off; the only Internet requests are the map tiles,
+  GPS ephemeris for the Disco, and Parrot's firmware list (which
+  versions exist; GroundSdk asks now and then when online).
 
 ## Licence
 

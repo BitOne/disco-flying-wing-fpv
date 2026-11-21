@@ -28,11 +28,16 @@ object HudFormat {
     fun battery(label: String, percent: Int?): String =
         "$label " + (percent?.takeIf { it in 0..100 }?.let { "$it %" } ?: UNKNOWN)
 
-    /** Recording: "REC 1:05"; otherwise the Disco's free storage: "SD 29.4 GB". */
+    /**
+     * Recording: "REC <1 min", "REC 3 min" (whole minutes: a line changing
+     * every second, with LAST FIX's, keeps the screen from ever being idle,
+     * which UIAutomator and accessibility services wait for); otherwise the
+     * Disco's free storage: "SD 29.4 GB".
+     */
     fun record(sinceMs: Long?, nowMs: Long, freeBytes: Long?): String {
         if (sinceMs != null) {
-            val s = ((nowMs - sinceMs) / 1000).coerceAtLeast(0)
-            return String.format(Locale.US, "REC %d:%02d", s / 60, s % 60)
+            val min = ((nowMs - sinceMs) / 60_000).coerceAtLeast(0)
+            return if (min < 1) "REC <1 min" else "REC $min min"
         }
         return "SD " + (freeBytes?.let { String.format(Locale.US, "%.1f GB", it / 1e9) } ?: UNKNOWN)
     }

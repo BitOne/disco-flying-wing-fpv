@@ -127,9 +127,15 @@ class FlightEstimator {
         private val POINTS = listOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
 
         /** "WIND 6 m/s from W". */
-        fun windText(speed: Double?, from: Double?): String =
-            if (speed == null || from == null) "WIND --"
-            else "WIND ${speed.roundToInt()} m/s from ${POINTS[(((from + 22.5) % 360) / 45).toInt()]}"
+        fun windText(speed: Double?, from: Double?): String = when {
+            speed == null || from == null -> "WIND --"
+            // no direction for a near-zero vector: it would flicker
+            speed < CALM -> "WIND calm"
+            else -> "WIND ${speed.roundToInt()} m/s from ${POINTS[(((from + 22.5) % 360) / 45).toInt()]}"
+        }
+
+        /** Below this (m/s) the wind is shown as calm. */
+        const val CALM = 1.0
 
         /** "HOME 3 min, 14 %". */
         fun homeText(seconds: Double?, battery: Int?): String {

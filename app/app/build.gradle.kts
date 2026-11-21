@@ -91,7 +91,8 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.2.0")
     implementation("com.google.code.gson:gson:2.8.5")
     implementation("org.conscrypt:conscrypt-android:2.2.1")
-    implementation("com.google.firebase:firebase-crashlytics:17.1.0")
+    // firebase-crashlytics (an arsdkengine dependency) left out: nothing calls it,
+    // and it is a tracker
 
     // Offline maps: Mapsforge (LGPL-3.0, see NOTICE) renders .map files.
     implementation("org.mapsforge:mapsforge-map-android:0.25.0")

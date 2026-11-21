@@ -37,6 +37,7 @@ class FlightEstimatorTest {
         val r = e.update(0, true, 0.0, null, 12.0, 5.0, 90, null, null)
         assertNull(r.windSpeed)
         assertEquals("WIND --", FlightEstimator.windText(null, null))
+        assertEquals("WIND calm", FlightEstimator.windText(0.4, 123.0))
     }
 
     @Test
