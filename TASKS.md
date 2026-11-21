@@ -691,8 +691,10 @@ From `NOTES.md` section 40 (web research) and the user's go-ahead.
   Left: the SITL route (the bridge turning the plan into an ArduPilot
   mission), and the bench check of the Disco's take-off item.
 - [x] **T9.9 Firmware update from a local file**, checksum checked.
-- [ ] **T9.10 F-Droid** metadata and submission (user approval for any
-  external submission).
+- [x] **T9.10 F-Droid**: the main repository is not possible (EULA, Play
+  Services: `NOTES.md` section 41); fastlane metadata added for
+  IzzyOnDroid, Crashlytics removed. Left: screenshots, and the submission
+  (the user's call).
 
 ## M6 and later
 

@@ -73,6 +73,11 @@ class FirmwareActivity : Activity() {
                 startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "*/*"
+                    // where a downloaded update file is
+                    if (android.os.Build.VERSION.SDK_INT >= 26) {
+                        putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, android.net.Uri.parse(
+                            "content://com.android.providers.downloads.documents/root/downloads"))
+                    }
                 }, REQUEST_FILE)
             }
         }, 4, px(48))

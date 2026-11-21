@@ -77,6 +77,9 @@ export class Emulator {
 
   async stopApp(pkg: string): Promise<void> {
     await this.shell(`am force-stop ${pkg}`);
+    // a system screen the app opened (the file picker) outlives it: a
+    // scenario failing there would leave it over every later one
+    await this.shell('am force-stop com.google.android.documentsui; am force-stop com.android.documentsui');
   }
 
   async screenshot(path: string): Promise<void> {

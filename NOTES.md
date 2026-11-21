@@ -2472,6 +2472,37 @@ airspeed against the GPS on a calm day.
   data, flight logs, GUTMA) are off: nothing is uploaded without a Parrot
   account, but they downloaded from the Disco and filled the phone.
 
+### Publishing beyond GitHub (T9.10)
+
+- F-Droid's main repository: not possible as is. It builds from source and
+  rejects non-free dependencies and usage restrictions: Parrot's Ground SDK
+  EULA limits use to Parrot drones (2.1), and GroundSdk uses Google Play
+  Services location (SystemLocationCore; it falls back to Android's
+  LocationManager when Play Services is missing, but the classes must be
+  there).
+- IzzyOnDroid (a third-party F-Droid repository built from the GitHub
+  release APKs) is the realistic target; it flags non-free dependencies.
+  The repository now has `fastlane/metadata/android/en-US` (title, short
+  and full description, changelog 4, icon; screenshots to add), which both
+  read. Submitting is an external request: left to the user.
+- Firebase Crashlytics was an arsdkengine dependency nothing calls: removed
+  from the app (it is a tracker for store scanners).
+- To go further: an SDK patch replacing Play Services location with
+  LocationManager would remove the last Google dependency.
+
+### Regression run findings (2026-11-21)
+
+- A HUD line changing faster than about twice a second (the wind direction
+  of a near-zero vector, a seconds counter next to LAST FIX's) keeps the
+  screen from ever being idle: UIAutomator dumps time out (and
+  accessibility services would be flooded). The wind below 1 m/s reads
+  "calm", the recording time shows whole minutes.
+- The emulator itself stalled once under load (system_server watchdog);
+  the scenarios that failed then passed alone.
+- The fake's `flying_state` control now goes through the Disco's landing
+  logic (auto-record stops on landing), so a scenario no longer inherits a
+  recording from the previous one.
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
