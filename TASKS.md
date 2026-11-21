@@ -690,7 +690,7 @@ From `NOTES.md` section 40 (web research) and the user's go-ahead.
   MAVLink file upload, start/pause/stop; fake and SITL scenarios.
   Left: the SITL route (the bridge turning the plan into an ArduPilot
   mission), and the bench check of the Disco's take-off item.
-- [ ] **T9.9 Firmware update from a local file**, checksum checked.
+- [x] **T9.9 Firmware update from a local file**, checksum checked.
 - [ ] **T9.10 F-Droid** metadata and submission (user approval for any
   external submission).
 

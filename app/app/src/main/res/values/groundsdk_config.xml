@@ -17,4 +17,12 @@
          changes made with another app, and give another Disco this one's
          limits). -->
     <string name="gsdk_offline_settings_mode">OFF</string>
+    <!-- Nothing collected from the Disco for Parrot's cloud: the app has no
+         Parrot account, so these were only stored on the phone, using the
+         link and the storage. The flight log is the app's own (Flights). -->
+    <bool name="gsdk_crash_report_enabled">false</bool>
+    <bool name="gsdk_blackbox_enabled">false</bool>
+    <bool name="gsdk_flight_data_enabled">false</bool>
+    <bool name="gsdk_flight_log_enabled">false</bool>
+    <bool name="gsdk_gutma_log_enabled">false</bool>
 </resources>

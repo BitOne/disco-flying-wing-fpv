@@ -1,0 +1,130 @@
+From: disco-flying-wing-fpv
+Subject: [PATCH] FirmwareManager: import a local firmware update file
+
+Parrot no longer distributes the apps that updated the Disco, and its
+update server may go. Let the application register an update file it
+provides and has checked (FirmwareManager.importLocalFirmware): the store
+gets a local entry for that model and version (MD5 computed from the
+file), and the device updater offers it as if it had been downloaded.
+---
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/facility/FirmwareManager.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/facility/FirmwareManager.java
+--- a/groundsdk/src/main/java/com/parrot/drone/groundsdk/facility/FirmwareManager.java
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/facility/FirmwareManager.java
+@@ -68,6 +68,19 @@
+      */
+     boolean isQueryingRemoteFirmwares();
+ 
++    /**
++     * Disco FPV: makes a firmware update file the application provides
++     * (already checked by it, e.g. against known checksums) available
++     * locally, as if downloaded: the device's updater then offers it.
++     *
++     * @param firmware identifies the firmware (device model and version) the file contains
++     * @param file     the update file, kept where it is
++     *
++     * @return {@code true} if the file was registered
++     */
++    boolean importLocalFirmware(@NonNull com.parrot.drone.groundsdk.facility.firmware.FirmwareIdentifier firmware,
++                                @NonNull java.io.File file);
++
+     /** Represents an available firmware update. */
+     interface Entry {
+ 
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/facility/FirmwareManagerCore.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/facility/FirmwareManagerCore.java
+--- a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/facility/FirmwareManagerCore.java
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/facility/FirmwareManagerCore.java
+@@ -82,6 +82,16 @@
+          * @param observer observer notified when the download task state's change
+          */
+         void download(@NonNull FirmwareInfo firmware, @NonNull FirmwareDownloader.Task.Observer observer);
++
++        /**
++         * Disco FPV: registers a local firmware update file.
++         *
++         * @param firmware identifies the firmware the file contains
++         * @param file     the update file
++         *
++         * @return {@code true} if registered
++         */
++        boolean importLocal(@NonNull FirmwareIdentifier firmware, @NonNull java.io.File file);
+     }
+ 
+     /** Engine facility backend. */
+@@ -122,6 +132,11 @@
+         return mQueryingRemote;
+     }
+ 
++    @Override
++    public boolean importLocalFirmware(@NonNull FirmwareIdentifier firmware, @NonNull java.io.File file) {
++        return mBackend.importLocal(firmware, file);
++    }
++
+     @NonNull
+     @Override
+     public Set<Entry> firmwares() {
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/engine/firmware/FirmwareEngine.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/engine/firmware/FirmwareEngine.java
+--- a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/engine/firmware/FirmwareEngine.java
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/engine/firmware/FirmwareEngine.java
+@@ -284,6 +284,11 @@
+         public void download(@NonNull FirmwareInfo firmware, @NonNull FirmwareDownloader.Task.Observer observer) {
+             mDownloader.download(Collections.singleton(firmware), observer);
+         }
++
++        @Override
++        public boolean importLocal(@NonNull FirmwareIdentifier firmware, @NonNull java.io.File file) {
++            return mFirmwareStore.importLocalFirmware(firmware, file);
++        }
+     };
+ 
+     /** Listens to Internet connection availability changes. */
+diff --git a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/engine/firmware/FirmwareStoreCore.java b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/engine/firmware/FirmwareStoreCore.java
+--- a/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/engine/firmware/FirmwareStoreCore.java
++++ b/groundsdk/src/main/java/com/parrot/drone/groundsdk/internal/engine/firmware/FirmwareStoreCore.java
+@@ -290,6 +290,47 @@
+      * @return {@code true} if an existing local file URI was detached from the identified entry, otherwise
+      *         {@code false}
+      */
++    /**
++     * Disco FPV: a firmware update file provided by the application, made
++     * available locally (an entry is created if the store has none).
++     *
++     * @param firmware identifies the firmware the file contains
++     * @param file     the update file
++     *
++     * @return {@code true} if registered
++     */
++    boolean importLocalFirmware(@NonNull FirmwareIdentifier firmware, @NonNull File file) {
++        if (!file.isFile()) {
++            return false;
++        }
++        String md5;
++        try (InputStream in = new java.io.FileInputStream(file)) {
++            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("MD5");
++            byte[] buffer = new byte[65536];
++            int n;
++            while ((n = in.read(buffer)) > 0) {
++                digest.update(buffer, 0, n);
++            }
++            StringBuilder hex = new StringBuilder();
++            for (byte b : digest.digest()) {
++                hex.append(String.format(java.util.Locale.ROOT, "%02x", b));
++            }
++            md5 = hex.toString();
++        } catch (java.io.IOException | java.security.NoSuchAlgorithmException e) {
++            ULog.w(TAG_FIRMWARE, "Could not read firmware file " + file, e);
++            return false;
++        }
++        FirmwareStoreEntry entry = mUpdates.get(firmware);
++        if (entry == null) {
++            mUpdates.put(firmware, new FirmwareStoreEntry(new FirmwareInfoCore(firmware, file.length(), md5,
++                    EnumSet.noneOf(FirmwareInfo.Attribute.class)), file.toURI(), null, null, null, false));
++        } else {
++            entry.setUri(file.toURI());
++        }
++        storeChanged();
++        return true;
++    }
++
+     boolean deleteLocalFirmware(@NonNull FirmwareIdentifier firmware) {
+         FirmwareStoreEntry toDelete = mUpdates.get(firmware);
+         URI localUri = toDelete == null ? null : toDelete.getLocalUri();

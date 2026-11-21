@@ -155,7 +155,9 @@ class Session {
     const arg = space < 0 ? '' : line.slice(space + 1);
     this.log(verb === 'PASS' ? 'PASS ***' : line);
     switch (verb) {
-      case 'USER': return this.reply(331, 'Specify password');
+      // busybox ftpd on the Disco: anonymous, logged in at USER
+      // (arsdk-ng's C client expects 230 here; commons-net skips PASS)
+      case 'USER': return this.reply(230, 'Operation successful');
       case 'PASS': return this.reply(230, 'Login successful');
       case 'SYST': return this.reply(215, 'UNIX Type: L8');
       case 'FEAT': return this.reply(211, 'No features');

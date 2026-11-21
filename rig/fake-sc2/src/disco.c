@@ -510,6 +510,33 @@ static void count_media(struct disco *d)
 }
 
 /** Empties media/ and thumb/ (tests). */
+int disco_take_update(struct disco *d, char *version, size_t len)
+{
+	char path[512];
+	unsigned char h[0x34];
+	FILE *f;
+	size_t n;
+	if (d->fs[0] == '\0')
+		return 0;
+	snprintf(path, sizeof(path), "%s/update/disco_update.plf", d->fs);
+	f = fopen(path, "rb");
+	if (f == NULL)
+		return 0;
+	n = fread(h, 1, sizeof(h), f);
+	fclose(f);
+	unlink(path);
+	/* PLF header: "PLF!", then the version at 0x24, 0x28, 0x2c (LE) */
+	if (n < sizeof(h) || memcmp(h, "PLF!", 4) != 0) {
+		LOGW("firmware update: not a PLF file");
+		return -1;
+	}
+#define LE32(o) ((unsigned)h[o] | (unsigned)h[o + 1] << 8 | (unsigned)h[o + 2] << 16 | (unsigned)h[o + 3] << 24)
+	snprintf(version, len, "%u.%u.%u", LE32(0x24), LE32(0x28), LE32(0x2c));
+#undef LE32
+	LOGI("firmware update: %s", version);
+	return 1;
+}
+
 void disco_media_clear(struct disco *d)
 {
 	static const char *const dirs[] = { "media", "thumb" };
@@ -1468,7 +1495,7 @@ int disco_status(const struct disco *d, char *buf, size_t len)
 			"circling=%s,%u pitch_mode=%s home_type=%s rth_delay=%u "
 			"recording=%d photos=%u videos=%u flights=%u alert=%s "
 			"magneto=%d pitot=%d tilt=%.0f pan=%.0f wifi=%d,%u fp=%s failures=0x%x "
-			"country=%s,%s,%s factory=%s",
+			"country=%s,%s,%s factory=%s firmware=%s",
 			s->name, s->max_altitude, s->min_altitude, s->max_distance,
 			s->no_fly_over_max_distance,
 			s->circling_direction ? "ccw" : "cw", s->circling_altitude,
@@ -1483,7 +1510,7 @@ int disco_status(const struct disco *d, char *buf, size_t len)
 			"paused" : "stopped", d->failures,
 			s->country, s->auto_country ? "auto" : "manual",
 			s->outdoor ? "outdoor" : "indoor",
-			d->factory_country[0] ? d->factory_country : "none");
+			d->factory_country[0] ? d->factory_country : "none", d->software);
 	if (n >= 0 && (size_t)n + 1 < len) {
 		buf[n++] = ' ';
 		n += rc_status(&d->rc, buf + n, len - (size_t)n);
@@ -1495,6 +1522,7 @@ void disco_init(struct disco *d, struct pomp_loop *loop, const char *name)
 {
 	memset(d, 0, sizeof(*d));
 	d->loop = loop;
+	snprintf(d->software, sizeof(d->software), "1.7.1");
 	disco_reset_settings(&d->s, name);
 	d->pilot_lat = d->pilot_lon = 500.0;
 	d->alert = ARSDK_ARDRONE3_PILOTINGSTATE_ALERTSTATECHANGED_STATE_NONE;

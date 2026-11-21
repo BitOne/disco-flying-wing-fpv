@@ -55,6 +55,9 @@
             android:name=".MediaActivity"
             android:exported="false" />
         <activity
+            android:name=".FirmwareActivity"
+            android:exported="false" />
+        <activity
             android:name=".FlightPlanActivity"
             android:exported="false" />
 

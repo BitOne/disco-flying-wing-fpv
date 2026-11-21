@@ -1,0 +1,50 @@
+name: Disco FPV updates the Disco's firmware from Parrot's own file
+description: >
+  Needs `make fake` (with rig/disco-ftp), `make video`, `make emu` and
+  `make firmware-sample` (Parrot's disco_update.plf 1.7.1 in out/firmware,
+  checked against its SHA-256). The fake Disco runs 1.7.0. A truncated
+  copy is refused; Parrot's file is recognised by its checksum, offered,
+  refused while flying, then installed: uploaded on FTP port 51 (as
+  disco_update.plf), the fake Disco restarts with 1.7.1 (T9.9, SDK patch
+  0008).
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -rf files/firmware
+  - shell: rm -f /sdcard/Download/disco_update.plf /sdcard/Download/not-parrot.plf
+  - push: [/out/firmware/disco_update-1.7.1.plf, /sdcard/Download/disco_update.plf]
+  # the first 4 kB of Parrot's file: a PLF header, not Parrot's checksum
+  - shell: head -c 4096 /sdcard/Download/disco_update.plf > /sdcard/Download/not-parrot.plf
+  - send: [drone_link ok, flying_state landed, battery 90, firmware 1.7.0]
+  - restart_app
+  - expect_texts: ["DISCO-FAKE01 (DISCO): CONNECTED"]
+    timeout: 20000
+  - tap_text: Disco settings
+  - tap_text: "Firmware: 1.7.0"
+  - expect_texts: ["Installed: 1.7.0"]
+  # not Parrot's: refused
+  - tap_text: Choose a disco_update.plf file
+  - tap_text: not-parrot.plf
+  - expect_texts: ["Refused: not one of Parrot's Disco firmware files."]
+    timeout: 30000
+  # Parrot's 1.7.1: offered, refused in flight, installed on the ground
+  - tap_text: Choose a disco_update.plf file
+  - tap_text: disco_update.plf
+  - expect_texts: ["Parrot's Disco firmware 1.7.1: ready to install above."]
+    timeout: 60000
+  - expect_texts: ["Firmware 1.7.1 is ready to install."]
+    timeout: 10000
+  - send: [flying_state flying]
+  - expect_texts: ["land the Disco first"]
+  - send: [flying_state landed]
+  - screenshot: firmware
+  - tap_text: Install firmware 1.7.1
+  - tap_text: Install
+  - expect_fake: firmware=1.7.1
+    query: disco
+    timeout: 180000
+  - expect_texts: ["Installed: 1.7.1"]
+    timeout: 60000
+  - shell: rm -f /sdcard/Download/disco_update.plf /sdcard/Download/not-parrot.plf
+  - shell: run-as io.github.bitone.discofpv rm -rf files/firmware

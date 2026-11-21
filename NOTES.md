@@ -2445,6 +2445,33 @@ airspeed against the GPS on a calm day.
   ArduPilot mission). To check on the bench: that the Disco accepts the
   take-off item (FreeFlight's plans start with one).
 
+### Firmware updates (T9.9)
+
+- Parrot's server still serves three Disco files (2026-11-21):
+  `firmware.parrot.com/Drones/090e/<v>/ALL/disco_update.plf`, 1.7.1
+  (SHA-256 f52f226d04c986b69e4962247d09b95ac634116a5eae7d183523ce9e7f70a056),
+  1.7.0 (1c06c211db7b3bd3b5a77cf6884cceb786f61a101351524010a479a850912e59),
+  1.4.1 (adf14b7085e3f208443e87f3d4dcd6bf31b126220e92f0cbf3dded6fcf5ff0bf);
+  1.4.0 to 1.6.3 answer 403. PLF header: "PLF!", version as three
+  little-endian ints at 0x24, 0x28, 0x2c.
+- The app accepts only those three files (`FirmwareFiles`: SHA-256 and the
+  header must agree) and registers the file with GroundSdk's firmware store
+  (SDK patch 0008, `FirmwareManager.importLocalFirmware`); the Updater
+  then uploads it with arsdk-ng's C FTP client to port 51
+  (`disco_update.plf.tmp`, renamed `disco_update.plf`) and the Disco
+  installs it and restarts. The updater refuses unless landed with 40 %
+  battery. Parrot's server can also be asked (it lists versions; no
+  personal data).
+- Fake: `firmware <v>` sets the version; a `disco_update.plf` in
+  `out/disco-fs/update` is read (PLF header), consumed, and the Disco
+  restarts with that version. The FTP server answers USER with 230 as
+  busybox ftpd does: arsdk-ng's C client fails on 331.
+- `make firmware-sample` fetches 1.7.1 into out/firmware (checked) for
+  app-firmware.yaml; the e2e runner has a `push` step.
+- GroundSdk collectors for Parrot's cloud (crash reports, black box, flight
+  data, flight logs, GUTMA) are off: nothing is uploaded without a Parrot
+  account, but they downloaded from the Disco and filled the phone.
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
@@ -2496,3 +2523,4 @@ airspeed against the GPS on a calm day.
 - FreeFlight Pro on the App Store (reviews): https://apps.apple.com/us/app/freeflight-pro/id889985763
 - ArduPilot forum, Pushing a Parrot Disco to the limit: https://discuss.ardupilot.org/t/pushing-a-parrot-disco-to-the-limit/12171
 - parrotpilots, FreeFlight Pro Android issue: https://parrotpilots.com/threads/freeflight-pro-android-issue.1192/
+- Parrot firmware server, Disco 1.7.0 and 1.4.1: https://firmware.parrot.com/Drones/090e/1.7.0/ALL/disco_update.plf and https://firmware.parrot.com/Drones/090e/1.4.1/ALL/disco_update.plf

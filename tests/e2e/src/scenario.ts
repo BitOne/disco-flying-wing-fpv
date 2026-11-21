@@ -9,6 +9,7 @@ export type Step =
   | { kind: 'resume_app' }
   | { kind: 'home' }
   | { kind: 'shell'; command: string }
+  | { kind: 'push'; local: string; remote: string }
   | { kind: 'emu'; command: string }
   | { kind: 'rotate'; to: 'portrait' | 'landscape' }
   | { kind: 'tap_text'; text: string }
@@ -87,6 +88,13 @@ function parseStep(raw: unknown, index: number): Step {
     case 'tap_text':
       if (typeof value !== 'string') throw new Error(`${where}: tap_text expects a string`);
       return { kind: 'tap_text', text: value };
+    case 'push': {
+      // [file in the emulator container (out/ is /out), path on the device]
+      if (!Array.isArray(value) || value.length !== 2 || !value.every((v) => typeof v === 'string')) {
+        throw new Error(`${where}: push expects [container path, device path]`);
+      }
+      return { kind: 'push', local: value[0] as string, remote: value[1] as string };
+    }
     case 'shell':
       // an adb shell command on the emulator, e.g. to reset app state
       if (typeof value !== 'string' || value.trim() === '') throw new Error(`${where}: shell expects a command`);

@@ -41,6 +41,7 @@ function label(step: Step): string {
     case 'home': return 'home (app to background)';
     case 'rotate': return `rotate to ${step.to}`;
     case 'shell': return `shell ${step.command}`;
+    case 'push': return `push ${step.local} to ${step.remote}`;
     case 'emu': return `emulator console: ${step.command}`;
     case 'tap_text': return `tap "${step.text}"`;
     case 'back': return 'back';
@@ -87,6 +88,8 @@ async function runStep(
       return undefined;
     case 'shell':
       return (await emu.shell(step.command)).trim() || undefined;
+    case 'push':
+      return (await emu.adb(['push', step.local, step.remote], 120_000)).toString('utf8').trim() || undefined;
     case 'emu':
       return (await emu.adb(['emu', ...step.command.split(/\s+/)])).toString('utf8').trim() || undefined;
     case 'rotate':

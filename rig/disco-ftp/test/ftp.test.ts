@@ -85,7 +85,7 @@ test('login, list, store, retrieve, delete', async () => {
   await withServer(async (c, root) => {
     await mkdir(join(root, 'internal_000/Disco/media'), { recursive: true });
     await writeFile(join(root, 'internal_000/Disco/media/Disco_a.jpg'), 'JPEG');
-    assert.match(await c.send('USER anonymous'), /^331/);
+    assert.match(await c.send('USER anonymous'), /^230/);
     assert.match(await c.send('PASS x'), /^230/);
     assert.match(await c.send('TYPE I'), /^200/);
     // LIST of a path, data connection opened after the command

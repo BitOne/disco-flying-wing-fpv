@@ -170,6 +170,7 @@ struct app {
 		int               fp;        /* flight plan playing */
 		int               fp_circling; /* flight plan: circling home */
 		int               fp_item;   /* flight plan: the item being flown */
+		unsigned          update_ticks; /* firmware update check */
 		unsigned long     pcmd;      /* PCMD commands received */
 		/* the app's last PCMD, percent */
 		uint8_t           pcmd_flag;
@@ -306,7 +307,6 @@ static void link_quality(struct arsdk_cmd_itf *itf,
 #define FAKE_DRONE_PRODUCT  0x090e /* ARSDK_DEVICE_TYPE_EVINRUDE: Disco */
 #define FAKE_SC2_SOFTWARE   "1.0.9"
 #define FAKE_SC2_HARDWARE   "1.0"
-#define FAKE_DRONE_SOFTWARE "1.7.1"
 #define FAKE_DRONE_HARDWARE "1.0"
 #define REBOOT_MS           15000
 /* a flight plan waypoint counts as reached within this distance (m) */
@@ -346,6 +346,20 @@ static void send_drone_link(struct app *app)
 			ARSDK_SKYCTRL_DEVICESTATE_CONNEXIONCHANGED_STATUS_NOTCONNECTED :
 			ARSDK_SKYCTRL_DEVICESTATE_CONNEXIONCHANGED_STATUS_CONNECTED,
 			app->disco.s.name, FAKE_DRONE_PRODUCT));
+}
+
+/** The Disco restarts: gone for REBOOT_MS (a reboot, a firmware update). */
+static void disco_reboot(struct app *app)
+{
+	LOGI("reboot");
+	if (app->backend_type == ARSDK_BACKEND_TYPE_MUX) {
+		app->drone_link_lost = 1;
+		send_drone_link(app);
+	} else if (app->peer != NULL) {
+		arsdk_peer_disconnect(app->peer);
+	}
+	if (app->flight.reboot_timer != NULL)
+		pomp_timer_set(app->flight.reboot_timer, REBOOT_MS);
 }
 
 /* Release of a "button" press, sent a moment after the press like a real
@@ -947,6 +961,18 @@ static void flight_tick(struct pomp_timer *timer, void *userdata)
 	const double dt = FLIGHT_TICK_MS / 1000.0;
 	double roll, pitch, gaz;
 	int sticks;
+	char version[16];
+
+	/* a firmware update uploaded (FTP port 51): once a second, on the
+	 * ground, the Disco installs it and restarts with its version */
+	if (++app->flight.update_ticks * FLIGHT_TICK_MS >= 1000) {
+		app->flight.update_ticks = 0;
+		if (tm->flying_state == FS(LANDED)
+				&& disco_take_update(&app->disco, version, sizeof(version)) > 0) {
+			snprintf(app->disco.software, sizeof(app->disco.software), "%s", version);
+			disco_reboot(app);
+		}
+	}
 
 	if (app->sim_external) {
 		flight_watch_external(app);
@@ -1381,7 +1407,7 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 	case ARSDK_ID_COMMON_SETTINGS_ALLSETTINGS:
 		SEND(res, arsdk_cmd_send_Common_SettingsState_ProductVersionChanged(
 				app->cmd_itf, &send_status, app,
-				FAKE_DRONE_SOFTWARE, FAKE_DRONE_HARDWARE));
+				app->disco.software, FAKE_DRONE_HARDWARE));
 		disco_send_settings(&app->disco);
 		SEND(res, arsdk_cmd_send_Common_SettingsState_AllSettingsChanged(
 				app->cmd_itf, &send_status, app));
@@ -1412,15 +1438,7 @@ static void recv_cmd(struct arsdk_cmd_itf *itf,
 		/* the Disco restarts: gone for REBOOT_MS, settings kept */
 		if (app->tm.flying_state != FS(LANDED))
 			break;
-		LOGI("reboot");
-		if (app->backend_type == ARSDK_BACKEND_TYPE_MUX) {
-			app->drone_link_lost = 1;
-			send_drone_link(app);
-		} else if (app->peer != NULL) {
-			arsdk_peer_disconnect(app->peer);
-		}
-		if (app->flight.reboot_timer != NULL)
-			pomp_timer_set(app->flight.reboot_timer, REBOOT_MS);
+		disco_reboot(app);
 		break;
 	/* the app's clock for the controller, its own position: no answer */
 	case ARSDK_ID_SKYCTRL_COMMON_CURRENTDATETIME:
@@ -2254,6 +2272,8 @@ static int fail(struct app *app, const char *name, int on)
  *   media_clear                  deletes the Disco's photos and videos
  *   settings_reset               the Disco's settings back to their
  *                                defaults (name kept)
+ *   firmware <version>           the Disco's firmware version (an update
+ *                                uploaded on FTP port 51 replaces it)
  *   factory_country <CC|none>    the Disco's factory country: CA, IL and
  *                                US refuse a manual Wi-Fi country
  *   button <name>                press and release a controller button:
@@ -2343,6 +2363,15 @@ static int ctrl_handle_line(struct app *app, char *line,
 		disco_reset_settings(&app->disco.s, name);
 		if (app->disco.itf != NULL)
 			disco_send_settings(&app->disco);
+	} else if (strcmp(word, "firmware") == 0) {
+		char v[16] = "";
+		if (sscanf(line, "%*s %15s", v) != 1)
+			return snprintf(reply, reply_size, "error firmware <version>\n");
+		snprintf(app->disco.software, sizeof(app->disco.software), "%s", v);
+		if (app->cmd_itf != NULL)
+			SEND(res, arsdk_cmd_send_Common_SettingsState_ProductVersionChanged(
+				app->cmd_itf, &send_status, app,
+				app->disco.software, FAKE_DRONE_HARDWARE));
 	} else if (strcmp(word, "factory_country") == 0) {
 		char cc[8] = "";
 		if (sscanf(line, "%*s %7s", cc) != 1

@@ -55,6 +55,8 @@ class DiscoSettingsActivity : Activity() {
     private lateinit var outdoor: Button
     private lateinit var wifiNote: TextView
     private lateinit var linkNote: TextView
+    private lateinit var firmware: Button
+    private var firmwareVersion: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,6 +121,12 @@ class DiscoSettingsActivity : Activity() {
         wifiNote = text(R.style.SettingNote, "")
         text(R.style.SettingNote, getString(R.string.disco_wifi_power_note), 6)
 
+        text(R.style.Section, getString(R.string.fw_title), 24)
+        firmware = row {
+            startActivity(android.content.Intent(this, FirmwareActivity::class.java)
+                .putExtra(DroneScreenActivity.EXTRA_DRONE_UID, intent.getStringExtra(DroneScreenActivity.EXTRA_DRONE_UID)))
+        }
+
         setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(column) })
 
         groundSdk = ManagedGroundSdk.obtainSession(this)
@@ -140,6 +148,10 @@ class DiscoSettingsActivity : Activity() {
         refs += drone.getPilotingItf(ReturnHomePilotingItf::class.java) { rth = it; render() }
         refs += drone.getPeripheral(FixedWingFlightTuning::class.java) { tuning = it; render() }
         refs += drone.getPeripheral(WifiRegulation::class.java) { wifi = it; render() }
+        refs += drone.getPeripheral(com.parrot.drone.groundsdk.device.peripheral.SystemInfo::class.java) {
+            firmwareVersion = it?.firmwareVersion
+            render()
+        }
         refs += drone.getInstrument(FlyingIndicators::class.java) {
             landed = it?.state == FlyingIndicators.State.LANDED
             render()
@@ -183,6 +195,8 @@ class DiscoSettingsActivity : Activity() {
             FixedWingFlightTuning.CirclingDirection.CCW -> getString(R.string.disco_ccw)
             else -> getString(R.string.disco_cw)
         })
+
+        firmware.text = getString(R.string.disco_firmware, firmwareVersion ?: "?")
 
         val w = wifi
         country.isEnabled = w != null && landed

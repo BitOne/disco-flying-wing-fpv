@@ -193,6 +193,19 @@ rig/disco-ftp/node_modules: rig/disco-ftp/package.json
 		$(NODE_IMAGE) npm install --ignore-scripts --no-audit --no-fund
 	@touch $@
 
+# Parrot's Disco firmware 1.7.1, for app-firmware.yaml (downloaded once,
+# checked against the SHA-256 the app knows; not part of the repository)
+FIRMWARE_SAMPLE := $(OUT)/firmware/disco_update-1.7.1.plf
+FIRMWARE_SHA256 := f52f226d04c986b69e4962247d09b95ac634116a5eae7d183523ce9e7f70a056
+
+.PHONY: firmware-sample
+firmware-sample: ## Download Parrot's Disco firmware 1.7.1 into out/firmware (for app-firmware.yaml)
+	@mkdir -p $(OUT)/firmware
+	@test -f $(FIRMWARE_SAMPLE) || curl -sSfo $(FIRMWARE_SAMPLE).part \
+		https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
+	@test -f $(FIRMWARE_SAMPLE) || mv $(FIRMWARE_SAMPLE).part $(FIRMWARE_SAMPLE)
+	@echo "$(FIRMWARE_SHA256)  $(FIRMWARE_SAMPLE)" | sha256sum -c --quiet
+
 .PHONY: ftp-unit
 ftp-unit: rig/disco-ftp/node_modules ## Type-check and unit-test the fake Disco's FTP server (in Docker)
 	docker run --rm -u $(UID):$(GID) -v "$(ROOT)/rig/disco-ftp":/b -w /b $(NODE_IMAGE) \
