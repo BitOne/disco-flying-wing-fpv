@@ -2119,6 +2119,41 @@ files (decompiled APKs, firmware, other projects' leftovers). Removing them
 brought the swap down to 0.76 GB. Temporary files now go to `/var/tmp`
 (disk).
 
+## 36. Split the repo in two (app / test rig)? (2026-11-21)
+
+Question: one repo for the Android app, another for the fake Disco, fake
+SkyController 2, emulator, simulator and their tests?
+
+The two halves, by tracked lines: app 6.7k; rig about 37k (sim 26k,
+fake-sc2 6k, aoa-host 0.5k, docker images, tests/fake, tests/sim); e2e
+runner and scenarios 3.7k; shared: Makefile, scripts, sdk.lock.xml and
+patches/ (the pinned GroundSdk fork, 1.1 GB synced).
+
+What ties them:
+- One SDK pin for both: the app builds on the fork's AARs (groundsdk-android
+  patches 0001-0005), the fake on the same fork's arsdk-ng (patch 0001).
+  The protocol the app speaks and the one the fake answers come from the
+  same pinned arsdk-xml; two repos would need the pin kept identical by
+  hand, or the rig publishing SDK artifacts for the app.
+- The e2e suite is the join: 15 app-* scenarios drive the app on the
+  emulator against the fake (debug bridge or the emulated USB accessory);
+  aoa-host, the emulator image and the tile server only exist for that.
+- History: of the 27 commits touching either half, 11 touched both
+  (alerts, camera tilt, map tiles, piloting, USB path): a feature is
+  usually app plus fake plus scenario, which becomes two coordinated
+  changes after a split.
+
+What a split would bring: a rig reusable on its own (FreeFlight, AR.Pro or
+other ARSDK apps against a fake Disco and SITL), a smaller app repo for
+pilots, separate release cadences. None is needed today: one maintainer,
+24 MB of history, and the app's releases already go out as tagged APKs.
+
+Decision: not now. Instead make the boundary visible inside the repo
+(rig sources under one directory, its own README and Makefile include, the
+app's README for pilots only). Split later if the rig gets users of its
+own; `git filter-repo --path` then extracts it with its history, the app
+consuming it as versioned Docker images in CI.
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
