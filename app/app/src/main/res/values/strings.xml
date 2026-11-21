@@ -28,7 +28,6 @@
     <string name="setting_map_tiles">Map background: %1$s</string>
     <string name="setting_tile_url">Custom map tiles URL: %1$s</string>
     <string name="custom_tile_url">Map tiles URL ({z}, {x}, {y})</string>
-    <string name="download_busy">A download is already running</string>
     <string name="download_locating">Looking for this phone\'s position…</string>
     <string name="download_no_location">No position from this phone: turn its location on, or type the coordinates</string>
     <string name="download_no_permission">Without the location permission, type the coordinates instead</string>
@@ -40,6 +39,8 @@
     <string name="download_no_source">Choose a map background first</string>
     <string name="download_not_allowed">This map\'s terms don\'t allow downloading ahead</string>
     <string name="download_progress">Downloaded %1$d of %2$d tiles around %3$s</string>
+    <string name="download_done">Downloaded %1$d of %1$d tiles around %2$s: done</string>
+    <string name="download_stopped">Download stopped: %1$d of %2$d tiles kept around %3$s</string>
     <string name="setting_map_file">Offline map file: %1$s</string>
     <string name="map_file_hint">Offline map files (Mapsforge .map, OpenStreetMap data): download your region once from download.mapsforge.org, e.g. maps/v5/europe/france/rhone-alpes.map, then choose it here and pick \"offline map file\" as the map background.</string>
     <string name="map_file_unreadable">(no longer readable, choose it again)</string>
@@ -80,6 +81,7 @@
     <string name="map_center_phone">This phone</string>
     <string name="map_center_coordinates">Coordinates…</string>
     <string name="map_download">Download this area</string>
+    <string name="map_download_stop">Stop the download</string>
     <string name="map_no_background">Choose a background to see the map</string>
     <string name="map_no_center">No position yet: centre on this phone or coordinates</string>
     <string name="map_center_at_disco">Around the Disco\'s last position: %1$s</string>

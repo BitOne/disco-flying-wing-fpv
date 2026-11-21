@@ -2081,6 +2081,44 @@ https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf
   reboot was dropped ("unable to connect for root: closed"); the script
   now retries it and checks it is root.
 
+## 35. "This phone" needed a second tap; stopping a download; memory of the test rig (2026-11-21)
+
+Reported on a real phone: the first tap on "This phone" asked for the
+location permission, then the preview stayed where it was; a second tap
+centred it. Cause: once granted, the app asked the GPS alone for a fix
+(`getCurrentLocation`), which after a cold start, indoors, takes longer
+than its 30 s, and the "no position" line it then wrote sat under the
+download button, off screen. By the second tap the system had a recent
+network position, so the "last known" shortcut worked.
+
+Fix (`MapActivity.locatePhone`): every enabled source is asked at once
+(fused on Android 12+, network, GPS) and the first answer wins; the others
+are cancelled; 30 s with no answer from any of them says so. "Looking for
+this phone's position…" and the failures now show in the caption right
+under the preview. Scenario `app-map-phone` covers the first time: the
+permission dialog, a GPS test provider that never answers and a network
+one that answers 1.5 s after the request. It failed on 0.1.1 and passes
+with the fix.
+
+Stopping a download: while one runs, "Download this area" becomes "Stop
+the download". `TileLayer.prefetch` returns a `Prefetch` handle whose
+`cancel()` ends the loop after the tile being fetched; the tiles already
+saved stay, and the line under the button says how many ("Download
+stopped: 329 of 2000 tiles kept around ..."). Leaving the screen or
+changing the background also stops it (before, the download thread went
+on after the screen was closed). A finished one now ends with ": done".
+The test tile server takes `/delay/<ms>` (a slow network), so
+`app-map-tiles` has the time to tap Stop half way; at full speed the
+2000 local tiles were done before the tap.
+
+Rig memory: with everything stopped, the PC still had 17.7 GB used and the
+8 GB swap full. The emulator alone takes 5.4 GB (3 GB guest plus
+swiftshader); the fake and the camera are tens of MB. The swap was not
+programs: `/tmp` is a RAM tmpfs and held 9.7 GB of Claude Code scratch
+files (decompiled APKs, firmware, other projects' leftovers). Removing them
+brought the swap down to 0.76 GB. Temporary files now go to `/var/tmp`
+(disk).
+
 ## Sources
 
 - Disco firmware 1.7.1: https://firmware.parrot.com/Drones/090e/1.7.1/ALL/disco_update.plf

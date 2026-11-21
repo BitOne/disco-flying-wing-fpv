@@ -159,20 +159,35 @@ class TileLayer(context: Context, val source: TileSource, private val onTile: ()
         }
     }
 
+    /** A download ahead in progress: [cancel] stops it after the tile being fetched. */
+    class Prefetch {
+        @Volatile var cancelled = false
+            private set
+        fun cancel() { cancelled = true }
+    }
+
     /**
      * Downloads the tiles of [radiusMetres] around [center] from zoom 12 to
      * the source's maximum (at most [MAX_PREFETCH] tiles), reporting
-     * progress as (done, total) on the main thread. Only for sources that
-     * allow it (OpenStreetMap's tile policy forbids bulk downloads).
+     * progress as (done, total, ended) on the main thread; ended is true
+     * once, when all are done or after [Prefetch.cancel]. Tiles already
+     * downloaded stay. Only for sources that allow it (OpenStreetMap's tile
+     * policy forbids bulk downloads).
      */
-    fun prefetch(center: GeoPoint, radiusMetres: Double, progress: (Int, Int) -> Unit) {
-        if (!source.prefetch) return
+    fun prefetch(center: GeoPoint, radiusMetres: Double, progress: (Int, Int, Boolean) -> Unit): Prefetch {
+        val job = Prefetch()
+        if (!source.prefetch) {
+            main.post { progress(0, 0, true) }
+            return job
+        }
         val tiles = (PREFETCH_MIN_ZOOM..source.maxZoom)
             .flatMap { TileMath.tilesAround(center, radiusMetres, it) }
             .take(MAX_PREFETCH)
-        Executors.newSingleThreadExecutor().execute {
+        val worker = Executors.newSingleThreadExecutor()
+        worker.execute {
             var done = 0
             for ((z, x, y) in tiles) {
+                if (job.cancelled) break
                 if (source.imagery.isNotEmpty()) {
                     loadImagery(z, x, y)
                 } else {
@@ -180,12 +195,16 @@ class TileLayer(context: Context, val source: TileSource, private val onTile: ()
                     if (!f.exists()) download(TileMath.url(source.url, z, x, y), f)
                 }
                 done++
-                if (done % 10 == 0 || done == tiles.size) {
+                if (done % 10 == 0 && done < tiles.size) {
                     val d = done
-                    main.post { progress(d, tiles.size) }
+                    main.post { if (!job.cancelled) progress(d, tiles.size, false) }
                 }
             }
+            val d = done
+            main.post { progress(d, tiles.size, true) }
         }
+        worker.shutdown()
+        return job
     }
 
     fun close() {

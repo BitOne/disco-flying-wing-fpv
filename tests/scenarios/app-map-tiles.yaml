@@ -69,8 +69,19 @@ steps:
   - shell: "input text 'geo:45.2,5.73'"
   - tap_text: OK
   - expect_texts: ["Around 45.20000, 5.73000"]
+  # a download can be stopped half way: the tiles fetched so far stay (a
+  # slow tile server leaves the time to tap Stop)
+  - expect_http: { url: "http://127.0.0.1:8091/delay/100", matches: "delay 100" }
   - tap_text: Download this area
-  - expect_texts: ["Downloaded 2000 of 2000 tiles around 45.20000"]
+  - expect_texts: ["of 2000 tiles around 45.20000", "Stop the download"]
+    timeout: 30000
+  - tap_text: Stop the download
+  - expect_texts: ["Download stopped:", "tiles kept around 45.20000", "Download this area"]
+    timeout: 15000
+  - screenshot: map-download-stopped
+  - expect_http: { url: "http://127.0.0.1:8091/delay/0", matches: "delay 0" }
+  - tap_text: Download this area
+  - expect_texts: ["Downloaded 2000 of 2000 tiles around 45.20000, 5.73000: done"]
     timeout: 180000
   # this phone's position: a test GPS provider stands in for the phone's GPS
   - shell: pm grant io.github.bitone.discofpv android.permission.ACCESS_FINE_LOCATION

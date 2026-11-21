@@ -51,7 +51,9 @@ class MapActivity : Activity() {
     private var layer: TileLayer? = null
     private var layerSource: TileSource? = null
     private var centre = Centre.DISCO
-    private var downloading = false
+    /** The download in progress, if any. */
+    private var prefetch: TileLayer.Prefetch? = null
+    private val downloading get() = prefetch != null
 
     private lateinit var preview: MapPreviewView
     private lateinit var caption: TextView
@@ -79,12 +81,14 @@ class MapActivity : Activity() {
         findViewById<Button>(R.id.map_center_disco).setOnClickListener { centreOnDisco(quiet = false) }
         findViewById<Button>(R.id.map_center_phone).setOnClickListener { centreOnPhone() }
         findViewById<Button>(R.id.map_center_coordinates).setOnClickListener { askCoordinates() }
-        findViewById<Button>(R.id.map_download).setOnClickListener { download() }
+        findViewById<Button>(R.id.map_download).setOnClickListener { if (downloading) stopDownload() else download() }
         restoreCentre()
         refresh()
     }
 
     override fun onDestroy() {
+        // leaving the screen ends the download (the tiles fetched so far stay)
+        prefetch?.cancel()
         layer?.close()
         super.onDestroy()
     }
@@ -185,16 +189,22 @@ class MapActivity : Activity() {
         // a new source: a new tile layer for the preview
         val source = s.tileSource()
         if (source != layerSource) {
+            // a download was for the previous background
+            prefetch?.cancel()
             layer?.close()
             layerSource = source
             layer = source?.let { TileLayer(this, it) { preview.postInvalidate() } }
             preview.tiles = layer
             preview.zoom = preview.zoom
         }
-        preview.message = getString(if (source == null) R.string.map_no_background else R.string.map_no_center)
-        findViewById<Button>(R.id.map_download).isEnabled = source != null && source.mapFile == null && source.prefetch
+        preview.message = previewMessage()
+        showDownloadButton()
         showCaption()
     }
+
+    /** What the empty preview says: what it lacks. */
+    private fun previewMessage(): String =
+        getString(if (layerSource == null) R.string.map_no_background else R.string.map_no_center)
 
     // --- the preview's centre ---
 
@@ -310,16 +320,26 @@ class MapActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != LOCATION_PERMISSION) return
         if (grantResults.any { it == PackageManager.PERMISSION_GRANTED }) locatePhone()
-        else status.setText(R.string.download_no_permission)
+        else caption.setText(R.string.download_no_permission)
     }
 
+    /**
+     * Asks every enabled source at once (fused, network, GPS) and takes the
+     * first answer: a GPS alone can need minutes for a first fix after the
+     * permission is granted, where the network answers in a second. What
+     * happens shows under the preview, where the eyes are.
+     */
     @Suppress("MissingPermission", "DEPRECATION")
     private fun locatePhone() {
         val lm = getSystemService(LocationManager::class.java)
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-            .filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
+        val candidates = buildList {
+            if (Build.VERSION.SDK_INT >= 31) add(LocationManager.FUSED_PROVIDER)
+            add(LocationManager.NETWORK_PROVIDER)
+            add(LocationManager.GPS_PROVIDER)
+        }
+        val providers = candidates.filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
         if (providers.isEmpty()) {
-            status.setText(R.string.download_no_location)
+            caption.setText(R.string.download_no_location)
             return
         }
         // a recent position is enough for a 1.5 km area
@@ -330,33 +350,49 @@ class MapActivity : Activity() {
             centreOn(GeoPoint(recent.latitude, recent.longitude), Centre.PHONE)
             return
         }
-        status.setText(R.string.download_locating)
+        caption.setText(R.string.download_locating)
+        if (layerSource != null) preview.message = getString(R.string.download_locating)
         val main = Handler(Looper.getMainLooper())
+        val cancels = mutableListOf<() -> Unit>()
+        var waiting = providers.size
         var answered = false
-        fun answer(loc: Location?) {
-            if (answered || isDestroyed) return
+        fun finish(loc: Location?) {
             answered = true
-            if (loc == null) {
-                status.setText(R.string.download_no_location)
-            } else {
-                status.text = ""
-                centreOn(GeoPoint(loc.latitude, loc.longitude), Centre.PHONE)
+            main.removeCallbacksAndMessages(null)
+            cancels.forEach { runCatching { it() } }
+            if (isDestroyed) return
+            preview.message = previewMessage()
+            if (loc == null) caption.setText(R.string.download_no_location)
+            else centreOn(GeoPoint(loc.latitude, loc.longitude), Centre.PHONE)
+        }
+        fun answer(loc: Location?) {
+            if (answered) return
+            if (loc != null) finish(loc)
+            else if (--waiting == 0) finish(null)
+        }
+        for (provider in providers) {
+            try {
+                if (Build.VERSION.SDK_INT >= 30) {
+                    val cancel = android.os.CancellationSignal()
+                    cancels += { cancel.cancel() }
+                    lm.getCurrentLocation(provider, cancel, mainExecutor) { answer(it) }
+                } else {
+                    val listener = object : LocationListener {
+                        override fun onLocationChanged(location: Location) = answer(location)
+                        @Deprecated("Deprecated in Java")
+                        override fun onStatusChanged(p: String?, s: Int, e: Bundle?) {}
+                        override fun onProviderEnabled(p: String) {}
+                        override fun onProviderDisabled(p: String) {}
+                    }
+                    cancels += { lm.removeUpdates(listener) }
+                    lm.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+                }
+            } catch (e: Exception) {
+                // e.g. GPS refused with the approximate permission only (before Android 12)
+                answer(null)
             }
         }
-        val provider = providers.first()
-        if (Build.VERSION.SDK_INT >= 30) {
-            lm.getCurrentLocation(provider, null, mainExecutor) { answer(it) }
-        } else {
-            val listener = object : LocationListener {
-                override fun onLocationChanged(location: Location) = answer(location)
-                @Deprecated("Deprecated in Java")
-                override fun onStatusChanged(p: String?, s: Int, e: Bundle?) {}
-                override fun onProviderEnabled(p: String) {}
-                override fun onProviderDisabled(p: String) {}
-            }
-            lm.requestSingleUpdate(provider, listener, Looper.getMainLooper())
-            main.postDelayed({ lm.removeUpdates(listener); answer(null) }, PHONE_FIX_TIMEOUT_MS)
-        }
+        if (!answered) main.postDelayed({ if (!answered) finish(null) }, PHONE_FIX_TIMEOUT_MS)
     }
 
     // --- the download ---
@@ -366,25 +402,46 @@ class MapActivity : Activity() {
         val source = settings.tileSource()
         val point = preview.center
         when {
-            downloading -> status.setText(R.string.download_busy)
             source == null -> status.setText(R.string.download_no_source)
             source.mapFile != null -> status.setText(R.string.download_offline)
             !source.prefetch -> status.setText(R.string.download_not_allowed)
             point == null -> status.setText(R.string.map_no_center)
             else -> {
-                downloading = true
                 val where = Coordinates.format(point)
                 status.text = getString(R.string.download_progress, 0, 0, where)
                 // the progress is under the button: bring it into view
                 findViewById<android.widget.ScrollView>(R.id.map_scroll).let { sv -> sv.post { sv.fullScroll(View.FOCUS_DOWN) } }
-                (layer ?: return).prefetch(point, PREFETCH_RADIUS_M) { done, total ->
-                    status.text = getString(R.string.download_progress, done, total, where)
-                    if (done >= total) {
-                        downloading = false
+                val job = (layer ?: return).prefetch(point, PREFETCH_RADIUS_M) { done, total, ended ->
+                    if (isDestroyed) return@prefetch
+                    status.text = when {
+                        !ended -> getString(R.string.download_progress, done, total, where)
+                        done < total -> getString(R.string.download_stopped, done, total, where)
+                        else -> getString(R.string.download_done, total, where)
+                    }
+                    if (ended) {
+                        prefetch = null
+                        showDownloadButton()
                         preview.invalidate()
                     }
                 }
+                prefetch = job
+                showDownloadButton()
             }
+        }
+    }
+
+    /** Stops after the tile being fetched; the ones already there stay. */
+    private fun stopDownload() {
+        prefetch?.cancel()
+        findViewById<Button>(R.id.map_download).isEnabled = false
+    }
+
+    /** "Download this area", or "Stop the download" while one runs. */
+    private fun showDownloadButton() {
+        val source = settings.tileSource()
+        findViewById<Button>(R.id.map_download).apply {
+            setText(if (downloading) R.string.map_download_stop else R.string.map_download)
+            isEnabled = downloading || (source != null && source.mapFile == null && source.prefetch)
         }
     }
 }

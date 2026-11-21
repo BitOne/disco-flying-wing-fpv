@@ -2,7 +2,9 @@
  * Local map tile server for the end-to-end tests (the app's custom tile
  * URL points at it through the emulator's host address, 10.0.2.2): serves
  * /{z}/{x}/{y}.png as a 256 x 256 high-contrast checkerboard, no real map
- * service involved. /stats answers "served <n> tiles".
+ * service involved. /stats answers "served <n> tiles". /delay/<ms> makes
+ * every tile wait that long from then on (a slow network: time for a test
+ * to stop a download half way); /delay/0 is back to full speed.
  */
 import { createServer, type Server } from 'node:http';
 import { deflateSync } from 'node:zlib';
@@ -67,12 +69,21 @@ export function tile(z: number, x: number, y: number): Buffer {
 
 export function startTileServer(port: number): { server: Server; served: () => number } {
   let served = 0;
+  let delayMs = 0;
   const server = createServer((req, res) => {
     const m = /^\/(\d+)\/(\d+)\/(\d+)\.png$/.exec(req.url ?? '');
+    const d = /^\/delay\/(\d+)$/.exec(req.url ?? '');
     if (m) {
-      served++;
-      res.writeHead(200, { 'Content-Type': 'image/png' });
-      res.end(tile(Number(m[1]), Number(m[2]), Number(m[3])));
+      const body = tile(Number(m[1]), Number(m[2]), Number(m[3]));
+      setTimeout(() => {
+        served++;
+        res.writeHead(200, { 'Content-Type': 'image/png' });
+        res.end(body);
+      }, delayMs);
+    } else if (d) {
+      delayMs = Number(d[1]);
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(`delay ${delayMs} ms`);
     } else if (req.url === '/stats') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end(`served ${served} tiles`);

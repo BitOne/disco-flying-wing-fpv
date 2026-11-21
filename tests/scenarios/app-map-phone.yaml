@@ -1,0 +1,43 @@
+name: Disco FPV map screen centred on this phone, first time
+description: >
+  Needs `make emu` (the fake is not used). The first tap on "This phone"
+  asks for the location permission; once granted, the preview centres on
+  the phone straight away. Test providers stand in for the phone: the GPS
+  never gets a fix (indoors, cold start) while the network and fused
+  positions come
+  a moment after the request, so the first answer from any source must be
+  taken (it used to wait 30 s for the GPS alone, then say nothing on
+  screen, and a second tap was needed).
+app:
+  package: io.github.bitone.discofpv
+  activity: .MainActivity
+steps:
+  - shell: run-as io.github.bitone.discofpv rm -rf shared_prefs/settings.xml shared_prefs/last_fix.xml shared_prefs/map_screen.xml
+  - shell: pm revoke io.github.bitone.discofpv android.permission.ACCESS_FINE_LOCATION; pm revoke io.github.bitone.discofpv android.permission.ACCESS_COARSE_LOCATION; true
+  - shell: pm clear-permission-flags io.github.bitone.discofpv android.permission.ACCESS_FINE_LOCATION user-set user-fixed; pm clear-permission-flags io.github.bitone.discofpv android.permission.ACCESS_COARSE_LOCATION user-set user-fixed; true
+  - shell: appops set com.android.shell android:mock_location allow
+  - shell: cmd location providers add-test-provider gps
+  - shell: cmd location providers set-test-provider-enabled gps true
+  - shell: cmd location providers add-test-provider network
+  - shell: cmd location providers set-test-provider-enabled network true
+  # the fused source too (the emulator's own has a default position in California)
+  - shell: cmd location providers add-test-provider fused
+  - shell: cmd location providers set-test-provider-enabled fused true
+  - restart_app
+  - tap_text: Settings
+  - tap_text: "Map: "
+  - tap_text: This phone
+  - tap_text: While using the app
+    timeout: 10000
+  # the request is out: the network answers a moment later, the GPS never
+  - wait: 1500
+  - shell: cmd location providers set-test-provider-location network --location 45.22,5.75
+  - shell: cmd location providers set-test-provider-location fused --location 45.22,5.75
+  - expect_texts: ["Around this phone: 45.22000, 5.75000"]
+    timeout: 10000
+  - screenshot: map-phone-first
+  - shell: cmd location providers remove-test-provider gps
+  - shell: cmd location providers remove-test-provider network
+  - shell: cmd location providers remove-test-provider fused
+  - shell: pm revoke io.github.bitone.discofpv android.permission.ACCESS_FINE_LOCATION; pm revoke io.github.bitone.discofpv android.permission.ACCESS_COARSE_LOCATION; true
+  - shell: run-as io.github.bitone.discofpv rm -rf shared_prefs/settings.xml shared_prefs/last_fix.xml shared_prefs/map_screen.xml
