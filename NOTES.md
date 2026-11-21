@@ -2502,6 +2502,19 @@ airspeed against the GPS on a calm day.
 - The fake's `flying_state` control now goes through the Disco's landing
   logic (auto-record stops on landing), so a scenario no longer inherits a
   recording from the previous one.
+- The flight recorder sampled on telemetry updates (at most every 500 ms):
+  two updates arriving together lost the second (an 80 m altitude never
+  recorded). It now samples the latest state on a 500 ms timer.
+- Test harness: a failed step left the system file picker over all later
+  scenarios (the runner now closes it on restart, and the firmware picker
+  opens in Downloads); Android 15 keeps a landscape lock after the
+  landscape-only flight screens (the runner restores the scenario's
+  rotation on restart and after `back`, with `cmd window user-rotation`);
+  `wm size` gives the portrait size in landscape (scroll swipes were off
+  screen: the runner reads the current size).
+- Final full run: unit tests, FTP tests and the 6 protocol probes pass;
+  20 of 21 app scenarios pass, app-lens failed once at a lens panel
+  reading and passed twice alone (a known load flake, TASKS.md T8).
 
 ## Sources
 

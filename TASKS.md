@@ -693,8 +693,8 @@ From `NOTES.md` section 40 (web research) and the user's go-ahead.
 - [x] **T9.9 Firmware update from a local file**, checksum checked.
 - [x] **T9.10 F-Droid**: the main repository is not possible (EULA, Play
   Services: `NOTES.md` section 41); fastlane metadata added for
-  IzzyOnDroid, Crashlytics removed. Left: screenshots, and the submission
-  (the user's call).
+  IzzyOnDroid (with 9 screenshots), Crashlytics removed. Left: the
+  submission (the user's call).
 
 ## M6 and later
 
